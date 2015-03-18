@@ -144,7 +144,7 @@ conn_parse({binary, Data}, State) ->
 	maybe_reply({parse, {binary, Msg}}, State),
 	{ok, State};
 
-conn_parse(closed, State) ->
+conn_parse(close, State) ->
 	{ok, State};
 
 conn_parse(pong, State) ->
