@@ -22,7 +22,7 @@
 
 -export([start_handshake/1, init/1, handle/2, encode/2]).
 
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
 

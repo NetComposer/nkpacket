@@ -31,7 +31,7 @@
             handle_cast/2, handle_info/2]).
 
 
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
 

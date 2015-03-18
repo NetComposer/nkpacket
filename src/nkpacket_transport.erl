@@ -29,7 +29,7 @@
 
 -compile({no_auto_import,[get/1]}).
 
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
 

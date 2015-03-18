@@ -23,7 +23,7 @@
 
 -compile([export_all]).
 -include_lib("eunit/include/eunit.hrl").
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
 http_test_() ->

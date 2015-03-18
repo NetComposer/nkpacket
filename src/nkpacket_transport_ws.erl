@@ -40,7 +40,7 @@
 -export([websocket_handle/3, websocket_info/3, terminate/3]).
 -export([cowboy_init/3]).
 
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
 

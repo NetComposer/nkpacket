@@ -24,7 +24,7 @@
 
 -export([is_max/1, raw_send/2, raw_stop/1]).
 
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
 -include("nkpacket.hrl").
 

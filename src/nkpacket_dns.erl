@@ -30,7 +30,7 @@
 
 -define(CHECK_INTERVAL, 60).     % secs
 
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
 

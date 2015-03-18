@@ -31,7 +31,7 @@
 -export_type([listener_opts/0, connect_opts/0, send_opts/0, raw_msg/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
 
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
 

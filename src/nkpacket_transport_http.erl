@@ -28,7 +28,7 @@
 -export([parse_paths/1, check_paths/2]).
 -export([cowboy_init/3, resume/5]).
 
--include("../../nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
 
