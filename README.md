@@ -6,5 +6,5 @@ It order to use NkPACKET, you must supply a _protocol_, as a callback module bas
 
 NkPACKET also includes a buit-in implementation of a flexible http server, using Cowboy as backend.
 
-More documentation will be available soon.
+More documentation will be available soon. Meanwhile, use the included tests as examples of use.
 
