@@ -209,6 +209,7 @@ handle_call(get_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
 
 handle_call(Msg, From, State) ->
     case call_protocol(listen_handle_call, [Msg, From], State) of
+        undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
@@ -227,6 +228,7 @@ handle_cast(stop, State) ->
 
 handle_cast(Msg, State) ->
     case call_protocol(listen_handle_cast, [Msg], State) of
+        undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
@@ -287,6 +289,7 @@ handle_info({'EXIT', Pid, _Status}=Msg, #state{pending_conns=Conns}=State) ->
             {noreply, State#state{pending_conns=Conns--[Pid]}};
         false ->
             case call_protocol(listen_handle_info, [Msg], State) of
+                undefined -> {noreply, State};
                 {ok, State1} -> {noreply, State1};
                 {stop, Reason, State1} -> {stop, Reason, State1}
             end
@@ -294,6 +297,7 @@ handle_info({'EXIT', Pid, _Status}=Msg, #state{pending_conns=Conns}=State) ->
 
 handle_info(Msg, State) ->
     case call_protocol(listen_handle_info, [Msg], State) of
+        undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.

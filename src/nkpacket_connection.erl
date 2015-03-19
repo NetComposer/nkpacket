@@ -286,6 +286,9 @@ ranch_init(NkPort, Ref) ->
 
 handle_call({unparse, Msg}, From, State) ->
     case call_protocol(conn_unparse, [Msg], State) of
+        undefined ->
+            gen_server:reply(From, {error, undefined_protocol}),
+            do_noreply(State);
         {ok, IoList, State1} -> 
             gen_server:reply(From, {ok, IoList}),
             do_noreply(State1);
@@ -306,6 +309,7 @@ handle_call(get_nkport, From, #state{nkport=NkPort}=State) ->
 
 handle_call(Msg, From, State) ->
     case call_protocol(conn_handle_call, [Msg, From], State) of
+        undefined -> do_noreply(State);
         {ok, State1} -> do_noreply(State1);
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
@@ -337,6 +341,7 @@ handle_cast(stop_bridge, #state{bridge_monitor=Mon}=State) ->
 
 handle_cast(Msg, State) ->
     case call_protocol(conn_handle_cast, [Msg], State) of
+        undefined -> do_noreply(State);
         {ok, State1} -> do_noreply(State1);
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
@@ -356,6 +361,8 @@ handle_info({ssl, Socket, Data}, #state{socket=Socket}=State) ->
 
 handle_info({tcp_closed, _Socket}, State) ->
     case call_protocol(conn_parse, [close], State) of
+        undefined -> 
+            {stop, normal, State};
         {ok, State1} ->
             {stop, normal, State1};
         {stop, Reason, State1} ->
@@ -394,6 +401,7 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{srv_monitor=MRef}=Sta
 
 handle_info(Msg, State) ->
     case call_protocol(conn_handle_info, [Msg], State) of
+        undefined -> do_noreply(State);
         {ok, State1} -> do_noreply(State1);
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
@@ -486,6 +494,8 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
             #nkport{local_ip=ToIp, local_port=ToPort} = To
     end,
     case call_protocol(conn_bridge, [Data, Type, To, From], State) of
+        undefined ->
+            {ok, State};
         {ok, State1} ->
             {ok, State1};
         {ok, Data1, State1} ->
@@ -503,8 +513,11 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
             {stop, Reason, State1}
     end;
 
-do_parse(Data, State) ->
+do_parse(Data, #state{nkport=#nkport{domain=Domain}}=State) ->
     case call_protocol(conn_parse, [Data], State) of
+        undefined ->
+            ?warning(Domain, "Received data for undefined protocol", []),
+            {ok, State};
         {ok, State1} ->
             {ok, State1};
         {bridge, Bridge, State1} ->

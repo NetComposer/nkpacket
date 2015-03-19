@@ -120,7 +120,7 @@ find_real_ip([_|R], Type) ->
 
 %% @private
 -spec call_protocol(atom(), list(), tuple(), integer()) ->
-    {ok, tuple()} | {atom(), term(), tuple()}.
+    {ok, tuple()} | {atom(), term(), tuple()} | undefined.
 
 call_protocol(Fun, Args, State, Pos) ->
     Protocol = element(Pos, State),
@@ -133,9 +133,9 @@ call_protocol(Fun, Args, State, Pos) ->
                    Fun==conn_handle_info; Fun==listen_handle_call; 
                    Fun==listen_handle_cast; Fun==listen_handle_info ->
             lager:error("Module ~p received unexpected ~p: ~p", [?MODULE, Fun, Args]),
-            {ok, State};
+            undefined;
         false ->
-            {ok, State};
+            undefined;
         true ->
             case apply(Protocol, Fun, Args++[ProtoState]) of
                 ok ->

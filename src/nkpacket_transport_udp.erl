@@ -249,6 +249,7 @@ handle_call(get_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
 
 handle_call(Msg, From, State) ->
     case call_protocol(listen_handle_call, [Msg, From], State) of
+        undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
@@ -264,6 +265,7 @@ handle_cast({send_stun, Ip, Port, Pid}, #state{nkport=NkPort}=State) ->
 
 handle_cast(Msg, State) ->
     case call_protocol(listen_handle_cast, [Msg], State) of
+        undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
@@ -322,6 +324,7 @@ handle_info(killme, _State) ->
 
 handle_info(Msg, State) ->
     case call_protocol(listen_handle_info, [Msg], State) of
+        undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
@@ -451,8 +454,11 @@ do_stun_response(TransId, Attrs, State) ->
 
 %% @private 
 read_packets(Ip, Port, Packet, #state{no_connections=true}=State, N) ->
-    #state{socket = Socket} = State,
+    #state{nkport=#nkport{domain=Domain}, socket=Socket} = State,
     case call_protocol(listen_parse, [Ip, Port, Packet], State) of
+        undefined -> 
+            ?warning(Domain, "Received data for uknown protocol", []),
+            {ok, State};
         {ok, State1} ->
             case N>0 andalso gen_udp:recv(Socket, 0, 0) of
                 {ok, {Ip1, Port1, Packet1}} -> 
