@@ -27,8 +27,8 @@
          handle_info/2]).
 -export([start_link/4, execute/2]).
 
+-include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
--include("../deps/nklib/include/nklib.hrl").
 
 
 %% ===================================================================

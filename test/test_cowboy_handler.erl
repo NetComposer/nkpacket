@@ -26,7 +26,8 @@
 -export([init/2, terminate/3]).
 
 -include("nkpacket.hrl").
--include("../deps/nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
+
 
 init(Req, [#{test:={Pid, Ref}}]=Opts) ->
 	Pid ! {Ref, http_init, self()},

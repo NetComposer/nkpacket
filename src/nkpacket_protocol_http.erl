@@ -27,7 +27,7 @@
 -export([http_init/3]).
 
 -include("nkpacket.hrl").
--include("../deps/nklib/include/nklib.hrl").
+-include_lib("nklib/include/nklib.hrl").
 
 
 %% ===================================================================
