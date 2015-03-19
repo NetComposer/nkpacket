@@ -104,7 +104,7 @@ conn_parse(_Msg, ConnState) ->
 
 %% @doc This function is called when a new message must be send to the connection
 -spec conn_unparse(term(), conn_state()) ->
-	{ok, nkpacket:raw_msg()} | {error, term(), conn_state()} |
+	{ok, nkpacket:raw_msg(), conn_state()} | {error, term(), conn_state()} |
 	{stop, Reason::term()}.
 
 conn_unparse(_Term, ConnState) ->
