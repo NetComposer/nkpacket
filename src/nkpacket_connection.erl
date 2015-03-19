@@ -247,15 +247,8 @@ init([NkPort]) ->
         _ ->
             undefined
     end,
-    {Protocol1, ProtoState1} = case Protocol of
-        undefined ->
-            {undefined, undefined};
-        _ ->
-            case catch Protocol:conn_init(NkPort1) of
-                {'EXIT', _} -> {undefined, undefined};
-                ProtoState -> {Protocol, ProtoState}
-            end
-    end,
+    {Protocol1, ProtoState1} = 
+        nkpacket_util:init_protocol(Protocol, conn_init, NkPort1),
     State = #state{
         transp = Transp,
         nkport = NkPort1, 
@@ -270,6 +263,7 @@ init([NkPort]) ->
         proto_state = ProtoState1
     },
     {ok, State, Timeout}.
+
 
 
 %% @private

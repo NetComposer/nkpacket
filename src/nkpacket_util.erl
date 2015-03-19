@@ -23,8 +23,9 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
--export([call_protocol/4]).
+-export([init_protocol/3, call_protocol/4]).
 
+-include_lib("nklib/include/nklib.hrl").
 
 %% ===================================================================
 %% Public
@@ -117,6 +118,21 @@ find_real_ip([_|R], Type) ->
     find_real_ip(R, Type).
 
 
+%% @private
+-spec init_protocol(nkpacket:protocol(), atom(), term()) ->
+    {nkpacket:protocol()|undefined, term()}.
+
+init_protocol(Protocol, Fun, Arg) ->
+    case 
+        Protocol/=undefined andalso 
+        erlang:function_exported(Protocol, Fun, 1) 
+    of
+        false -> 
+            {undefined, undefined};
+        true -> 
+            {Protocol, Protocol:Fun(Arg)}
+    end.
+
 
 %% @private
 -spec call_protocol(atom(), list(), tuple(), integer()) ->
@@ -125,10 +141,11 @@ find_real_ip([_|R], Type) ->
 call_protocol(Fun, Args, State, Pos) ->
     Protocol = element(Pos, State),
     ProtoState = element(Pos+1, State),
-    case 
+    case         
         Protocol/=undefined andalso 
         erlang:function_exported(Protocol, Fun, length(Args)+1) 
     of
+
         false when Fun==conn_handle_call; Fun==conn_handle_cast; 
                    Fun==conn_handle_info; Fun==listen_handle_call; 
                    Fun==listen_handle_cast; Fun==listen_handle_info ->

@@ -176,15 +176,8 @@ init([NkPort]) ->
             link(RanchPid),
             nklib_proc:put(nkpacket_transports, NkPort1),
             nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
-            {Protocol1, ProtoState1} = case Protocol of
-                undefined ->
-                    {undefined, undefined};
-                _ ->
-                    case catch Protocol:listen_init(NkPort1) of
-                        {'EXIT', _} -> {undefined, undefined};
-                        ProtoState -> {Protocol, ProtoState}
-                    end
-            end,
+            {Protocol1, ProtoState1} = 
+                nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             State = #state{
                 nkport = NkPort1,
                 ranch_id = RanchId,
