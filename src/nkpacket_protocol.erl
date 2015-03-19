@@ -94,7 +94,7 @@ conn_init(_) ->
 
 
 %% @doc This function is called when a new message arrives to the connection
--spec conn_parse(term()|closed, conn_state()) ->
+-spec conn_parse(term()|close, conn_state()) ->
 	{ok, conn_state()} | {bridge, nkpacket:nkport()} | 
 	{stop, Reason::term(), conn_state()}.
 
