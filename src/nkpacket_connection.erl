@@ -199,6 +199,7 @@ stop_all() ->
     socket :: nkpacket_transport:socket(),
     listen_monitor :: reference(),
     srv_monitor :: reference(),
+    user_monitor :: reference(),
     bridge :: nkpacket:nkport(),
     bridge_type :: up | down,
     bridge_monitor :: reference(),
@@ -241,6 +242,10 @@ init([NkPort]) ->
         true -> erlang:monitor(process, Socket);
         _ -> undefined
     end,
+    UserMonitor = case Meta of
+        #{link:=UserPid} -> erlang:monitor(process, UserPid);
+        _ -> undefined
+    end,
     WsState = case Meta of
         #{ws_exts:=WsExtensions} ->
             nkpacket_connection_ws:init(WsExtensions);
@@ -255,6 +260,7 @@ init([NkPort]) ->
         socket = Socket, 
         listen_monitor = ListenMonitor,
         srv_monitor = SrvMonitor,
+        user_monitor = UserMonitor,
         bridge = undefined,
         bridge_monitor = undefined,
         ws_state = WsState,
@@ -391,6 +397,11 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{listen_monitor=MRef}=
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{srv_monitor=MRef}=State) ->
     #state{nkport=#nkport{domain=Domain}} = State,
     ?debug(Domain, "Connection stop (server stop)", []),
+    {stop, normal, State};
+
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_monitor=MRef}=State) ->
+    #state{nkport=#nkport{domain=Domain}} = State,
+    ?debug(Domain, "Connection stop (user stop)", []),
     {stop, normal, State};
 
 handle_info(Msg, State) ->

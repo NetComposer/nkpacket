@@ -57,6 +57,7 @@
     #{
         % Common options
         supervisor => atom() | pid(),           % Supervisor to use
+        link => atom() | pid(),                 % Connection will monitor this
         idle_timeout => integer(),              % Idle connection timeout (180.000)
         
         % UDP options
