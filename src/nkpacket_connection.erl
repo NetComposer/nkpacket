@@ -41,7 +41,7 @@
 
 
 %% @doc Sends a new message to a started connection
--spec send(nkpacket:nkport(), nkpacket:raw_msg()) ->
+-spec send(nkpacket:nkport()|pid(), nkpacket:raw_msg()) ->
     ok | {error, term()}.
 
 send(#nkport{pid=ConnPid}=NkPort, RawMsg) ->
@@ -50,6 +50,12 @@ send(#nkport{pid=ConnPid}=NkPort, RawMsg) ->
             reset_timeout(ConnPid);
         {error, Error} ->
             {error, Error}
+    end;
+
+send(Pid, RawMsg) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, {send, RawMsg}, infinity) of
+        {'EXIT', _} -> {error, no_process};
+        Other -> Other
     end.
 
 
@@ -299,6 +305,11 @@ handle_call({set_timeout, MSecs}, From, State) ->
 
 handle_call(get_nkport, From, #state{nkport=NkPort}=State) ->
     gen_server:reply(From, {ok, NkPort}),
+    do_noreply(State);
+
+handle_call({send, RawMsg}, From, #state{nkport=NkPort}=State) ->
+    Reply = nkpacket_connection_lib:raw_send(NkPort, RawMsg),
+    gen_server:reply(From, Reply),
     do_noreply(State);
 
 handle_call(Msg, From, State) ->
