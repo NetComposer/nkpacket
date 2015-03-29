@@ -95,9 +95,10 @@
 -type connect_opts() ::
     #{
         % Common options
-        connect_timeout => integer(),       % msecs, default 30.000
         supervisor => atom() | pid(),       % Supervisor to use
+        link => atom() | pid(),                 % Connection will monitor this
         idle_timeout => integer(),          % msecs, default 180.000
+        connect_timeout => integer(),       % msecs, default 30.000
         
         listen_ip => inet:ip_address(),     % Used to populate nkport, instead of
         listen_port => inet:port_number(),  % finding suitable listening transport

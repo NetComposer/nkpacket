@@ -124,7 +124,8 @@ start_link(NkPort) ->
     ranch_id :: term(),
     ranch_pid :: pid(),
     protocol :: nkpacket:protocol(),
-    proto_state :: term()
+    proto_state :: term(),
+    user_ref :: reference()
 }).
 
 
@@ -178,12 +179,17 @@ init([NkPort]) ->
             nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
             {Protocol1, ProtoState1} = 
                 nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
+            UserRef = case Meta of
+                #{link:=UserPid} -> erlang:monitor(process, UserPid);
+                _ -> undefined
+            end,
             State = #state{
                 nkport = NkPort1,
                 ranch_id = RanchId,
                 ranch_pid = RanchPid,
                 protocol = Protocol1,
-                proto_state = ProtoState1
+                proto_state = ProtoState1,
+                user_ref = UserRef
             },
             {ok, State};
         {error, Error} ->
@@ -226,6 +232,9 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) ->
     nklib_util:gen_server_info(#state{}).
+
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_ref=MRef}=State) ->
+    {stop, normal, State};
 
 handle_info({'EXIT', Pid, Reason}, #state{ranch_pid=Pid}=State) ->
     {stop, {ranch_failed, Reason}, State};

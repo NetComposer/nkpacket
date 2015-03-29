@@ -142,7 +142,8 @@ get_port(Pid) ->
     nkport :: nkpacket:nkport(),
     protocol :: nkpacket:protocol(),
     proto_state :: term(),
-    shared :: pid()
+    shared :: pid(),
+    user_ref :: reference()
 }).
 
 
@@ -201,11 +202,16 @@ init([NkPort]) ->
         nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
         {Protocol1, ProtoState1} = 
             nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
+        UserRef = case Meta of
+            #{link:=UserPid} -> erlang:monitor(process, UserPid);
+            _ -> undefined
+        end,
         State = #state{
             nkport = NkPort1,
             protocol = Protocol1,
             proto_state = ProtoState1,
-            shared = SharedPid
+            shared = SharedPid,
+            user_ref = UserRef
         },
         {ok, State}
     catch
@@ -249,6 +255,9 @@ handle_cast(Msg, State) ->
 %% @private
 -spec handle_info(term(), #state{}) ->
     nklib_util:gen_server_info(#state{}).
+
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_ref=MRef}=State) ->
+    {stop, normal, State};
 
 handle_info({'DOWN', _MRef, process, Pid, Reason}, #state{shared=Pid}=State) ->
     % lager:warning("WS received SHARED stop"),

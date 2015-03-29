@@ -113,7 +113,8 @@ start_link(NkPort) ->
     pending_froms1 :: [{{inet:ip_address(), inet:port_number()}, {pid(), term()}, map()}],
     pending_conns :: [pid()],
     protocol :: nkpacket:protocol(),
-    proto_state :: term()
+    proto_state :: term(),
+    user_ref :: reference()
 }).
 
 
@@ -154,13 +155,18 @@ init([NkPort]) ->
             nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
             {Protocol1, ProtoState1} = 
                 nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
+            UserRef = case Meta of
+                #{link:=UserPid} -> erlang:monitor(process, UserPid);
+                _ -> undefined
+            end,
             State = #state{ 
                 nkport = NkPort1, 
                 socket = Socket,
                 pending_froms1 = [],
                 pending_conns = [],
                 protocol = Protocol1,
-                proto_state = ProtoState1
+                proto_state = ProtoState1,
+                user_ref = UserRef
             },
             {ok, State};
         {error, Error} ->
@@ -275,6 +281,9 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
     end,
     ok = inet:setopts(Socket, [{active, once}]),
     {noreply, State1};
+
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_ref=MRef}=State) ->
+    {stop, normal, State};
 
 handle_info({'EXIT', Pid, _Status}=Msg, #state{pending_conns=Conns}=State) ->
     case lists:member(Pid, Conns) of

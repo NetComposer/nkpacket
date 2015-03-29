@@ -143,7 +143,8 @@ start_link(NkPort) ->
     stuns :: [#stun{}],
     timer_t1 :: integer(),
     protocol :: nkpacket:protocol(),
-    proto_state :: term()
+    proto_state :: term(),
+    user_ref :: reference()
 }).
 
 
@@ -202,6 +203,10 @@ init([NkPort]) ->
         nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
         {Protocol1, ProtoState1} = 
             nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
+        UserRef = case Meta of
+            #{link:=UserPid} -> erlang:monitor(process, UserPid);
+            _ -> undefined
+        end,
         State = #state{
             nkport = NkPort1, 
             socket = Socket,
@@ -211,7 +216,8 @@ init([NkPort]) ->
             stuns = [],
             timer_t1 = maps:get(udp_stun_t1, Meta, 500),
             protocol = Protocol1,
-            proto_state = ProtoState1
+            proto_state = ProtoState1,
+            user_ref = UserRef
         },
         {ok, State}
     catch
@@ -305,6 +311,9 @@ handle_info({timeout, Ref, stun_retrans}, #state{stuns=Stuns}=State) ->
     {value, Stun1, Stuns1} = lists:keytake(Ref, #stun.retrans_timer, Stuns),
     {noreply, do_stun_retrans(Stun1, State#state{stuns=Stuns1})};
    
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_ref=MRef}=State) ->
+    {stop, normal, State};
+
 handle_info({'EXIT', Pid, _Error}, #state{tcp_pid=Pid}=State) ->
     {stop, {error, tcp_error}, State};
 
