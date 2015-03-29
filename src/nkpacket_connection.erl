@@ -443,7 +443,9 @@ terminate(Reason, State) ->
     catch call_protocol(conn_stop, [Reason], State),
     ?debug(Domain, "Connection ~p process stopped (~p, ~p)", 
            [Transp, Reason, self()]),
-    nkpacket_connection_lib:raw_stop(NkPort).
+    % Sometimes ssl sockets are slow to close here
+    spawn(fun() -> nkpacket_connection_lib:raw_stop(NkPort) end).
+
 
 
 
