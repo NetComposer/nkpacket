@@ -41,7 +41,7 @@
 %% ===================================================================
 
 %% Internal name of each started Domain
--type domain() :: nklib:domain_id().
+-type domain() :: term().
 
 %% Recognized transport schemes
 -type transport() :: udp | tcp | tls | sctp | ws | wss | http | https.
