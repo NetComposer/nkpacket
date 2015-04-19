@@ -2,7 +2,7 @@
 
 NkPACKET is a generic  transport layer for Erlang. 
 
-It can be used to develop high perfomance, low lattency network servers, clients and proxies. 
+It can be used to develop high perfomance, low latency network servers, clients and proxies. 
 
 ### Features:
 * Support for UDP, TCP/TLS, SCTP and WS/WSS.
