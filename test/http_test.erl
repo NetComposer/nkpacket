@@ -29,7 +29,7 @@
 http_test_() ->
   	{setup, spawn, 
     	fun() -> 
-    		nkpacket_app:start(),
+    		ok = nkpacket_app:start(),
     		?debugMsg("Starting HTTP test")
 		end,
 		fun(_) -> 
@@ -45,15 +45,16 @@ http_test_() ->
 
 
 basic() ->
+	Port = test_util:get_port(tcp),
 	{Ref1, M1, Ref2, M2, Ref3, M3} = test_util:reset_3(),
- 	Url1 = "<http://all:56789/test1>",
+ 	Url1 = "<http://all:"++integer_to_list(Port)++"/test1>",
 	Dispatch1 = cowboy_router:compile([
 		{'_', [
 			{"/test1", test_cowboy_handler, [M1]}
 		]}
 	]),
 	{ok, Http1} = nkpacket:start_listener(dom1, Url1, M1#{cowboy_dispatch=>Dispatch1}),
- 	Url2 = "<http://all:56789/test2>",
+ 	Url2 = "<http://all:"++integer_to_list(Port)++"/test2>",
 	Dispatch2 = cowboy_router:compile([
 		{'_', [
 			{"/test2", test_cowboy_handler, [M2]}
@@ -65,7 +66,7 @@ basic() ->
 			{"/test3", test_cowboy_handler, [M3]}
 		]}
 	]),
- 	Url3 = "<http://all:56789>",
+ 	Url3 = "<http://all:"++integer_to_list(Port)++">",
 	{ok, Http3} = nkpacket:start_listener(dom3, Url3, M3#{
 		host => "localhost",
 		path => "/test3, /test3b/test3bb",
@@ -76,42 +77,35 @@ basic() ->
 	[
 		#nkport{
 			domain = dom1,transp = http,
-			local_ip = {0,0,0,0}, local_port = 56789,
-			listen_ip = {0,0,0,0}, listen_port = 56789,
+			local_ip = {0,0,0,0}, local_port = Port,
+			listen_ip = {0,0,0,0}, listen_port = Port,
 			protocol = nkpacket_protocol_http, pid=Http1, socket = CowPid,
-			meta = #{
-				cowboy_dispatch := _,
-				path := <<"/test1">>
-			}
+			meta = #{path := <<"/test1">>}
 		}
 	] = nkpacket:get_all(dom1),
 	[
 	 	#nkport{
  			domain = dom2,transp = http,
-			local_ip = {0,0,0,0}, local_port = 56789,
-			listen_ip = {0,0,0,0}, listen_port = 56789,
+			local_ip = {0,0,0,0}, local_port = Port,
+			listen_ip = {0,0,0,0}, listen_port = Port,
 			pid = Http2, socket = CowPid,
-			meta = #{
-				cowboy_dispatch := _,
-				path := <<"/test2">>
-			}
+			meta = #{path := <<"/test2">>}
 		}
 	] = nkpacket:get_all(dom2),
 	[
 		#nkport{
 			domain = dom3,transp = http,
-			local_ip = {0,0,0,0}, local_port = 56789,
-			listen_ip = {0,0,0,0}, listen_port = 56789,
+			local_ip = {0,0,0,0}, local_port = Port,
+			listen_ip = {0,0,0,0}, listen_port = Port,
 			pid = Http3, socket = CowPid,
 			meta = #{
-				cowboy_opts :=[{env,[{dispatch, _}]}],
 				host := <<"localhost">>,
 				path := <<"/test3, /test3b/test3bb">>
 			}
 		}
 	] = nkpacket:get_all(dom3),
 
-	{ok, Gun} = gun:open("127.0.0.1", 56789, [{type, tcp}, {retry, 0}]),
+	{ok, Gun} = gun:open("127.0.0.1", Port, #{transport=>tcp, retry=>0}),
 	{ok, 404, H1} = get(Gun, "/", []),
 	<<"NkPACKET">> = nklib_util:get_value(<<"server">>, H1),
 
@@ -138,7 +132,7 @@ basic() ->
 	% connection
 	ok = nkpacket:stop_listener(Http3),
 	timer:sleep(100),
-	{ok, Gun2} = gun:open("127.0.0.1", 56789, [{type, tcp}, {retry, 0}]),
+	{ok, Gun2} = gun:open("127.0.0.1", Port, #{transport=>tcp, retry=>0}),
 	{ok, 404, H4} = get(Gun2, "/test3b/test3bb", [{<<"host">>, <<"localhost">>}]),
 	<<"NkPACKET">> = nklib_util:get_value(<<"server">>, H4),
 
@@ -148,15 +142,16 @@ basic() ->
 
 
 https() ->
+	Port = test_util:get_port(tcp),
 	{Ref1, M1} = test_util:reset_1(),
- 	Url1 = "<https://all:56789>",
+ 	Url1 = "<https://all:"++integer_to_list(Port)++">",
 	Dispatch1 = cowboy_router:compile([
 		{'_', [
 			{"/test1", test_cowboy_handler, [M1]}
 		]}
 	]),
 	{ok, Http1} = nkpacket:start_listener(dom1, Url1, M1#{cowboy_dispatch=>Dispatch1}),
-	{ok, Gun} = gun:open("127.0.0.1", 56789, [{type, ssl}, {retry, 0}]),
+	{ok, Gun} = gun:open("127.0.0.1", Port, #{transport=>ssl, retry=>0}),
 	{ok, 200, _, <<"Hello World!">>} = get(Gun, "/test1", []),
 	P = receive {Ref1, http_init, P1} -> P1 after 1000 -> error(?LINE) end,
 	P = receive {Ref1, http_terminate, P2} -> P2 after 1000 -> error(?LINE) end,

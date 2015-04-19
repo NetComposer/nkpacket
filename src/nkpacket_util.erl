@@ -22,14 +22,24 @@
 -module(nkpacket_util).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
+-export([log_level/1, get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([init_protocol/3, call_protocol/4]).
+-export([parse_opts/1]).
 
 -include_lib("nklib/include/nklib.hrl").
+
 
 %% ===================================================================
 %% Public
 %% =================================================================
+
+
+%% @doc Changes log level for console
+-spec log_level(debug|info|notice|warning|error) ->
+    ok.
+
+log_level(Level) -> 
+    lager:set_loglevel(lager_console_backend, Level).
 
 
 %% @doc Get all local network ips.
@@ -165,35 +175,160 @@ call_protocol(Fun, Args, State, Pos) ->
     end.
 
 
+%% ===================================================================
+%% Options Parser
+%% =================================================================
+
+%% @private
+-spec parse_opts(map()|list()) ->
+    {ok, map()} | {error, term()}.
+
+parse_opts(Map) when is_map(Map) ->
+    parse_opts(maps:to_list(Map), #{});
+
+parse_opts(List) when is_list(List) ->
+    parse_opts(List, #{}).
 
 
-% %% @doc Splits a `string()' or `binary()' into a list of tokens
-% -spec tokens(string() | binary()) ->
-%     [string()] | error.
+%% @private
+parse_opts([], Acc) -> 
+    {ok, Acc};
 
-% tokens(Bin) when is_binary(Bin) ->
-%     tokens(binary_to_list(Bin));
+parse_opts([{Key, Val}|Rest], Acc) -> 
+    Key1 = if
+        is_atom(Key) -> 
+            Key;
+        is_list(Key) ->
+            case catch list_to_existing_atom(Key) of
+                Atom when is_atom(Atom) -> Atom;
+                _ -> Key
+            end;
+        is_binary(Key) ->
+            case catch binary_to_existing_atom(Key, latin1) of
+                Atom when is_atom(Atom) -> Atom;
+                _ -> Key
+            end;
+        true ->
+            error
+    end,
+    Res = case Key1 of
+        transport ->
+            ignore;
+        error ->
+            error;
 
-% tokens(List) when is_list(List) ->
-%     tokens(List, [], []);
+        user ->
+            {ok, Val};
+        supervisor ->
+            parse_pid(Val);
+        monitor ->
+            parse_pid(Val);
+        idle_timeout ->
+            parse_integer(Val);
+        udp_starts_tcp ->
+            parse_boolean(Val);
+        udp_no_connections ->
+            parse_boolean(Val);
+        udp_stun_reply ->
+            parse_boolean(Val);
+        udp_stun_t1 ->
+            parse_integer(Val);
+        sctp_out_streams ->
+            parse_integer(Val);
+        sctp_in_streams ->
+            parse_integer(Val);
+        certfile ->
+            {ok, nklib_util:to_list(Val)};
+        keyfile ->
+            {ok, nklib_util:to_list(Val)};
+        tcp_packet ->
+            case nklib_util:to_integer(Val) of
+                Int when Int==1; Int==2; Int==4 -> 
+                    {ok, Int};
+                _ -> 
+                    case nklib_util:to_lower(Val) of 
+                        <<"raw">> -> {ok, raw}; 
+                        _-> error 
+                    end
+            end;        
+        tcp_max_connections ->
+            parse_integer(Val);
+        tcp_listeners ->
+            parse_integer(Val);
+        host ->
+            parse_text(Val);
+        path ->
+            parse_text(Val);
+        cowboy_opts ->
+            parse_list(Val);
+        ws_proto ->
+            {ok, nklib_util:to_lower(Val)};
+        cowboy_dispatch ->
+            parse_list(Val);
+        connect_timeout ->
+            parse_integer(Val);
+        listen_ip ->
+            case nklib_util:to_ip(Val) of
+                {ok, Ip} -> {ok, Ip};
+                _ -> error
+            end;
+        listen_port ->
+            parse_integer(Val);
+        force_new ->
+            parse_boolean(Val);
+        udp_to_tcp ->
+            parse_boolean(Val);
+        _ ->
+            error
+    end,
+    case Res of
+        {ok, Val1} -> 
+            parse_opts(Rest, maps:put(Key1, Val1, Acc));
+        ignore ->
+            parse_opts(Rest, Acc);
+        error ->
+            {error, {invalid_option, Key}}
+    end;
 
-% tokens(_) ->
-%     error.
+parse_opts([Term|Rest], Acc) -> 
+    parse_opts([{Term, true}|Rest], Acc).
 
 
-% tokens([], [], Tokens) ->
-%     lists:reverse(Tokens);
+%% @private
+parse_pid(Value) when is_atom(Value); is_pid(Value) -> 
+    {ok, Value};
+parse_pid(_) ->
+    error.
 
-% tokens([], Chs, Tokens) ->
-%     lists:reverse([lists:reverse(Chs)|Tokens]);
 
-% tokens([Ch|Rest], Chs, Tokens) when Ch==32; Ch==9; Ch==13; Ch==10 ->
-%     case Chs of
-%         [] -> tokens(Rest, [], Tokens);
-%         _ -> tokens(Rest, [], [lists:reverse(Chs)|Tokens])
-%     end;
+%% @private
+parse_integer(Value) ->
+    case nklib_util:to_integer(Value) of
+        Int when is_integer(Int), Int >= 0 -> {ok, Int};
+        _ -> error
+    end.
 
-% tokens([Ch|Rest], Chs, Tokens) ->
-%     tokens(Rest, [Ch|Chs], Tokens).
 
+%% @private
+parse_boolean(Value) ->
+    case nklib_util:to_boolean(Value) of
+        Bool when is_boolean(Bool) -> {ok, Bool};
+        _ -> error
+    end.
+
+
+%% @private
+parse_list(Value) when is_list(Value) -> 
+    {ok, Value};
+parse_list(_) ->
+    error.
+
+%% @private
+parse_text(Term) ->
+    case nklib_parse:unquote(Term) of
+        error -> error;
+        Bin -> {ok, Bin}
+    end.
+
+    
 

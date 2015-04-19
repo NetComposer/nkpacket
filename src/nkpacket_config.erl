@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([register_protocol/2, register_protocol/3, load_domain/2, loglevel/1]).
+-export([register_protocol/2, register_protocol/3, load_domain/2]).
 -export([get/1, get/2, get_domain/2, get_protocol/1, get_protocol/2]).
 -export([put/2, del/1, increment/2]).
 
@@ -85,27 +85,6 @@ load_domain(Domain, Opts) when is_list(Opts) ->
         {error, Error} ->
             {error, Error}
     end.
-
-
-%% @doc Changes log level for console
--spec loglevel(debug|info|notice|warning|error) ->
-    ok.
-
-loglevel(Level) -> 
-    lager:set_loglevel(lager_console_backend, Level),
-    Int = case Level of
-        debug -> 8;
-        info -> 7;
-        notice -> 6;
-        warning -> 5;
-        error -> 4;
-        critical -> 3;
-        alert -> 2;
-        emergency -> 1;
-        none -> 0
-    end,
-    put(log_level, Int).
-
 
 
 
@@ -195,11 +174,7 @@ increment(Key, Count) ->
 
 default_config() ->
     [
-        {global_max_connections, 1024},     % 
-        {local_data_path, "log"},           % To store UUID, compiled versions
-        {sync_call_time, 30000},            % Synchronous call timeout (30 secs)
-        {main_ip, nkpacket_util:find_main_ip(auto, ipv4)},
-        {main_ip6, nkpacket_util:find_main_ip(auto, ipv6)}
+        {global_max_connections, 1024}
     ].
 
 
@@ -209,17 +184,14 @@ default_config() ->
 
 domain_default_config() ->
     [
-        {dns_cache_ttl, 3600},                 % (secs) 1 hour
-        {log_level, notice},
-        {udp_timeout, 30000},                  % 30 secs
-        {tcp_timeout, 180000},                 % 3 min
-        {sctp_timeout, 180000},                % 3 min
-        {ws_timeout, 180000},                  % 3 min
-        {http_timeout, 180000},                % 3 min
-        {connect_timeout, 30000},                 % 30 secs
-        {max_connections, 1024},               % Per transport and Domain
-        {local_host, auto},         
-        {local_host6, auto}
+        {dns_cache_ttl, 30000},                 % msecs
+        {udp_timeout, 30000},                   % 
+        {tcp_timeout, 180000},                  % 
+        {sctp_timeout, 180000},                 % 
+        {ws_timeout, 180000},                   % 
+        {http_timeout, 180000},                 % 
+        {connect_timeout, 30000},               %
+        {max_connections, 1024}                 % Per transport and Domain
     ].
 
 
@@ -323,71 +295,41 @@ parse_config([], Opts) ->
 
 parse_config([Term|Rest], Opts) ->
     Op = case Term of
-        {sync_call_time, Secs} ->
-            case is_integer(Secs) andalso Secs>=1 of
-                true -> update;
-                false -> error
-            end;
-        {local_data_path, Dir} ->
-            case is_list(Dir) andalso filename:join(Dir, "write_test") of
-                false ->
-                    error;
-                Path ->
-                    case file:write_file(Path, <<"test">>) of
-                       ok ->
-                            case file:delete(Path) of
-                                ok -> update;
-                                _ -> error
-                            end;
-                        _ ->
-                            error
-                    end
-            end;
         {global_max_connections, Max} ->
             case is_integer(Max) andalso Max>=1 andalso Max=<1000000 of
                 true -> update;
                 false -> error
             end;
-        {main_ip, Ip} ->
-            case catch nklib_util:to_ip(Ip) of
-                {ok, Ip1} -> {update, Ip1};
-                _ -> error
-            end;
-        {main_ip6, Ip} ->
-            case catch nklib_util:to_ip(Ip) of
-                {ok, Ip1} -> {update, Ip1};
-                _ -> error
-            end;
         {included_applications, _} ->
             skip;
 
         % Domain specific options
-        {dns_cache_ttl, Secs} ->
-            case is_integer(Secs) andalso Secs>=0 of
+        {dns_cache_ttl, T} ->
+            case is_integer(T) andalso T>=0 of
                 true -> update;
                 false -> error
             end;
-        {udp_timeout, Secs} when is_integer(Secs), Secs>=1 -> 
+        {udp_timeout, T} when is_integer(T), T>=1 -> 
             update;
         {udp_timeout, _} -> 
             error;
-        {tcp_timeout, Secs} when is_integer(Secs), Secs>=1 -> 
+        {tcp_timeout, T} when is_integer(T), T>=1 -> 
             update;
         {tcp_timeout, _} -> 
             error;
-        {sctp_timeout, Secs} when is_integer(Secs), Secs>=1 -> 
+        {sctp_timeout, T} when is_integer(T), T>=1 -> 
             update;
         {sctp_timeout, _} -> 
             error;
-        {ws_timeout, Secs} when is_integer(Secs), Secs>=1 ->  
+        {ws_timeout, T} when is_integer(T), T>=1 ->  
             update;
         {ws_timeout, _} -> 
             error;
-        {http_timeout, Secs} when is_integer(Secs), Secs>=1 ->  
+        {http_timeout, T} when is_integer(T), T>=1 ->  
             update;
         {http_timeout, _} -> 
             error;
-        {connect_timeout, Secs} when is_integer(Secs), Secs>=1 ->  
+        {connect_timeout, T} when is_integer(T), T>=1 ->  
             update;
         {connect_timeout, _} -> 
             error;
@@ -413,29 +355,6 @@ parse_config([Term|Rest], Opts) ->
                 error -> 
                     {update, nklib_util:to_binary(Host)}
             end;
-        {log_level, debug} -> 
-            {update, 8};
-        {log_level, info} -> 
-            {update, 7};
-        {log_level, notice} -> 
-            {update, 6};
-        {log_level, warning} -> 
-            {update, 5};
-        {log_level, error} -> 
-            {update, 4};
-        {log_level, critical} -> 
-            {update, 3};
-        {log_level, alert} -> 
-            {update, 2};
-        {log_level, emergency} -> 
-            {update, 1};
-        {log_level, none} -> 
-            {update, 0};
-        {log_level, Level} when Level>=0, Level=<8 -> 
-            {update, Level};
-        {log_level, _} -> 
-            error;
-
         _ ->
             lager:warning("Ignoring config option ~p", [Term]),
             skip

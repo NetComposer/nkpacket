@@ -23,13 +23,13 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([send/2, stop/2, unparse/2, start/1]).
--export([set_timeout/2, get_nkport/1, reset_timeout/1]).
+-export([send/2, stop/1, stop/2, unparse/2, start/1]).
+-export([reset_timeout/2, get_timeout/1]).
 -export([incoming/2, get_all/0, get_all/1, stop_all/0]).
+-export([connect/1, conn_init/1]).
 -export([ranch_start_link/2, ranch_init/2]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3,   
             handle_cast/2, handle_info/2]).
-
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -40,113 +40,134 @@
 %% ===================================================================
 
 
-%% @doc Sends a new message to a started connection
--spec send(nkpacket:nkport()|pid(), nkpacket:raw_msg()) ->
-    ok | {error, term()}.
-
-send(#nkport{pid=ConnPid}=NkPort, RawMsg) ->
-    case nkpacket_connection_lib:raw_send(NkPort, RawMsg) of
-        ok -> 
-            reset_timeout(ConnPid);
-        {error, Error} ->
-            {error, Error}
-    end;
-
-send(Pid, RawMsg) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, {send, RawMsg}, infinity) of
-        {'EXIT', _} -> {error, no_process};
-        Other -> Other
-    end.
-
-
-%% @doc Performs an unparse using connection context
--spec unparse(nkpacket:nkport(), term()) ->
-    {ok, nkpacket:raw_msg()} | {error, term()}. 
-
-unparse(#nkport{pid=ConnPid}, Term) ->
-    case catch gen_server:call(ConnPid, {unparse, Term}, infinity) of
-        {ok, RawMsg} -> {ok, RawMsg};
-        {error, Error} -> {error, Error};
-        {'EXIT', Error} -> {error, Error}
-    end.
-
-
-%% @doc Notifies to the connection that some data has been sent or received
--spec reset_timeout(pid()) ->
-    ok.
-
-reset_timeout(ConnPid) ->
-    gen_server:cast(ConnPid, reset_timeout).
-
-
-%% @doc Stops a started connection
--spec stop(#nkport{}|pid(), term()) ->
-    ok.
-
-stop(#nkport{pid=Pid}, Reason) ->
-    stop(Pid, Reason);
-
-stop(Pid, Reason) when is_pid(Pid) ->
-    gen_server:cast(Pid, {stop, Reason}).
-
-
-
-%% @doc Updates timeout on no incoming packet
--spec set_timeout(pid(), pos_integer()) ->
-    ok | error.
-
-set_timeout(Pid, Secs) ->
-    case catch gen_server:call(Pid, {set_timeout, Secs}) of
-        ok -> ok;
-        _ -> error
-    end.
-
-
-%% @private Gets the transport record (and extends the timeout)
--spec get_nkport(pid()) ->
-    {ok, nkpacket:nkport()} | error.
-
-get_nkport(Pid) ->
-    case is_process_alive(Pid) of
-        true ->
-            case catch gen_server:call(Pid, get_nkport) of
-                {ok, NkPort} -> {ok, NkPort};
-                _ -> error
-            end;
-        false ->
-            error 
-    end.
-
-
-%% @private 
--spec incoming(pid(), term()) ->
-    ok.
-
-incoming(Pid, Msg) ->
-    gen_server:cast(Pid, {incoming, Msg}).
-
-
 %% @doc Starts a new transport process
 -spec start(nkpacket:nkport()) ->
     {ok, pid()} | {error, term()}.
 
-start(NkPort) ->
+start(#nkport{domain=Domain}=NkPort) ->
+    case nkpacket_connection_lib:is_max(Domain) of
+        false -> 
+            Spec = get_connection(NkPort),
+            nkpacket_sup:add_transport(Spec);
+        true -> 
+            {error, max_connections}
+    end.
+
+
+%% @doc Starts a new transport process
+-spec get_connection(nkpacket:nkport()) ->
+    supervisor:child_spec().
+
+get_connection(NkPort) ->
     #nkport{
         domain = Domain, 
         transp = Transp, 
         remote_ip = Ip, 
-        remote_port= Port, 
-        meta=Meta
+        remote_port= Port
     } = NkPort,
-    Spec = {
+    {
         {Domain, Transp, Ip, Port, make_ref()},
         {nkpacket_connection, start_link, [NkPort]},
         temporary,
         5000,
         worker,
         [?MODULE]
-    },
-    nkpacket_sup:add_transport(Spec, Meta).
+    }.
+
+
+%% @doc Starts a new outbound connection
+-spec connect(nkpacket:nkport()) ->
+    {ok, nkpacket:nkport()} | {error, term()}.
+
+connect(#nkport{domain=Domain}=NkPort) ->
+    case nkpacket_connection_lib:is_max(Domain) of
+        false -> 
+            proc_lib:start_link(?MODULE, conn_init, [NkPort]);
+        true -> 
+            {error, max_connections}
+    end.
+
+
+%% @doc Sends a new message to a started connection
+-spec send(nkpacket:nkport()|pid(), nkpacket:outcoming()) ->
+    ok | {error, term()}.
+
+send(#nkport{pid=ConnPid}=NkPort, OutMsg) ->
+    case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
+        ok -> 
+            reset_timeout(ConnPid);
+        {error, Error} ->
+            {error, Error}
+    end;
+
+send(Pid, OutMsg) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, {send, OutMsg}, ?CALL_TIMEOUT) of
+        {'EXIT', _} -> {error, no_process};
+        Other -> Other
+    end.
+
+
+%% @doc Performs an unparse using connection context
+-spec unparse(nkpacket:nkport()|pid(), term()) ->
+    {ok, nkpacket:outcoming()} | {error, term()}. 
+
+unparse(Conn, Term) ->
+    case catch gen_server:call(get_pid(Conn), {unparse, Term}, ?CALL_TIMEOUT) of
+        {ok, OutMsg} -> {ok, OutMsg};
+        {error, Error} -> {error, Error};
+        {'EXIT', Error} -> {error, Error}
+    end.
+
+
+%% @doc Stops a started connection with reason 'normal'
+-spec stop(#nkport{}|pid()) ->
+    ok.
+
+stop(Conn) ->
+    stop(Conn, normal).
+
+
+%% @doc Stops a started connection
+-spec stop(#nkport{}|pid(), term()) ->
+    ok.
+
+stop(Conn, Reason) ->
+    gen_server:cast(get_pid(Conn), {stop, Reason}).
+
+
+%% @doc Re-start the idle timeout
+-spec reset_timeout(nkpacket:nkport()|pid()) ->
+    ok.
+
+reset_timeout(Conn) ->
+    gen_server:cast(get_pid(Conn), reset_timeout).
+
+
+%% @doc Re-starts the idle timeout with new time
+-spec reset_timeout(nkpacket:nkport()|pid(), pos_integer()) ->
+    ok | error.
+
+reset_timeout(Conn, MSecs) ->
+    case catch gen_server:call(get_pid(Conn), {reset_timeout, MSecs}, ?CALL_TIMEOUT) of
+        ok -> ok;
+        _ -> error
+    end.
+
+
+%% @doc Reads the remaining time to timeout
+-spec get_timeout(nkpacket:nkport()|pid()) ->
+    ok.
+
+get_timeout(Conn) ->
+    gen_server:call(get_pid(Conn), get_timeout, ?CALL_TIMEOUT).
+
+
+%% @private 
+-spec incoming(nkpacket:nkport()|pid(), term()) ->
+    ok.
+
+incoming(Conn, Msg) ->
+    gen_server:cast(get_pid(Conn), {incoming, Msg}).
 
 
 %% @private
@@ -200,8 +221,8 @@ stop_all() ->
 
 
 -record(state, {
-    transp :: nkpacket:transport(),
     nkport :: nkpacket:nkport(),
+    transp :: nkpacket:transport(),
     socket :: nkpacket_transport:socket(),
     listen_monitor :: reference(),
     srv_monitor :: reference(),
@@ -211,6 +232,8 @@ stop_all() ->
     bridge_monitor :: reference(),
     ws_state :: term(),
     timeout :: non_neg_integer(),
+    timeout_timer :: reference(),
+    refresh_fun :: fun((nkpacket:nkport()) -> boolean()),
     protocol :: atom(),
     proto_state :: term()
 }).
@@ -231,13 +254,28 @@ init([NkPort]) ->
         socket = Socket,
         meta = Meta
     } = NkPort,
-    process_flag(trap_exit, true),          % Allow call to terminate
+    process_flag(trap_exit, true),          % Allow call to terminate/2
     NkPort1 = NkPort#nkport{pid=self()},
     Conn = {Protocol, Transp, Ip, Port},
-    nklib_proc:put({nkpacket_connection, Domain, Conn}, NkPort1), 
-    nklib_proc:put(nkpacket_transports, NkPort1),
+    StoredNkPort = NkPort1#nkport{meta=maps:with([path], Meta)},
+    nklib_proc:put({nkpacket_connection, Domain, Conn}, StoredNkPort), 
+    nklib_proc:put(nkpacket_transports, StoredNkPort),
     nklib_counters:async([nkpacket_connections, {nkpacket_connections, Domain}]),
-    Timeout = maps:get(idle_timeout, Meta, 180000),
+    Timeout = case maps:get(idle_timeout, Meta, undefined) of
+        Timeout0 when is_integer(Timeout0) -> 
+            Timeout0;
+        undefined ->
+            case Transp of
+                udp -> nkpacket_config_cache:udp_timeout(Domain);
+                tcp -> nkpacket_config_cache:tcp_timeout(Domain);
+                tls -> nkpacket_config_cache:tcp_timeout(Domain);
+                sctp -> nkpacket_config_cache:sctp_timeout(Domain);
+                ws -> nkpacket_config_cache:ws_timeout(Domain);
+                wss -> nkpacket_config_cache:ws_timeout(Domain);
+                http -> nkpacket_config_cache:http_timeout(Domain);
+                https -> nkpacket_config_cache:http_timeout(Domain)
+            end
+    end,
     ?debug(Domain, "created ~p connection ~p (~p, ~p) ~p", 
            [Transp, {Ip, Port}, Protocol, self(), Meta]),
     ListenMonitor = case is_pid(ListenPid) of
@@ -249,20 +287,18 @@ init([NkPort]) ->
         _ -> undefined
     end,
     UserMonitor = case Meta of
-        #{link:=UserPid} -> erlang:monitor(process, UserPid);
+        #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
         _ -> undefined
     end,
-    WsState = case Meta of
-        #{ws_exts:=WsExtensions} ->
-            nkpacket_connection_ws:init(WsExtensions);
-        _ ->
-            undefined
+    WsState = case Transp==ws orelse Transp==wss of
+        true -> nkpacket_connection_ws:init(#{});
+        _ -> undefined
     end,
     {Protocol1, ProtoState1} = 
         nkpacket_util:init_protocol(Protocol, conn_init, NkPort1),
     State = #state{
         transp = Transp,
-        nkport = NkPort1, 
+        nkport = StoredNkPort, 
         socket = Socket, 
         listen_monitor = ListenMonitor,
         srv_monitor = SrvMonitor,
@@ -271,10 +307,11 @@ init([NkPort]) ->
         bridge_monitor = undefined,
         ws_state = WsState,
         timeout = Timeout,
+        refresh_fun = maps:get(refresh_fun, Meta, undefined),
         protocol = Protocol1,
         proto_state = ProtoState1
     },
-    {ok, State, Timeout}.
+    {ok, restart_timer(State)}.
 
 
 
@@ -282,46 +319,78 @@ init([NkPort]) ->
 ranch_init(NkPort, Ref) ->
     ok = proc_lib:init_ack({ok, self()}),
     ok = ranch:accept_ack(Ref),
-    {ok, State, Timeout} = init([NkPort]),
-    gen_server:enter_loop(?MODULE, [], State, Timeout).
+    {ok, State} = init([NkPort]),
+    gen_server:enter_loop(?MODULE, [], State).
+
+
+%% @private
+conn_init(#nkport{transp=Transp}=NkPort) ->
+    Res = case Transp of
+        tcp -> nkpacket_transport_tcp:connect(NkPort);
+        tls -> nkpacket_transport_tcp:connect(NkPort);
+        ws -> nkpacket_transport_ws:connect(NkPort);
+        wss -> nkpacket_transport_ws:connect(NkPort)
+    end,
+    case Res of
+        {ok, NkPort1, Data} ->
+            {ok, #state{nkport=NkPort2}=State} = init([NkPort1]),
+            
+            ok = proc_lib:init_ack({ok, NkPort2}),
+            case Data of <<>> -> ok; _ -> incoming(self(), Data) end,
+            gen_server:enter_loop(?MODULE, [], State);
+        {error, Error} ->
+            proc_lib:init_ack({error, Error})
+    end.
 
 
 %% @private
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call({unparse, Msg}, From, State) ->
+handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
+    {reply, {ok, NkPort}, State};
+
+handle_call(get_local_port, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local_port(NkPort), State};
+
+handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_user(NkPort), State};
+
+handle_call({unparse, Msg}, _From, State) ->
     case call_protocol(conn_unparse, [Msg], State) of
         undefined ->
-            gen_server:reply(From, {error, undefined_protocol}),
-            do_noreply(State);
-        {ok, IoList, State1} -> 
-            gen_server:reply(From, {ok, IoList}),
-            do_noreply(State1);
+            {reply, {error, undefined_protocol}, State};
+        {ok, OutMsg, State1} -> 
+            {reply, {ok, OutMsg}, State1};
         {error, Error, State1} ->
-            gen_server:reply(From, {error, Error}),
-            do_noreply(State1);
+            {reply, {error, Error}, State1};
         {stop, Reason, State1} ->
             {stop, Reason, State1}
     end;
 
-handle_call({set_timeout, MSecs}, From, State) ->
-    gen_server:reply(From, ok),
-    do_noreply(State#state{timeout=MSecs});
+handle_call({reset_timeout, MSecs}, _From, State) ->
+    {reply, ok, restart_timer(State#state{timeout=MSecs})};
 
-handle_call(get_nkport, From, #state{nkport=NkPort}=State) ->
-    gen_server:reply(From, {ok, NkPort}),
-    do_noreply(State);
+handle_call(get_timeout, _From, #state{timeout_timer=Ref}=State) ->
+    Reply = case is_reference(Ref) of 
+        true ->
+            case erlang:read_timer(Ref) of
+                false -> undefined;
+                Time -> Time
+            end;
+        false ->
+            undefined
+    end,
+    {reply, Reply, State};
 
-handle_call({send, RawMsg}, From, #state{nkport=NkPort}=State) ->
-    Reply = nkpacket_connection_lib:raw_send(NkPort, RawMsg),
-    gen_server:reply(From, Reply),
-    do_noreply(State);
+handle_call({send, OutMsg}, _From, #state{nkport=NkPort}=State) ->
+    Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
+    {reply, Reply, restart_timer(State)};
 
 handle_call(Msg, From, State) ->
     case call_protocol(conn_handle_call, [Msg, From], State) of
-        undefined -> do_noreply(State);
-        {ok, State1} -> do_noreply(State1);
+        undefined -> {noreply, State};
+        {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
 
@@ -331,29 +400,29 @@ handle_call(Msg, From, State) ->
     nklib_util:gen_server_cast(#state{}).
 
 handle_cast(reset_timeout, State) ->
-    do_noreply(State);
+    {noreply, restart_timer(State)};
 
 handle_cast({incoming, Data}, State) ->
-    parse(Data, State);
+    parse(Data, restart_timer(State));
 
 handle_cast({stop, Reason}, State) ->
     {stop, Reason, State};
 
 handle_cast({bridged, NkPort}, State) ->
     % ?W("Bridged: ~p, ~p", [?PR(NkPort), ?PR(State#state.nkport)]),
-    do_noreply(start_bridge(NkPort, down, State));
+    {noreply, start_bridge(NkPort, down, State)};
 
 handle_cast(stop_bridge, #state{bridge_monitor=Mon}=State) ->
     case is_reference(Mon) of
         true -> erlang:demonitor(Mon);
         false -> ok
     end,
-    do_noreply(State#state{bridge_monitor=undefined, bridge=undefined});
+    {noreply, State#state{bridge_monitor=undefined, bridge=undefined}};
 
 handle_cast(Msg, State) ->
     case call_protocol(conn_handle_cast, [Msg], State) of
-        undefined -> do_noreply(State);
-        {ok, State1} -> do_noreply(State1);
+        undefined -> {noreply, State};
+        {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
 
@@ -364,11 +433,11 @@ handle_cast(Msg, State) ->
 
 handle_info({tcp, Socket, Data}, #state{socket=Socket}=State) ->
     inet:setopts(Socket, [{active, once}]),
-    parse(Data, State);
+    parse(Data, restart_timer(State));
 
 handle_info({ssl, Socket, Data}, #state{socket=Socket}=State) ->
     ssl:setopts(Socket, [{active, once}]),
-    parse(Data, State);
+    parse(Data, restart_timer(State));
 
 handle_info({tcp_closed, _Socket}, State) ->
     case call_protocol(conn_parse, [close], State) of
@@ -389,10 +458,18 @@ handle_info({ssl_closed, _Socket}, State) ->
 handle_info({ssl_error, _Socket}, State) ->
     {stop, normal, State};
 
-handle_info(timeout, State) ->
-    #state{nkport=#nkport{domain=Domain}} = State,
-    ?debug(Domain, "Connection timeout", []),
-    {stop, normal, State};
+handle_info({timeout, _, idle_timer}, State) ->
+    #state{nkport=#nkport{domain=Domain}=NkPort, refresh_fun=Fun} = State,
+    case is_function(Fun, 1) of
+        true ->
+            case Fun(NkPort) of
+                true -> {noreply, restart_timer(State)};
+                false -> {stop, normal, State}
+            end;
+        false ->
+            ?debug(Domain, "Connection timeout", []),
+            {stop, normal, State}
+    end;
 
 handle_info({'DOWN', MRef, process, _Pid, Reason}, #state{bridge_monitor=MRef}=State) ->
     case Reason of
@@ -417,8 +494,8 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_monitor=MRef}=St
 
 handle_info(Msg, State) ->
     case call_protocol(conn_handle_info, [Msg], State) of
-        undefined -> do_noreply(State);
-        {ok, State1} -> do_noreply(State1);
+        undefined -> {noreply, State};
+        {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
     end.
 
@@ -444,7 +521,8 @@ terminate(Reason, State) ->
     ?debug(Domain, "Connection ~p process stopped (~p, ~p)", 
            [Transp, Reason, self()]),
     % Sometimes ssl sockets are slow to close here
-    spawn(fun() -> nkpacket_connection_lib:raw_stop(NkPort) end).
+    spawn(fun() -> nkpacket_connection_lib:raw_stop(NkPort) end),
+    ok.
 
 
 
@@ -464,7 +542,7 @@ parse(Data, #state{transp=Transp, socket=Socket}=State)
     case nkpacket_connection_ws:handle(Data, WsState) of
         {ok, WsState1} -> 
             State1 = State#state{ws_state=WsState1},
-            do_noreply(State1);
+            {noreply, State1};
         {data, Frame, Rest, WsState1} ->
             State1 = State#state{ws_state=WsState1},
             case do_parse(Frame, State1) of
@@ -489,7 +567,7 @@ parse(Data, #state{transp=Transp, socket=Socket}=State)
 parse(Data, State) ->
     case do_parse(Data, State) of
         {ok, State1} ->
-            do_noreply(State1);
+            {noreply, State1};
         {stop, Reason, State1} ->
             {stop, Reason, State1}
     end.
@@ -582,8 +660,15 @@ start_bridge(Bridge, Type, State) ->
 
 
 %% @private
-do_noreply(#state{timeout=Timeout}=State) -> 
-    {noreply, State, Timeout}.
+get_pid(#nkport{pid=Pid}) -> Pid;
+get_pid(Pid) when is_pid(Pid) -> Pid.
+
+
+%% @private
+restart_timer(#state{timeout=Timeout, timeout_timer=Ref}=State) ->
+    nklib_util:cancel_timer(Ref),
+    Timer = erlang:start_timer(Timeout, self(), idle_timer),
+    State#state{timeout_timer=Timer}.
 
 
 %% @private

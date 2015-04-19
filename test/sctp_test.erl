@@ -31,7 +31,7 @@ sctp_test_() ->
             gen_sctp:close(S),
 		  	{setup, spawn, 
 		    	fun() -> 
-		    		nkpacket_app:start(),
+		    		ok = nkpacket_app:start(),
 		    		?debugMsg("Starting SCTP test")
 				end,
 				fun(_) -> 
@@ -68,8 +68,7 @@ basic() ->
 		local_ip={0,0,0,0}, local_port=Port1, 
 		listen_ip={0,0,0,0}, listen_port=Port1,
 		remote_ip=undefined, remote_port=undefined,
-		pid=Sctp1, socket={_Port1, 0},
-		meta = #{idle_timeout:=5000}
+		pid=Sctp1, socket={_Port1, 0}
 	} = Listen1,
 	[Listen2] = nkpacket:get_all(dom2),
 	#nkport{
@@ -77,15 +76,14 @@ basic() ->
 		local_ip={127,0,0,1}, local_port=Port2, 
 		listen_ip={127,0,0,1}, listen_port=Port2,
 		remote_ip=undefined, remote_port=undefined,
-		pid=Sctp2, socket = {_Port2, 0},
-		meta = #{idle_timeout:=180000}
+		pid=Sctp2, socket = {_Port2, 0}
 	} = Listen2,
-	{ok, Port1} = nkpacket:get_port(Sctp1),	
-	{ok, Port2} = nkpacket:get_port(Sctp2),
+	{ok, Port1} = nkpacket:get_local_port(Sctp1),	
+	{ok, Port2} = nkpacket:get_local_port(Sctp2),
 
 	Uri = "<test://localhost:"++integer_to_list(Port1)++";transport=sctp>",
 	{ok, Conn1} = nkpacket:send(dom2, Uri, msg1, 
-								#{connect_timeout=>5000, idle_timeout=>1000}),
+								M2#{connect_timeout=>5000, idle_timeout=>1000}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -97,11 +95,13 @@ basic() ->
 			domain=dom2, transp=sctp,
 			local_ip={127,0,0,1}, local_port=Port2,
 			remote_ip={127,0,0,1}, remote_port=Port1,
-			listen_ip={127,0,0,1}, listen_port=Port2,
-			meta = #{idle_timeout:=1000}
+			listen_ip={127,0,0,1}, listen_port=Port2
 		} = Conn1
 	] = 
 		lists:sort(nkpacket:get_all(dom2)),
+
+	% lager:warning("Conn1: ~p", [Conn1]),
+	% lager:warning("Conn1B: ~p", [Conn1B]),
 
 	[
 		Listen1,
@@ -109,19 +109,18 @@ basic() ->
 			domain=dom1, transp=sctp,
 			local_ip={0,0,0,0}, local_port=Port1,
 			remote_ip={127,0,0,1}, remote_port=Port2,
-			listen_ip={0,0,0,0}, listen_port=Port1,
-			meta = #{idle_timeout:=5000}
+			listen_ip={0,0,0,0}, listen_port=Port1
 		} = Conn1R
 	] = 
 		lists:sort(nkpacket:get_all(dom1)),
 
 	% Reverse
 	{ok, Conn1R} = nkpacket:send(dom1, {test_protocol, sctp, {127,0,0,1}, Port2}, 
-							     msg2),
+							     msg2, M1),
 	receive {Ref2, {parse, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {unparse, msg2}} -> ok after 1000 -> error(?LINE) end,
 
-	% %% Connection 2 will stop after 500 msec, and will tear down conn1
+	% %% Connection 2 will stop after 1 msec, and will tear down conn1
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
 	receive {Ref1, conn_stop} -> ok after 2000 -> error(?LINE) end,
 	timer:sleep(50),

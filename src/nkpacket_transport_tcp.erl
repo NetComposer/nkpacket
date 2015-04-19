@@ -24,7 +24,7 @@
 -module(nkpacket_transport_tcp).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([get_listener/1, connect/1, get_port/1, start_link/1]).
+-export([get_listener/1, connect/1, start_link/1]).
 -export([init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
 -export([start_link/4]).
@@ -54,7 +54,7 @@ get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
 
 %% @private Starts a new connection to a remote server
 -spec connect(nkpacket:nkport()) ->
-    {ok, nkpacket:nkport()} | {error, term()}.
+    {ok, nkpacket:nkport(), <<>>} | {error, term()}.
          
 connect(NkPort) ->
     #nkport{
@@ -64,49 +64,25 @@ connect(NkPort) ->
         remote_port = Port,
         meta = Meta
     } = NkPort,
-    try
-        case nkpacket_connection_lib:is_max(Domain) of
-            false -> ok;
-            true -> throw(max_connections)
-        end,
-        SocketOpts = outbound_opts(NkPort),
-        {InetMod, TranspMod, _} = get_modules(Transp),
-        ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
-            undefined -> nkpacket_config_cache:connect_timeout(Domain);
-            Timeout0 -> Timeout0
-        end,
-        Socket = case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
-            {ok, Socket0} -> Socket0;
-            {error, Error} -> throw(Error)
-        end,
-        {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
-        Meta1 = case maps:is_key(idle_timeout, Meta) of
-            true -> Meta;
-            false -> Meta#{idle_timeout=>nkpacket_config_cache:tcp_timeout(Domain)}
-        end,
-        RemoveOpts = [certfile, keyfile],
-        NkPort1 = NkPort#nkport{
-            local_ip = LocalIp,
-            local_port = LocalPort,
-            socket = Socket,
-            meta = maps:without(RemoveOpts, Meta1)
-        },
-        {ok, Pid} = nkpacket_connection:start(NkPort1),
-        TranspMod:controlling_process(Socket, Pid),
-        InetMod:setopts(Socket, [{active, once}]),
-        ?debug(Domain, "~p connected to ~p", [Transp, {Ip, Port}]),
-        {ok, NkPort1#nkport{pid=Pid}}
-    catch
-        throw:TError -> {error, TError}
+    SocketOpts = outbound_opts(NkPort),
+    {InetMod, TranspMod, _} = get_modules(Transp),
+    ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
+        undefined -> nkpacket_config_cache:connect_timeout(Domain);
+        Timeout0 -> Timeout0
+    end,
+    case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
+        {ok, Socket} -> 
+            {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
+            NkPort1 = NkPort#nkport{
+                local_ip = LocalIp,
+                local_port = LocalPort,
+                socket = Socket
+            },
+            InetMod:setopts(Socket, [{active, once}]),
+            {ok, NkPort1, <<>>};
+        {error, Error} -> 
+            {error, Error}
     end.
-
-
-%% @private Get transport current port
--spec get_port(pid()) ->
-    {ok, inet:port_number()}.
-
-get_port(Pid) ->
-    gen_server:call(Pid, get_port).
 
 
 
@@ -125,7 +101,7 @@ start_link(NkPort) ->
     ranch_pid :: pid(),
     protocol :: nkpacket:protocol(),
     proto_state :: term(),
-    user_ref :: reference()
+    monitor_ref :: reference()
 }).
 
 
@@ -146,50 +122,47 @@ init([NkPort]) ->
     ListenOpts = listen_opts(NkPort),
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
-            Meta1 = case maps:is_key(idle_timeout, Meta) of
-                true -> Meta;
-                false -> Meta#{idle_timeout=>nkpacket_config_cache:tcp_timeout(Domain)}
-            end,
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {_, Port1}} = InetMod:sockname(Socket),
-            RemoveOpts = [tcp_listeners, tcp_max_connections, certfile, keyfile],
             NkPort1 = NkPort#nkport{
                 local_port = Port1, 
                 listen_ip = Ip,
                 listen_port = Port1,
                 pid = self(),
-                socket = Socket,
-                meta = maps:without(RemoveOpts, Meta1)
+                socket = Socket
             },
             RanchId = {Transp, Ip, Port1},
             Listeners = maps:get(tcp_listeners, Meta, 100),
             Max = maps:get(tcp_max_connections, Meta, 1024),
+            % Options pased to new connections
+            NkPort2 = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)},
             RanchSpec = ranch:child_spec(
                 RanchId, 
                 Listeners,
                 RanchMod, 
                 [{socket, Socket}, {max_connections, Max}],
                 ?MODULE, 
-                [NkPort1]),
+                [NkPort2]),
             % we don't want a fail in ranch to switch everything off
             RanchSpec1 = setelement(3, RanchSpec, temporary),
             {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
             link(RanchPid),
-            nklib_proc:put(nkpacket_transports, NkPort1),
-            nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
+            StoredNkPort = NkPort1#nkport{meta=#{}},
+            nklib_proc:put(nkpacket_transports, StoredNkPort),
+            nklib_proc:put({nkpacket_listen, Domain, Protocol}, StoredNkPort),
             {Protocol1, ProtoState1} = 
                 nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
-            UserRef = case Meta of
-                #{link:=UserPid} -> erlang:monitor(process, UserPid);
+            MonRef = case Meta of
+                #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
                 _ -> undefined
             end,
             State = #state{
-                nkport = NkPort1,
+                nkport = NkPort2,
                 ranch_id = RanchId,
                 ranch_pid = RanchPid,
                 protocol = Protocol1,
                 proto_state = ProtoState1,
-                user_ref = UserRef
+                monitor_ref = MonRef
             },
             {ok, State};
         {error, Error} ->
@@ -203,8 +176,14 @@ init([NkPort]) ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call(get_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
-    {reply, {ok, Port}, State};
+handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
+    {reply, {ok, NkPort}, State};
+
+handle_call(get_local_port, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local_port(NkPort), State};
+
+handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_user(NkPort), State};
 
 handle_call(get_state, _From, State) ->
     {reply, State, State};
@@ -233,7 +212,7 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) ->
     nklib_util:gen_server_info(#state{}).
 
-handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_ref=MRef}=State) ->
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=State) ->
     {stop, normal, State};
 
 handle_info({'EXIT', Pid, Reason}, #state{ranch_pid=Pid}=State) ->

@@ -20,13 +20,10 @@
 
 %% @private Websocket (WS/WSS) Transport.
 %%
-%% For listening, we start this server and also a 'shared' tcp/tls transport.
-%% When a new connection arrives, the nkpacket_transport_tcp process will call
-%% cowboy_init/2, where we must decide to process this request or 
-%% pass it to the next listening sharing this transport.
-%%
-%% It it is for us, we start a new connection. When a new packet arrives,
-%% we send it to the connection.
+%% For listening, we start this server and also a 'shared' nkpacket_cowboy transport.
+%% When a new connection arrives, ranch creates a new process, and 
+%% cowboy_init/3 is called. It it is for us, we start a new connection linked to it.
+%% When a new packet arrives, we send it to the connection.
 %%
 %% For outbound connections, we start a normal tcp/ssl connection and let it be
 %% managed by a fresh nkpacket_connection process
@@ -34,7 +31,7 @@
 -module(nkpacket_transport_ws).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([get_listener/1, connect/1, get_port/1]).
+-export([get_listener/1, connect/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
 -export([websocket_handle/3, websocket_info/3, terminate/3]).
@@ -67,7 +64,7 @@ get_listener(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
 
 %% @private Starts a new connection to a remote server
 -spec connect(nkpacket:nkport()) ->
-    {ok, term()} | {error, term()}.
+    {ok, nkpacket:nkport(), binary()} | {error, term()}.
          
 connect(NkPort) ->
     #nkport{
@@ -78,15 +75,11 @@ connect(NkPort) ->
         meta = Meta
     } = NkPort,
     try
-        case nkpacket_connection_lib:is_max(Domain) of
-            false -> ok;
-            true -> throw(max_connections)
-        end,
+        SocketOpts = outbound_opts(NkPort),
         {SockTransp, TranspMod} = case Transp of
             ws -> {tcp, ranch_tcp};
             wss -> {tls, ranch_ssl}
         end,
-        SocketOpts = outbound_opts(NkPort),
         ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
             undefined -> nkpacket_config_cache:connect_timeout(Domain);
             Timeout0 -> Timeout0
@@ -96,45 +89,24 @@ connect(NkPort) ->
             {error, Error1} -> throw(Error1) 
         end,
         {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
-        Meta1 = case maps:is_key(idle_timeout, Meta) of
-            true -> Meta;
-            false -> Meta#{idle_timeout=>nkpacket_config_cache:ws_timeout(Domain)}
-        end,
         NkPort1 = NkPort#nkport{
             local_ip = LocalIp,
             local_port = LocalPort,
-            socket = Socket,
-            meta = Meta1
+            socket = Socket
         },
         case nkpacket_connection_ws:start_handshake(NkPort1) of
-            {ok, ExtsMap, Rest} -> ok;
-            {error, Error} -> ExtsMap = Rest = throw(Error)
+            {ok, Rest} -> ok;
+            {error, Error} ->  Rest = throw(Error)
         end,
-        NkPort2 = NkPort1#nkport{meta=Meta1#{ws_exts=>ExtsMap}},
-        {ok, Pid} = nkpacket_connection:start(NkPort2),
-        TranspMod:controlling_process(Socket, Pid),
         TranspMod:setopts(Socket, [{active, once}]),
-        ?notice(Domain, "~p connected to ~p", [Transp, {Ip, Port}]),
-        case Rest of
-            <<>> -> ok;
-            _ -> nkpacket_connection:incoming(Pid, Rest)
-        end,
-        {ok, NkPort2#nkport{pid=Pid}}
+        {ok, NkPort1, Rest}
     catch
         throw:TError -> {error, TError}
     end.
 
 
-%% @private Get transport current port
--spec get_port(pid()) ->
-    {ok, inet:port_number()}.
 
-get_port(Pid) ->
-    gen_server:call(Pid, get_port).
-
-
-
-%% ===================================================================
+    %% ===================================================================
 %% gen_server
 %% ===================================================================
 
@@ -143,7 +115,7 @@ get_port(Pid) ->
     protocol :: nkpacket:protocol(),
     proto_state :: term(),
     shared :: pid(),
-    user_ref :: reference()
+    monitor_ref :: reference()
 }).
 
 
@@ -175,43 +147,42 @@ init([NkPort]) ->
         ParsedPaths = nkpacket_transport_http:parse_paths(PathList),
         Meta1 = Meta#{http_match=>{HostList, ParsedPaths}},
         % This is the port for tcp/tls and also what will be sent to cowboy_init
-        SharedPort = NkPort#nkport{
+        Instance = NkPort#nkport{
             listen_ip = Ip,
             pid = self(),
-            meta = Meta1
+            meta = Meta1       % We need to send everything to nkpacket_cowboy
         },
-        case nkpacket_cowboy:start(SharedPort) of
+        case nkpacket_cowboy:start(Instance) of
             {ok, SharedPid} -> ok;
             {error, Error} -> SharedPid = throw(Error)
         end,
         erlang:monitor(process, SharedPid),
         case Port of
-            0 -> {ok, Port1} = nkpacket_transport_tcp:get_port(SharedPid);
+            0 -> {ok, Port1} = nkpacket:get_local_port(SharedPid);
             _ -> Port1 = Port
         end,
-        RemoveOpts = [tcp_listeners, tcp_max_connections, certfile, keyfile],
         NkPort1 = NkPort#nkport{
             local_port = Port1,
             listen_ip = Ip,
             listen_port = Port1,
             pid = self(),
-            socket = SharedPid,
-            meta = maps:without(RemoveOpts, Meta)
+            socket = SharedPid
         },   
-        nklib_proc:put(nkpacket_transports, NkPort1),
-        nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
+        StoredNkPort = NkPort1#nkport{meta=maps:with([path, host, ws_proto], Meta)},
+        nklib_proc:put(nkpacket_transports, StoredNkPort),
+        nklib_proc:put({nkpacket_listen, Domain, Protocol}, StoredNkPort),
         {Protocol1, ProtoState1} = 
             nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
-        UserRef = case Meta of
-            #{link:=UserPid} -> erlang:monitor(process, UserPid);
+        MonRef = case Meta of
+            #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
             _ -> undefined
         end,
         State = #state{
-            nkport = NkPort1,
+            nkport = NkPort1#nkport{meta=maps:with([user, path, host, ws_proto], Meta)},
             protocol = Protocol1,
             proto_state = ProtoState1,
             shared = SharedPid,
-            user_ref = UserRef
+            monitor_ref = MonRef
         },
         {ok, State}
     catch
@@ -226,8 +197,14 @@ init([NkPort]) ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call(get_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
-    {reply, {ok, Port}, State};
+handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
+    {reply, {ok, NkPort}, State};
+
+handle_call(get_local_port, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local_port(NkPort), State};
+
+handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_user(NkPort), State};
 
 handle_call(Msg, From, State) ->
     case call_protocol(listen_handle_call, [Msg, From], State) of
@@ -256,7 +233,7 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) ->
     nklib_util:gen_server_info(#state{}).
 
-handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_ref=MRef}=State) ->
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=State) ->
     {stop, normal, State};
 
 handle_info({'DOWN', _MRef, process, Pid, Reason}, #state{shared=Pid}=State) ->
@@ -330,12 +307,21 @@ cowboy_init(#nkport{domain=Domain, meta=Meta}=NkPort, Req, Env) ->
                         remote_ip = RemoteIp,
                         remote_port = RemotePort,
                         socket = self(),
-                        meta = maps:without([http_match], Meta)
+                        meta = maps:with([path, host, ws_proto|?CONN_LISTEN_OPTS], Meta)
                     },
-                    {ok, ConnPid} = nkpacket_connection:start(NkPort1),
-                    ?debug(Domain, "WS listener accepted connection: ~p", [NkPort1]),
-                    cowboy_websocket:upgrade(Req1, Env, nkpacket_transport_ws, 
-                                             ConnPid, infinity, run)
+                    % Connection will monitor listen process (unsing pid()) and 
+                    % this cowboy process (using socket)
+                    case nkpacket_connection:start(NkPort1) of
+                        {ok, ConnPid} ->
+                            ?debug(Domain, "WS listener accepted connection: ~p", 
+                                  [NkPort1]),
+                            cowboy_websocket:upgrade(Req1, Env, nkpacket_transport_ws, 
+                                                     ConnPid, infinity, run);
+                        {error, Error} ->
+                            ?notice(Domain, "WS listener did not accepted connection:"
+                                    " ~p", [Error]),
+                            next
+                    end
             end
     end.
 
@@ -347,12 +333,12 @@ cowboy_init(#nkport{domain=Domain, meta=Meta}=NkPort, Req, Env) ->
 
 
 %% @private
--spec websocket_handle({text | binary | ping | pong, binary()}, Req, State)
-    -> {ok, Req, State}
-    | {ok, Req, State, hibernate}
-    | {reply, cow_ws:frame() | [cow_ws:frame()], Req, State}
-    | {reply, cow_ws:frame() | [cow_ws:frame()], Req, State, hibernate}
-    | {stop, Req, State}
+-spec websocket_handle({text | binary | ping | pong, binary()}, Req, State) ->
+    {ok, Req, State} |
+    {ok, Req, State, hibernate} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], Req, State} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], Req, State, hibernate} | 
+    {stop, Req, State}
     when Req::cowboy_req:req(), State::any().
 
 websocket_handle({text, Msg}, Req, ConnPid) ->
@@ -382,12 +368,12 @@ websocket_handle(Other, Req, ConnPid) ->
 
 
 %% @private
--spec websocket_info(any(), Req, State)
-    -> {ok, Req, State}
-    | {ok, Req, State, hibernate}
-    | {reply, cow_ws:frame() | [cow_ws:frame()], Req, State}
-    | {reply, cow_ws:frame() | [cow_ws:frame()], Req, State, hibernate}
-    | {stop, Req, State}
+-spec websocket_info(any(), Req, State) ->
+    {ok, Req, State} |
+    {ok, Req, State, hibernate} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], Req, State} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], Req, State, hibernate} |
+    {stop, Req, State}
     when Req::cowboy_req:req(), State::any().
 
 websocket_info({nkpacket_send, Frames}, Req, State) ->

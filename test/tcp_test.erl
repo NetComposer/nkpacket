@@ -28,7 +28,7 @@
 tcp_test_() ->
   	{setup, spawn, 
     	fun() -> 
-    		nkpacket_app:start(),
+    		ok = nkpacket_app:start(),
     		?debugMsg("Starting TCP test")
 		end,
 		fun(_) -> 
@@ -48,10 +48,10 @@ basic() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	{ok, Tcp1} = nkpacket:start_listener(dom1, 
 										 {test_protocol, tcp, {0,0,0,0}, 0},
-						   			     M1#{tcp_listeners=>1}),
+						   			     M1#{idle_timeout=>1000}),
 	{ok, Tcp2} = nkpacket:start_listener(dom2, 
 										 {test_protocol, tcp, {0,0,0,0}, 0},
-						   			     M2#{idle_timeout=>1000}),
+						   			     M2),
 	timer:sleep(100),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
@@ -59,21 +59,23 @@ basic() ->
 	#nkport{domain=dom1, transp=tcp, 
 			local_ip={0,0,0,0}, local_port=ListenPort1, 
 			listen_ip={0,0,0,0}, listen_port=ListenPort1,
-			remote_ip=undefined, remote_port=undefined,
-			pid=Tcp1, meta=#{idle_timeout:=180000, test:=_}
+			remote_ip=undefined, remote_port=undefined, pid=Tcp1
 	} = Listen1,
 	[Listen2] = nkpacket:get_all(dom2),
 	#nkport{domain=dom2, transp=tcp, 
 			local_port=ListenPort2, pid=Tcp2, 
 			listen_ip={0,0,0,0}, listen_port=ListenPort2,
-			remote_ip=undefined, remote_port=undefined,
-			meta=#{idle_timeout:=1000, test:=_}
+			remote_ip=undefined, remote_port=undefined
 	} = Listen2,
-	{ok, ListenPort1} = nkpacket:get_port(Tcp1),	
-	{ok, ListenPort2} = nkpacket:get_port(Tcp2),	
+	{ok, ListenPort1} = nkpacket:get_local_port(Tcp1),	
+	{ok, ListenPort2} = nkpacket:get_local_port(Tcp2),	
+	case ListenPort1 of
+		1235 -> ok;
+		_ -> lager:warning("Could not open port 1235")
+	end,
 
 	Uri = "<test://localhost:"++integer_to_list(ListenPort1)++";transport=tcp>",
-	{ok, _} = nkpacket:send(dom2, Uri, msg1),
+	{ok, _} = nkpacket:send(dom2, Uri, msg1, M2#{idle_timeout=>5000}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -81,23 +83,26 @@ basic() ->
 
 	[
 		Listen2,
-		#nkport{domain=dom2, transp=tcp,
+		#nkport{domain=dom2, transp=tcp, pid=Conn2,
 				local_ip={127,0,0,1}, local_port=LPort2,
 				remote_ip={127,0,0,1}, remote_port=ListenPort1,
-				listen_ip={0,0,0,0}, listen_port=ListenPort2,
-				meta = #{idle_timeout:=1000, test:=_}}
+				listen_ip={0,0,0,0}, listen_port=ListenPort2}
 	] = 
 		lists:sort(nkpacket:get_all(dom2)),
 
 	[
 		Listen1,
-		#nkport{domain=dom1, transp=tcp,
+		#nkport{domain=dom1, transp=tcp, pid=Conn1,
 				local_ip={127,0,0,1}, local_port=_LPort1,
 				remote_ip={127,0,0,1}, remote_port=LPort2,
-				listen_ip={0,0,0,0}, listen_port=ListenPort1,
-				meta = #{idle_timeout:=180000, test:=_}}
+				listen_ip={0,0,0,0}, listen_port=ListenPort1}
 	] = 
 		lists:sort(nkpacket:get_all(dom1)),
+
+	Time1 = nkpacket_connection:get_timeout(Conn1),
+	true = Time1 > 0 andalso Time1 =< 1000,
+	Time2 = nkpacket_connection:get_timeout(Conn2),
+	true = Time2 > 4000 andalso Time2 =< 5000, 
 
 	%% Connection 2 will stop after 1 sec, and will tear down conn1
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
@@ -105,7 +110,8 @@ basic() ->
 	timer:sleep(50),
 	[Listen2] = nkpacket:get_all(dom2),
 	[Listen1] = nkpacket:get_all(dom1),
-	test_util:ensure([Ref1, Ref2]).
+	test_util:ensure([Ref1, Ref2]),
+	ok.
 
 
 
@@ -113,9 +119,14 @@ tls() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	ok = nkpacket_config:register_protocol(test, test_protocol),
 	{ok, Tls1} = nkpacket:start_listener(dom1, {test_protocol, tls, {0,0,0,0}, 0},
-						   			     M1#{tcp_listeners=>1, idle_timeout=>5000}),
-	{ok, ListenPort1} = nkpacket:get_port(Tls1),	
+						   			     M1#{tcp_listeners=>1}),
+	{ok, ListenPort1} = nkpacket:get_local_port(Tls1),	
+	case ListenPort1 of
+		1236 -> ok;
+		_ -> lager:warning("Could not open port 1236")
+	end,
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
+	timer:sleep(1000),
 
 	% Sending a request wihout a matching started listener
 	Uri = "<test://localhost:"++integer_to_list(ListenPort1)++";transport=tls>",
@@ -131,24 +142,21 @@ tls() ->
 			    remote_ip = undefined, remote_port = undefined, 
 			    listen_ip={0,0,0,0}, listen_port = ListenPort,
 			    protocol = test_protocol, pid = Tls1,
-			    socket = {sslsocket, _, _}, 
-			    meta=#{idle_timeout:=5000, test:=_}
+			    socket = {sslsocket, _, _}
 	    },
 		#nkport{domain = dom1, transp = tls, 
 				local_ip = {127,0,0,1}, local_port = _Dom1Port,
 			    remote_ip = {127,0,0,1}, remote_port = Dom2Port, 
 			    listen_ip = {0,0,0,0}, listen_port = ListenPort,
 			    protocol = test_protocol, pid = _Dom1Pid,
-			    socket = {sslsocket, _, _}, 
-			    meta=#{idle_timeout:=5000, test:=_}
+			    socket = {sslsocket, _, _}
 	    },
 		#nkport{domain = dom2, transp = tls, 
 				local_ip = {127,0,0,1}, local_port = Dom2Port,
 			    remote_ip = {127,0,0,1}, remote_port = ListenPort, 
 			    listen_ip = undefined, listen_port = undefined,
 			    protocol = test_protocol, pid = _Dom2Pid,
-			    socket = {sslsocket, _, _}, 
-			    meta=#{idle_timeout:=1000, test:=_}
+			    socket = {sslsocket, _, _}
 	    }
 	] = 
 		Conns1 = lists:sort(nkpacket:get_all()),
@@ -174,10 +182,12 @@ send() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
 	{ok, Udp1} = nkpacket:start_listener(dom1, 
 										 {test_protocol, udp, {0,0,0,0}, 0},
-						   			     M1#{tcp_listeners=>1, udp_starts_tcp=>true,
-						   			         tcp_packet=>4}),
+						   			     M1#{udp_starts_tcp=>true}),
+	% Since '1234' is not available, a random one is used
+	% (Oops, in linux it allows to open it again, the old do not receive more packets!)
+	Port2 = test_util:get_port(udp),
 	{ok, Udp2} = nkpacket:start_listener(dom2, 
-										 {test_protocol, udp, {0,0,0,0}, 0},
+										 {test_protocol, udp, {0,0,0,0}, Port2},
 						   			     M2#{idle_timeout=>1000, udp_starts_tcp=>true, 
 						   			         tcp_packet=>4}),
 	timer:sleep(100),
@@ -185,8 +195,8 @@ send() ->
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
-	{ok, _Listen1} = nkpacket:get_port(Udp1),	
-	{ok, Listen2} = nkpacket:get_port(Udp2),	
+	{ok, _Listen1} = nkpacket:get_local_port(Udp1),	
+	{ok, Listen2} = nkpacket:get_local_port(Udp2),	
 
 	% Invalid sends
 	lager:warning("Next warning about a invalid send specification is expected"),
@@ -197,13 +207,14 @@ send() ->
 		nkpacket:send(dom1, {test_protocol, sctp, {127,0,0,1}, Listen2}, msg1),
 	Msg = crypto:rand_bytes(5000),
 	{error, udp_too_large} = 
-		nkpacket:send(dom1, {test_protocol, udp, {127,0,0,1}, Listen2},{msg1, Msg}),
+		nkpacket:send(dom1, {test_protocol, udp, {127,0,0,1}, Listen2}, {msg1, Msg},
+					  M1#{tcp_packet=>4}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {unparse, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end,
 
-		% This is going to use tcp
+	% This is going to use tcp
 	{ok, Conn1} = nkpacket:send(dom1, {test_protocol, udp, {127,0,0,1}, Listen2},
-								{msg1, Msg}, #{udp_to_tcp=>true}),
+								{msg1, Msg}, M1#{udp_to_tcp=>true, tcp_packet=>4}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {unparse, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Udp
 	receive {Ref1, {unparse, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Tcp
@@ -212,22 +223,22 @@ send() ->
 	#nkport{transp=tcp} = Conn1,
 
 	{ok, Conn1} = nkpacket:send(dom1, {test_protocol, tcp, {127,0,0,1}, Listen2},
-				 				msg2),
+				 				msg2, M1),
 	receive {Ref1, {unparse, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, msg2}} -> ok after 1000 -> error(?LINE) end,
 
-	{ok, Conn1} = nkpacket:send(dom1, Conn1, msg3),
+	{ok, Conn1} = nkpacket:send(dom1, Conn1, msg3, M1),
 	receive {Ref1, {unparse, msg3}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, msg3}} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, Conn1} = nkpacket:send(dom1, {current, {test_protocol, tcp, {127,0,0,1}, Listen2}},
-								msg4),
+								msg4, M1),
 	receive {Ref1, {unparse, msg4}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, msg4}} -> ok after 1000 -> error(?LINE) end,
 
 	% Force a new connection
 	{ok, Conn2} = nkpacket:send(dom1, {test_protocol, tcp, {127,0,0,1}, Listen2}, 
-								msg5, #{force_new=>true}),
+								msg5, M1#{tcp_packet=>4, force_new=>true}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {unparse, msg5}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -252,20 +263,3 @@ send() ->
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	

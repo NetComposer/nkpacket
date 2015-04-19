@@ -26,47 +26,36 @@
 
 -compile([export_all]).
 
+-define(GLOBAL_GET(Term), nkpacket_config:get(Term)).
+-define(DOMAIN_GET(Domain, Term), nkpacket_config:get_domain(Domain, Term)).
+
 
 % Global config
 
-global_max_connections() -> nkpacket_config:get(global_max_connections).
+global_max_connections() -> ?GLOBAL_GET(global_max_connections).
 
-local_data_path() -> nkpacket_config:get(local_data_path).
-
-sync_call_time() -> nkpacket_config:get(sync_call_time). 
-
-local_ips() -> nkpacket_config:get(local_ips).
-
-main_ip() -> nkpacket_config:get(main_ip).
-
-main_ip6() -> nkpacket_config:get(main_ip6).
+local_ips() -> ?GLOBAL_GET(local_ips).
 
 get_prococol(Scheme) -> nkpacket_config:get_protocol(Scheme).
 
 
 % Domain config
 
-dns_cache_ttl(Domain) -> nkpacket_config:get_domain(Domain, dns_cache_ttl).
+dns_cache_ttl(Domain) -> ?DOMAIN_GET(Domain, dns_cache_ttl).
 
-log_level(Domain) -> nkpacket_config:get_domain(Domain, log_level).
+udp_timeout(Domain) -> ?DOMAIN_GET(Domain, udp_timeout).
 
-udp_timeout(Domain) -> nkpacket_config:get_domain(Domain, udp_timeout).
+tcp_timeout(Domain) -> ?DOMAIN_GET(Domain, tcp_timeout).
 
-tcp_timeout(Domain) -> nkpacket_config:get_domain(Domain, tcp_timeout).
+sctp_timeout(Domain) -> ?DOMAIN_GET(Domain, sctp_timeout).
 
-sctp_timeout(Domain) -> nkpacket_config:get_domain(Domain, sctp_timeout).
+ws_timeout(Domain) -> ?DOMAIN_GET(Domain, ws_timeout).
 
-ws_timeout(Domain) -> nkpacket_config:get_domain(Domain, ws_timeout).
+http_timeout(Domain) -> ?DOMAIN_GET(Domain, http_timeout).
 
-http_timeout(Domain) -> nkpacket_config:get_domain(Domain, http_timeout).
+connect_timeout(Domain) -> ?DOMAIN_GET(Domain, connect_timeout).
 
-connect_timeout(Domain) -> nkpacket_config:get_domain(Domain, connect_timeout).
-
-max_connections(Domain) -> nkpacket_config:get_domain(Domain, max_connections).
-
-local_host(Domain) -> nkpacket_config:get_domain(Domain, local_host).
-
-local_host6(Domain) -> nkpacket_config:get_domain(Domain, local_host6).
+max_connections(Domain) -> ?DOMAIN_GET(Domain, max_connections).
 
 get_protocol(Domain, Scheme) -> nkpacket_config:get_protocol(Domain, Scheme).
 

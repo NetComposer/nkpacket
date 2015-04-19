@@ -19,21 +19,28 @@
 %% -------------------------------------------------------------------
 
 %% @doc Main management module.
+%% TODO: 
+%% - WS Client Compression
+%% - Simplify HTTP/WS listeners not using Cowboy's process but only cowlib
+
+
 -module(nkpacket).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([start_listener/3, stop_listener/1, stop_all/0, stop_all/1, get_port/1]).
+-export([start_listener/3, stop_listener/1, stop_all/0, stop_all/1]).
+-export([get_listener/3]).
 -export([send/3, send/4, connect/3]).
 -export([get_all/0, get_all/1, get_listening/4, is_local/2, is_local_ip/1]).
--export([resolve/3]).
+-export([get_nkport/1, get_local_port/1, get_pid/1, get_user/1]).
+-export([resolve/2]).
 
 -export_type([domain/0, transport/0, protocol/0, nkport/0]).
--export_type([listener_opts/0, connect_opts/0, send_opts/0, raw_msg/0]).
+-export_type([listener_opts/0, connect_opts/0, send_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
+-export_type([incoming/0, outcoming/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
-
 
 
 %% ===================================================================
@@ -56,9 +63,10 @@
 -type listener_opts() ::
     #{
         % Common options
-        supervisor => atom() | pid(),           % Supervisor to use
-        link => atom() | pid(),                 % Connection will monitor this
-        idle_timeout => integer(),              % Idle connection timeout (180.000)
+        user => term(),                         % User metadata
+        monitor => atom() | pid(),              % Connection will monitor this
+        idle_timeout => integer(),              % MSecs, default in config
+        refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         
         % UDP options
         udp_starts_tcp => boolean(),            % UDP starts TCP on the same port
@@ -74,18 +82,18 @@
         certfile => string(),                   % 
         keyfile => string(),                    %
         tcp_packet => 1 | 2 | 4 | raw,          %
-        tcp_max_connections => integer(),       % Per listener
-        tcp_listeners => integer(),             % Defalt 100
+        tcp_max_connections => integer(),       % Default 1024
+        tcp_listeners => integer(),             % Default 100
 
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Hosts to filter (comma separated)
         path => string() | binary(),            % Paths to filter (comma separated)
-        cowboy_opts => cowboy_protocol:opts(),
+        cowboy_opts => cowboy_protocol:opts(),  % See nkpacket_cowboy:start_link/4
 
         % WS/WSS
         ws_proto => string() | binary(),        % Websocket Subprotocol
-        ws_opts => map(),
-
+        % ws_opts => map(),                     % See nkpacket_connection_ws
+        %                                       % (i.e. #{compress=>true})
         % HTTP/HTTPS
         cowboy_dispatch => cowboy_router:dispatch_rules()
     }.
@@ -95,14 +103,14 @@
 -type connect_opts() ::
     #{
         % Common options
-        supervisor => atom() | pid(),       % Supervisor to use
-        link => atom() | pid(),                 % Connection will monitor this
-        idle_timeout => integer(),          % msecs, default 180.000
-        connect_timeout => integer(),       % msecs, default 30.000
-        
-        listen_ip => inet:ip_address(),     % Used to populate nkport, instead of
-        listen_port => inet:port_number(),  % finding suitable listening transport
-        
+        user => term(),                     % User metadata
+        monitor => atom() | pid(),          % Connection will monitor this
+        connect_timeout => integer(),       % MSecs, default in config
+        idle_timeout => integer(),          % MSecs, default in config
+        refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
+        listen_ip => inet:ip_address(),     % Used to populate nkport, forcing it instead
+        listen_port => inet:port_number(),  % of finding suitable listening transport
+
         % TCP/TLS/WS/WSS options
         certfile => string(),           
         keyfile => string(),                 
@@ -111,8 +119,7 @@
         % WS/WSS
         host => string() | binary(),
         path => string() | binary(),
-        ws_proto => string() | binary(),
-        ws_opts => map()
+        ws_proto => string() | binary()
     }.
 
 
@@ -144,10 +151,18 @@
     user_connection() | {current, raw_connection()} | nkport().
 
 
-%% Reply
--type raw_msg() ::
+%% Incoming data to be parsed
+-type incoming() ::
+    binary() |
+    {text, binary()} | {binary, binary()} | pong | {pong, binary} |  %% For WS
+    close.
+
+
+%% Outcoming data ready to be sent
+-type outcoming() ::
     iolist() | binary() |
     cow_ws:frame().                 % Only WS
+
 
 
 %% ===================================================================
@@ -155,38 +170,24 @@
 %% ===================================================================
 
 %% @doc Starts a new listening transport.
-%% If Port==0, NkPacket will try first the protocol's default
 -spec start_listener(domain(), user_connection(), listener_opts()) ->
     {ok, pid()} | {error, term()}.
 
-start_listener(Domain, {_, _, _, _}=Conn, Opts) when is_map(Opts) ->
-    case get_listener(Domain, Conn, Opts) of
+start_listener(Domain, UserConn, Opts) ->
+    case get_listener(Domain, UserConn, Opts) of
         {ok, Spec} ->
-            nkpacket_sup:add_transport(Spec, Opts);
-        {error, Error} ->
-            {error, Error}
-    end;
-
-start_listener(Domain, Uri, Opts) when is_map(Opts) ->
-    case resolve(listen, Domain, Uri) of
-        {ok, [Conn], UriOpts} ->
-            Opts1 = maps:merge(UriOpts, Opts),
-            start_listener(Domain, Conn, Opts1);
-        {ok, _, _}=O ->
-            {error, invalid_uri, O};
+            nkpacket_sup:add_transport(Spec);
         {error, Error} ->
             {error, Error}
     end.
 
 
-
-%% @private Gets a listening supervisor specification
-%% The 'path' option is generated from the uri, if not already present
+%% @doc Gets a listening supervisor specification
 -spec get_listener(domain(), user_connection(), listener_opts()) ->
     {ok, supervisor:child_spec()} | {error, term()}.
 
 get_listener(Domain, {Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
-    case parse_opts(listen, Opts) of
+    case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
             NkPort = #nkport{
                 domain = Domain,
@@ -199,10 +200,22 @@ get_listener(Domain, {Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
             nkpacket_transport:get_listener(NkPort);
         {error, Error} ->
             {error, Error}
+    end;
+
+get_listener(Domain, Uri, Opts) when is_map(Opts) ->
+    case resolve(Domain, Uri) of
+        {ok, [Conn], UriOpts} ->
+            Opts1 = maps:merge(UriOpts, Opts),
+            get_listener(Domain, Conn, Opts1);
+        {ok, _, _} ->
+            {error, invalid_uri};
+        {error, Error} ->
+            {error, Error}
     end.
 
 
-%% @doc Stops a locally started listener
+
+%% @doc Stops a locally started listener (only for standard supervisor)
 -spec stop_listener(nkport()|pid()) ->
     ok | {error, term()}.
 
@@ -218,26 +231,65 @@ stop_listener(#nkport{pid=Pid}) ->
     stop_listener(Pid).
 
 
-%% @doc Stops all locally started listeners
+%% @doc Stops all locally started listeners (only for standard supervisor)
 stop_all() ->
     lists:foreach(
         fun(#nkport{pid=Pid}) -> stop_listener(Pid) end,
         get_all()).
 
 
-%% @doc Stops all locally started listeners for a Domain
+%% @doc Stops all locally started listeners for a Domain (only for standard supervisor)
 stop_all(Domain) ->
     lists:foreach(
         fun(#nkport{pid=Pid}) -> stop_listener(Pid) end,
         get_all(Domain)).
 
 
-%% @doc Gets the current port of a listener process
--spec get_port(pid()) ->
-    inet:port_number().
+%% @doc Gets the current pid() of a listener or connection
+-spec get_nkport(pid()) ->
+    {ok, nkport()} | error.
 
-get_port(Pid) ->
-    gen_server:call(Pid, get_port).
+get_nkport(Pid) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, get_nkport, ?CALL_TIMEOUT) of
+        {ok, NkPort} -> {ok, NkPort};
+        _ -> error
+    end.
+
+
+%% @doc Gets the current port number of a listener or connection
+-spec get_local_port(pid()|nkport()) ->
+    {ok, inet:port_number()} | error.
+
+get_local_port(#nkport{local_port=Port}) ->
+    {ok, Port};
+get_local_port(Pid) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, get_local_port, ?CALL_TIMEOUT) of
+        {ok, Port} -> {ok, Port};
+        _ -> error
+    end.
+
+
+%% @doc Gets the current pid() of a listener or connection
+-spec get_pid(nkport()) ->
+    pid().
+
+get_pid(#nkport{pid=Pid}) ->
+    Pid.
+
+
+%% @doc Gets the user metadata of a listener or connection
+-spec get_user(pid()|nkport()) ->
+    {ok, term()} | error.
+
+get_user(#nkport{meta=#{user:=User}}) ->
+    {ok, User};
+get_user(#nkport{}) ->
+    {ok, undefined};
+get_user(Pid) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, get_user, ?CALL_TIMEOUT) of
+        {ok, User} -> {ok, User};
+        _ -> error
+    end.
 
 
 %% @doc Sends a message to a connection
@@ -253,7 +305,7 @@ send(Domain, SendSpec, Msg) ->
     {ok, nkport()} | {error, term()}.
 
 send(Domain, SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
-    case parse_opts(send, Opts) of
+    case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
             nkpacket_transport:send(Domain, SendSpec, Msg, Opts1);
         {error, Error} ->
@@ -273,7 +325,7 @@ connect(Domain, {_, _, _, _}=Conn, Opts) when is_map(Opts) ->
 
 connect(Domain, Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), 
                                   is_map(Opts) ->
-    case parse_opts(connect, Opts) of
+    case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
             nkpacket_transport:connect(Domain, Conns, Opts1);
         {error, Error} ->
@@ -281,14 +333,13 @@ connect(Domain, Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)),
     end;
 
 connect(Domain, Uri, Opts) when is_map(Opts) ->
-    case resolve(connect, Domain, Uri) of
+    case resolve(Domain, Uri) of
         {ok, Conns, UriOpts} ->
             Opts1 = maps:merge(UriOpts, Opts),
             connect(Domain, Conns, Opts1);
         {error, Error} ->
             {error, Error}
     end.
-
 
 
 %% @doc Gets all registered transports in all Domains.
@@ -409,21 +460,21 @@ is_local_ip(Ip) ->
 
 
 %% @private
--spec resolve(listen|connect|send, domain(), nklib:user_uri()) -> 
+-spec resolve(domain(), nklib:user_uri()) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
 
-resolve(Type, Domain, #uri{path=Path, opts=Opts, headers=Headers}=Uri) ->
+resolve(Domain, #uri{path=Path, opts=Opts, headers=Headers}=Uri) ->
     Opts1 = case Path of
         <<>> -> Opts;
         _ -> [{path, Path}|Opts]
     end,
-    case parse_opts(Type, Opts1) of
+    case nkpacket_util:parse_opts(Opts1) of
         {ok, Opts2} ->
             Opts3 = case Headers of 
                 [] -> Opts2;
-                _ -> Opts2#{uri_headers=>Headers}
+                _ -> Opts2#{user=>Headers}
             end,
             case nkpacket_dns:resolve(Domain, Uri) of
                 {ok, Conns} ->
@@ -435,145 +486,10 @@ resolve(Type, Domain, #uri{path=Path, opts=Opts, headers=Headers}=Uri) ->
             {error, Error}
     end;
 
-resolve(Type, Domain, Uri) ->
+resolve(Domain, Uri) ->
     case nklib_parse:uris(Uri) of
-        [PUri] -> resolve(Type, Domain, PUri);
+        [PUri] -> resolve(Domain, PUri);
         _ -> {error, invalid_uri}
     end.
 
-
-%% @private
-parse_opts(Type, Map) when is_map(Map) ->
-    parse_opts(Type, maps:to_list(Map), #{});
-
-parse_opts(Type, List) when is_list(List) ->
-    parse_opts(Type, List, #{}).
-
-
-%% @private
-parse_opts(_Type,[], Acc) -> 
-    {ok, Acc};
-
-parse_opts(Type, [{Key, Val}|Rest], Acc) -> 
-    Key1 = if
-        is_atom(Key) -> 
-            Key;
-        is_list(Key) ->
-            case catch list_to_existing_atom(Key) of
-                Atom when is_atom(Atom) -> Atom;
-                _ -> Key
-            end;
-        is_binary(Key) ->
-            case catch binary_to_existing_atom(Key, latin1) of
-                Atom when is_atom(Atom) -> Atom;
-                _ -> Key
-            end;
-        true ->
-            error
-    end,
-    Res = case Key1 of
-        transport ->
-            ignore;
-        error ->
-            error;
-
-        idle_timeout ->
-            parse_integer(Val);
-        udp_starts_tcp when Type==listen ->
-            parse_boolean(Val);
-        udp_no_connections when Type==listen ->
-            parse_boolean(Val);
-        udp_stun_reply when Type==listen ->
-            parse_boolean(Val);
-        udp_stun_t1 when Type==listen ->
-            parse_integer(Val);
-        sctp_out_streams when Type==listen ->
-            parse_integer(Val);
-        sctp_in_streams when Type==listen ->
-            parse_integer(Val);
-        certfile ->
-            {ok, nklib_util:to_list(Val)};
-        keyfile ->
-            {ok, nklib_util:to_list(Val)};
-        tcp_packet ->
-            case nklib_util:to_integer(Val) of
-                Int when Int==1; Int==2; Int==4 -> 
-                    {ok, Int};
-                _ -> 
-                    case nklib_util:to_lower(Val) of 
-                        <<"raw">> -> {ok, raw}; 
-                        _-> error 
-                    end
-            end;        
-        tcp_max_connections when Type==listen ->
-            parse_integer(Val);
-        tcp_listeners when Type==listen ->
-            parse_integer(Val);
-        host ->
-            parse_text(Val);
-        path ->
-            parse_text(Val);
-        connect_timeout when Type==connect; Type==send ->
-            parse_integer(Val);
-        listen_ip ->
-            unknown;
-        listen_port ->
-            unknown;
-        ws_proto ->
-            {ok, nklib_util:to_lower(Val)};
-        ws_options ->
-            case is_map(Val) of true -> {ok, Val}; false -> error end;
-        cowboy_opts ->
-            parse_list(Val);
-        cowboy_dispatch ->
-            parse_list(Val);
-
-        _ ->
-            unknown
-    end,
-    case Res of
-        {ok, Val1} -> 
-            parse_opts(Type, Rest, maps:put(Key1, Val1, Acc));
-        ignore ->
-            parse_opts(Type, Rest, Acc);
-        unknown ->
-            parse_opts(Type, Rest, maps:put(Key, Val, Acc));
-        error ->
-            {error, {invalid_option, Key}}
-    end;
-
-parse_opts(Type, [Term|Rest], Acc) -> 
-    parse_opts(Type, [{Term, true}|Rest], Acc).
-
-
-%% @private
-parse_integer(Value) ->
-    case nklib_util:to_integer(Value) of
-        Int when is_integer(Int), Int > 0 -> {ok, Int};
-        _ -> error
-    end.
-
-
-%% @private
-parse_boolean(Value) ->
-    case nklib_util:to_boolean(Value) of
-        Bool when is_boolean(Bool) -> {ok, Bool};
-        _ -> error
-    end.
-
-
-%% @private
-parse_list(Value) when is_list(Value) -> 
-    {ok, Value};
-parse_list(_) ->
-    error.
-
-%% @private
-parse_text(Term) ->
-    case nklib_parse:unquote(Term) of
-        error -> error;
-        Bin -> {ok, Bin}
-    end.
-
-    
 

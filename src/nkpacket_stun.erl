@@ -171,7 +171,7 @@ attributes(_, Acc)   ->
 %%====================================================================
 
 
--ifdef(TEST).
+-ifdef(TEST1).
 -include_lib("eunit/include/eunit.hrl").
 
 stun_test() ->

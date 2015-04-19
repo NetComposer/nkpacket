@@ -32,6 +32,19 @@
 -export([listen_init/1, listen_parse/4, listen_handle_call/3,
 		 listen_handle_cast/2, listen_handle_info/2, listen_stop/2]).
 -export([http_init/3]).
+-export([behavior_info/1]).
+
+
+%% ===================================================================
+%% Behavior
+%% ===================================================================
+
+
+%% @doc No mandatory functions
+behavior_info(callbacks) -> 
+	[];
+behavior_info(_) ->
+    undefined.
 
 
 %% ===================================================================
@@ -66,11 +79,11 @@ transports(_) ->
 default_port(_) ->
     invalid.
 
-%% @doc Implement this function to provide a 'quick' unparse functions, 
+%% @doc Implement this function to provide a 'quick' unparse function, 
 %% in case you don't need the connection state to perform the unparse.
 %% Do not implement it or return 'continue' to call conn_unparse/2
 -spec unparse(term(), nkpacket:nkport()) ->
-    {ok, nkpacket:raw_msg()} | continue | {error, term()}.
+    {ok, nkpacket:incoming()} | continue | {error, term()}.
 
 unparse(_, _) ->
     continue.
@@ -94,7 +107,7 @@ conn_init(_) ->
 
 
 %% @doc This function is called when a new message arrives to the connection
--spec conn_parse(term()|close, conn_state()) ->
+-spec conn_parse(nkpacket:incoming(), conn_state()) ->
 	{ok, conn_state()} | {bridge, nkpacket:nkport()} | 
 	{stop, Reason::term(), conn_state()}.
 
@@ -104,7 +117,7 @@ conn_parse(_Msg, ConnState) ->
 
 %% @doc This function is called when a new message must be send to the connection
 -spec conn_unparse(term(), conn_state()) ->
-	{ok, nkpacket:raw_msg(), conn_state()} | {error, term(), conn_state()} |
+	{ok, nkpacket:incoming(), conn_state()} | {error, term(), conn_state()} |
 	{stop, Reason::term()}.
 
 conn_unparse(_Term, ConnState) ->
@@ -113,7 +126,7 @@ conn_unparse(_Term, ConnState) ->
 
 %% @doc Called when the connection received a gen_server:call/2,3
 -spec conn_handle_call(term(), {pid(), term()}, conn_state()) ->
-	{ok, conn_state()} | {stop, Reason::term()}.
+	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
 conn_handle_call(_Msg, _From, ListenState) ->
 	{stop, not_defined, ListenState}.
@@ -121,7 +134,7 @@ conn_handle_call(_Msg, _From, ListenState) ->
 
 %% @doc Called when the connection received a gen_server:cast/2
 -spec conn_handle_cast(term(), conn_state()) ->
-	{ok, conn_state()} | {stop, Reason::term()}.
+	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
 conn_handle_cast(_Msg, ListenState) ->
 	{stop, not_defined, ListenState}.
@@ -129,7 +142,7 @@ conn_handle_cast(_Msg, ListenState) ->
 
 %% @doc Called when the connection received an erlang message
 -spec conn_handle_info(term(), conn_state()) ->
-	{ok, conn_state()} | {stop, Reason::term()}.
+	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
 conn_handle_info(_Msg, ListenState) ->
 	{stop, not_defined, ListenState}.
@@ -159,8 +172,7 @@ listen_init(_) ->
 
 
 %% @doc This function is called only for UDP transports using no_connections=>true
--spec listen_parse(inet:ip_address(), inet:port_number(), 
-				   nkpacket:raw_msg(), listen_state()) ->
+-spec listen_parse(inet:ip_address(), inet:port_number(), binary(), listen_state()) ->
     {ok, listen_state()} | {stop, Reason::term(), listen_state()}.
 
 listen_parse(_Ip, _Port, _Msg, ListenState) ->
@@ -208,7 +220,8 @@ listen_stop(_Reason, _State) ->
 %% It is used by the built-in http protocol, nkpacket_protocol_http.erl
 
 -spec http_init(nkpacket:nkport(), cowboy_req:req(), cowboy_middleware:env()) ->
-    {ok, Req::cowboy_req:req(),  Env::cowboy_middleware:env(), Middlewares::[module()]}.
+    {ok, Req::cowboy_req:req(), Env::cowboy_middleware:env(), Middlewares::[module()]} |
+    {stop, cowboy_req:req()}.
     
 http_init(_NkPort, _Req, _Env) ->
 	error(not_defined).

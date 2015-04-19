@@ -58,7 +58,7 @@ get_connected(Domain, Conn) ->
     [nkpacket:nkport()].
 
 get_connected(Domain, {_Proto, Transp, _Ip, _Port}=Conn, Opts) 
-              when Transp==ws; Transp==wss ->
+              when Transp==ws; Transp==wss; Transp==http; Transp==https ->
     Path = maps:get(path, Opts, <<"/">>),
     [
         NkPort || 
@@ -85,15 +85,11 @@ send(Domain, [Uri|Rest], Msg, Opts) when is_binary(Uri); is_list(Uri) ->
     end;
      
 send(Domain, [#uri{domain=Host}=Uri|Rest], Msg, Opts) ->
-    case nkpacket:resolve(send, Domain, Uri) of
+    case nkpacket:resolve(Domain, Uri) of
         {ok, RawConns, UriOpts} ->
             ?debug(Domain, "Transport send to ~p (~p)", [RawConns, Rest]),
             Opts1 = maps:merge(UriOpts, Opts),
-            % Opts2 = Opts1#{transport_uri => Uri},
-            Opts2 = case maps:is_key(host, Opts1) of
-                false -> Opts1#{host=>Host};
-                true -> Opts1
-            end,
+            Opts2 = maps:merge(#{host=>Host}, Opts1),
             send(Domain, RawConns++Rest, Msg, Opts2);
         {error, Error} ->
             ?notice(Domain, "Error sending to ~p: ~p", [Uri, Error]),
@@ -175,8 +171,8 @@ do_send(_Msg, [], Opts) ->
 
 do_send(Msg, [#nkport{domain=Domain}=NkPort|Rest], Opts) ->
     case unparse(Msg, NkPort) of
-        {ok, RawMsg} ->
-            case nkpacket_connection:send(NkPort, RawMsg) of
+        {ok, OutMsg} ->
+            case nkpacket_connection:send(NkPort, OutMsg) of
                 ok ->
                     {ok, NkPort};
                 {error, udp_too_large} ->
@@ -201,8 +197,8 @@ unparse(Term, #nkport{domain=Domain, protocol=Protocol}=NkPort) ->
     case erlang:function_exported(Protocol, unparse, 2) of
         true ->
             case Protocol:unparse(Term, NkPort) of
-                {ok, RawMsg} ->
-                    {ok, RawMsg};
+                {ok, OutMsg} ->
+                    {ok, OutMsg};
                 continue ->
                     unparse2(Term, NkPort);
                 {error, Error} ->
@@ -220,8 +216,8 @@ unparse2(Term, #nkport{domain=Domain, protocol=Protocol}=NkPort) ->
     case erlang:function_exported(Protocol, conn_unparse, 2) of
         true ->
             case nkpacket_connection:unparse(NkPort, Term) of
-                {ok, RawMsg} ->
-                    {ok, RawMsg};
+                {ok, OutMsg} ->
+                    {ok, OutMsg};
                 {error, Error} ->
                     ?notice(Domain, "Error unparsing msg: ~p", [Error]),
                     error
@@ -250,8 +246,8 @@ connect(Domain, [Conn|Rest], Opts) ->
 
 
 %% @private
-try_connect(_, _, _, 0) ->
-    {error, connection_busy};
+try_connect(_Domain, _Conn, _Opts, 0) ->
+    {error, connection_max_tries};
 
 try_connect(Domain, {Protocol, Transp, Ip, 0}, Opts, Tries) ->
     case get_defport(Protocol, Transp) of
@@ -266,19 +262,14 @@ try_connect(Domain, {Protocol, udp, Ip, Port}, Opts, _Tries) ->
 
 try_connect(Domain, {_Protocol, Transp, Ip, Port}=Conn, Opts, Tries) ->
     ConnId = {Transp, Ip, Port},
-    case nklib_store:put_dirty_new({nkpacket_connect_block, ConnId}, true) of
+    case nklib_proc:reg({nkpacket_connect_block, ConnId}) of
         true ->
             try 
                 raw_connect(Domain, Conn, Opts)
-            catch
-                error:Value -> 
-                    ?warning(Domain, "Exception ~p launching connection: ~p", 
-                                  [Value, erlang:get_stacktrace()]),
-                    {error, Value}
             after
-                catch nklib_store:del_dirty({nkpacket_connect_block, ConnId})
+                catch nklib_proc:del({nkpacket_connect_block, ConnId})
             end;
-        false ->
+        {false, _} ->
             timer:sleep(100),
             try_connect(Domain, Conn, Opts, Tries-1)
     end.
@@ -325,13 +316,14 @@ raw_connect(Domain, {Protocol, Transp, Ip, Port}, Opts) ->
     case Transp of
         udp when is_pid(ListenPid) -> nkpacket_transport_udp:connect(NkPort1);
         udp -> {error, no_listening_transport};
-        tcp -> nkpacket_transport_tcp:connect(NkPort1);
-        tls -> nkpacket_transport_tcp:connect(NkPort1);
+        tcp -> nkpacket_connection:connect(NkPort1);
+        tls -> nkpacket_connection:connect(NkPort1);
         sctp when is_pid(ListenPid) -> nkpacket_transport_sctp:connect(NkPort1);
         sctp -> {error, no_listening_transport};
-        ws -> nkpacket_transport_ws:connect(NkPort1);
-        wss -> nkpacket_transport_ws:connect(NkPort1);
-         _ -> {error, {unknown_transport, Transp}}
+        ws -> nkpacket_connection:connect(NkPort1);
+        wss -> nkpacket_connection:connect(NkPort1);
+        http -> {error, http_not_supported};
+        https -> {error, http_not_supported}
     end.
 
 
@@ -378,8 +370,8 @@ get_defport(Protocol, Transp) ->
 
 
 %% @private Tries to open a network port
-%% If Port==0, it first tries the "default" port for this transport, if defined
-%% If port is in use if tries again after a while
+%% If Port==0, it first tries the "default" port for this transport, if defined.
+%% If port is in use if tries again after a while.
 -spec open_port(nkpacket:nkport(),list()) ->
     {ok, port()} | {error, term()}.
 
@@ -401,18 +393,13 @@ open_port(NkPort, Opts) ->
         http -> {gen_tcp, listen};
         https -> {ssl, listen}
     end,
-
-    DefPort = case erlang:function_exported(Protocol, default_port, 1) of
-        true -> 
-            case Protocol:default_port(Transp) of
-                DefPort0 when is_integer(DefPort0) -> DefPort0;
-                _ -> undefined
-            end;
-        false ->
-            undefined
+    DefPort = case get_defport(Protocol, Transp) of
+        {ok, DefPort0} -> DefPort0;
+        error -> undefined
     end,
     case Port of
         0 when is_integer(DefPort) ->
+            lager:debug("Opening default ~p:~p (~p)", [Module, DefPort, Opts]),
             case Module:Fun(DefPort, Opts) of
                 {ok, Socket} ->
                     {ok, Socket};
@@ -430,6 +417,7 @@ open_port(NkPort, Opts) ->
     {ok, port()} | {error, term()}.
 
 open_port(Domain, Ip, Port, Module, Fun, Opts, Iter) ->
+    lager:debug("Opening ~p:~p (~p)", [Module, Port, Opts]),
     case Module:Fun(Port, Opts) of
         {ok, Socket} ->
             {ok, Socket};

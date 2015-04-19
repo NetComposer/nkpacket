@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(supervisor).
 
--export([add_transport/2, del_transport/1, get_transports/0]).
+-export([add_transport/1, del_transport/1, get_transports/0]).
 -export([add_ranch/1, del_ranch/1]).
 -export([init/1, start_link/0, start_transports_sup/0, start_ranch_sup/0]).
 
@@ -31,12 +31,11 @@
 
 
 %% @private Adds a supervised transport
--spec add_transport(supervisor:child_spec(), #{supervisor=>atom()|pid()}) ->
+-spec add_transport(supervisor:child_spec()) ->
     {ok, pid()} | {error, term()}.
 
-add_transport(Spec, Opts) ->
-    Sup = maps:get(supervisor, Opts, nkpacket_transports_sup),
-    case supervisor:start_child(Sup, Spec) of
+add_transport(Spec) ->
+    case supervisor:start_child(nkpacket_transports_sup, Spec) of
         {ok, Pid} -> {ok, Pid};
         {error, {Error, _}} -> {error, Error};
         {error, Error} -> {error, Error}

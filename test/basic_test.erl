@@ -29,7 +29,7 @@ basic_test_() ->
   	{setup, spawn, 
     	fun() -> 
     		application:stop(nkpacket),
-    		nkpacket_app:start(),
+    		ok = nkpacket_app:start(),
     		?debugMsg("Starting BASIC test")
 		end,
 		fun(_) -> 
@@ -45,16 +45,15 @@ basic_test_() ->
 
 config() ->
 	1024 = nkpacket_config_cache:global_max_connections(),
-	30000 = nkpacket_config_cache:sync_call_time(),
 	30000 = nkpacket_config_cache:udp_timeout(test1),
 	1024 = nkpacket_config_cache:max_connections(test1),
-	nkpacket_config:put(sync_call_time, 5000),
-	5000 = nkpacket_config_cache:sync_call_time(),
+	nkpacket_config:put(global_max_connections, 100),
+	100 = nkpacket_config_cache:global_max_connections(),
 
 	{error, {invalid, udp_timeout}} = 
 		nkpacket_config:load_domain(test1, #{udp_timeout=>0}),
-	ok = nkpacket_config:load_domain(test1, #{udp_timeout=>5000}),
-	5000 = nkpacket_config_cache:udp_timeout(test1),
+	ok = nkpacket_config:load_domain(test1, #{udp_timeout=>5}),
+	5 = nkpacket_config_cache:udp_timeout(test1),
 	30000 = nkpacket_config_cache:udp_timeout(test2),
 
 	undefined = nkpacket_config:get_protocol(test),

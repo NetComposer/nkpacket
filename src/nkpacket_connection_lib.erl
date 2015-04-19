@@ -56,7 +56,7 @@ is_max(Domain) ->
 
 
 %% @doc Sends data directly to a transport
--spec raw_send(nkpacket:nkport(), nkpacket:raw_msg()) ->
+-spec raw_send(nkpacket:nkport(), nkpacket:outcoming()) ->
     ok | {error, term()}.
     
 raw_send(#nkport{transp=udp}, Data) when byte_size(Data) > ?MAX_UDP ->
@@ -74,14 +74,12 @@ raw_send(#nkport{transp=tls, socket=Socket}, Data) ->
 raw_send(#nkport{transp=sctp, socket={Socket, AssocId}}, Data) ->
     gen_sctp:send(Socket, AssocId, 0, Data);
 
-raw_send(#nkport{transp=ws, socket=Socket, meta=Meta}, Data) when is_port(Socket) ->
-    Exts = maps:get(ws_exts, Meta, #{}),
-    Bin = nkpacket_connection_ws:encode(get_ws_frame(Data), Exts),
+raw_send(#nkport{transp=ws, socket=Socket}, Data) when is_port(Socket) ->
+    Bin = nkpacket_connection_ws:encode(get_ws_frame(Data)),
     gen_tcp:send(Socket, Bin);
 
-raw_send(#nkport{transp=wss, socket={sslsocket, _, _}=Socket, meta=Meta}, Data) ->
-    Exts = maps:get(ws_exts, Meta, #{}),
-    Bin = nkpacket_connection_ws:encode(get_ws_frame(Data), Exts),
+raw_send(#nkport{transp=wss, socket={sslsocket, _, _}=Socket}, Data) ->
+    Bin = nkpacket_connection_ws:encode(get_ws_frame(Data)),
     ssl:send(Socket, Bin);
 
 raw_send(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->

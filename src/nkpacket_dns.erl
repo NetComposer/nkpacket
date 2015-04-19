@@ -93,10 +93,6 @@ resolve(Domain, Uri) ->
 resolve_uri(Domain, #uri{}=Uri) ->
     #uri{scheme=Scheme, domain=Host, opts=Opts, port=Port} = Uri,
     try
-        Protocol = case nkpacket_config_cache:get_protocol(Domain, Scheme) of
-            undefined -> throw({error, {unknown_scheme, Scheme}});
-            Protocol0 -> Protocol0
-        end,
         Host1 = case Host of
             <<"all">> -> <<"0.0.0.0">>;
             <<"all6">> -> <<"0:0:0:0:0:0:0:0">>;
@@ -119,6 +115,7 @@ resolve_uri(Domain, #uri{}=Uri) ->
                     Atom -> Atom
                 end
         end,
+        Protocol = nkpacket_config_cache:get_protocol(Domain, Scheme),
         ValidTransp = case erlang:function_exported(Protocol, transports, 1) of
             true ->
                 Protocol:transports(Scheme);
@@ -380,7 +377,8 @@ save_cache(Domain, Key, Value) ->
     case nkpacket_config_cache:dns_cache_ttl(Domain) of
         TTL when is_integer(TTL), TTL > 0 ->
             Now = nklib_util:timestamp(),
-            true = ets:insert(?MODULE, {{Domain, Key}, Value, Now+TTL}),
+            Secs = TTL div 1000,
+            true = ets:insert(?MODULE, {{Domain, Key}, Value, Now+Secs}),
             ok;
         _ ->
             ok
@@ -528,6 +526,7 @@ sort_select(Pos, [C|Rest], Acc) ->
 -include_lib("eunit/include/eunit.hrl").
 
 weigth_test() ->
+    ?debugMsg("DNS Weight Test"),
     []= groups([]),
     [[{1,a}]] = groups([{1,1,a}]),
     [[{1,a}],[{2,b}]] = groups([{2,2,b}, {1,1,a}]),

@@ -22,7 +22,7 @@
 -module(nkpacket_transport_http).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([get_listener/1, get_port/1]).
+-export([get_listener/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
 -export([parse_paths/1, check_paths/2]).
@@ -53,18 +53,6 @@ get_listener(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
     }.
 
 
-
-%% @private Get transport current port
--spec get_port(pid()) ->
-    {ok, inet:port_number()}.
-
-get_port(Pid) ->
-    gen_server:call(Pid, get_port).
-
-
-
-
-
 %% ===================================================================
 %% gen_server
 %% ===================================================================
@@ -74,9 +62,8 @@ get_port(Pid) ->
     protocol :: nkpacket:protocol(),
     proto_state :: term(),
     shared :: pid(),
-    user_ref :: reference()
+    monitor_ref :: reference()
 }).
-
 
 
 %% @private
@@ -106,43 +93,42 @@ init([NkPort]) ->
         ParsedPaths = nkpacket_transport_http:parse_paths(PathList),
         Meta1 = Meta#{http_match=>{HostList, ParsedPaths}},
         % This is the port for tcp/tls and also what will be sent to cowboy_init
-        SharedPort = NkPort#nkport{
+        Instance = NkPort#nkport{
             listen_ip = Ip,
             pid = self(),
             meta = Meta1
         },
-        case nkpacket_cowboy:start(SharedPort) of
+        case nkpacket_cowboy:start(Instance) of
             {ok, SharedPid} -> ok;
             {error, Error} -> SharedPid = throw(Error)
         end,
         erlang:monitor(process, SharedPid),
         case Port of
-            0 -> {ok, Port1} = nkpacket_transport_tcp:get_port(SharedPid);
+            0 -> {ok, Port1} = nkpacket:get_local_port(SharedPid);
             _ -> Port1 = Port
         end,
-        RemoveOpts = [tcp_listeners, tcp_max_connections, certfile, keyfile],
         NkPort1 = NkPort#nkport{
             local_port = Port1,
             listen_ip = Ip,
             listen_port = Port1,
             pid = self(),
-            socket = SharedPid,
-            meta = maps:without(RemoveOpts, Meta)
+            socket = SharedPid
         },   
-        nklib_proc:put(nkpacket_transports, NkPort1),
-        nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
+        StoredNkPort = NkPort1#nkport{meta=maps:with([host, path], Meta)},
+        nklib_proc:put(nkpacket_transports, StoredNkPort),
+        nklib_proc:put({nkpacket_listen, Domain, Protocol}, StoredNkPort),
         {Protocol1, ProtoState1} = 
             nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
-        UserRef = case Meta of
-            #{link:=UserPid} -> erlang:monitor(process, UserPid);
+        MonRef = case Meta of
+            #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
             _ -> undefined
         end,
         State = #state{
-            nkport = NkPort1,
+            nkport = NkPort1#nkport{meta=maps:with([user], Meta)},
             protocol = Protocol1,
             proto_state = ProtoState1,
             shared = SharedPid,
-            user_ref = UserRef
+            monitor_ref = MonRef
         },
         {ok, State}
     catch
@@ -157,8 +143,14 @@ init([NkPort]) ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call(get_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
-    {reply, {ok, Port}, State};
+handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
+    {reply, {ok, NkPort}, State};
+
+handle_call(get_local_port, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local_port(NkPort), State};
+
+handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_user(NkPort), State};
 
 handle_call(Msg, From, State) ->
     case call_protocol(listen_handle_call, [Msg, From], State) of
@@ -187,7 +179,7 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) ->
     nklib_util:gen_server_info(#state{}).
 
-handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_ref=MRef}=State) ->
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=State) ->
     {stop, normal, State};
 
 handle_info({'DOWN', _MRef, process, Pid, Reason}, #state{shared=Pid}=State) ->
@@ -231,9 +223,14 @@ terminate(Reason, State) ->
     term().
 
 cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, Env) ->
+    
+
     {HostList, PathList} = maps:get(http_match, Meta),
     ReqHost = cowboy_req:host(Req),
     ReqPath = cowboy_req:path(Req),
+    % lager:warning("HTTP START: ~p ~p, ~p, ~p", [ReqHost, HostList, ReqPath, PathList]),
+    % lager:warning("T1: ~p", [(HostList==[] orelse lists:member(ReqHost, HostList))]),
+    % lager:warning("T2: ~p", [(PathList==[] orelse check_paths(ReqPath, PathList))]),
     case 
         (HostList==[] orelse lists:member(ReqHost, HostList)) andalso
         (PathList==[] orelse check_paths(ReqPath, PathList))
@@ -245,14 +242,35 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
             NkPort1 = NkPort#nkport{
                 remote_ip = RemoteIp,
                 remote_port = RemotePort,
-                socket = self(),
-                meta = maps:without([http_match], Meta)
+                socket = self()
             },
-            {ok, ConnPid} = nkpacket_connection:start(NkPort1),
-            NkPort2 = NkPort1#nkport{pid=ConnPid},
-            ?debug(Domain, "HTTP listener accepted connection: ~p", [NkPort1]),
-            {ok, Req1, Env1, Middlewares1} = Protocol:http_init(NkPort2, Req, Env),
-            execute(Req1, Env1, Middlewares1)
+            % Connection will monitor listen process (unsing pid()) and 
+            % this cowboy process (using socket)
+            ConnPort = NkPort1#nkport{
+                meta = maps:with([host, path|?CONN_LISTEN_OPTS], Meta)
+            },
+            case nkpacket_connection:start(ConnPort) of
+                {ok, ConnPid} ->
+                    ?debug(Domain, "HTTP listener accepted connection: ~p", [NkPort1]),
+                    case erlang:function_exported(Protocol, http_init, 3) of
+                        true ->
+                            NkPort2 = NkPort1#nkport{pid=ConnPid},
+                            case Protocol:http_init(NkPort2, Req, Env) of
+                                {ok, Req1, Env1, Middlewares1} ->
+                                    execute(Req1, Env1, Middlewares1);
+                                {stop, Req1} ->
+                                    {ok, Req1, Env}
+                            end;
+                        false ->
+                            Req1 = cowboy_req:reply(404, 
+                                                [{<<"server">>, <<"NkPACKET">>}], Req),
+                            {ok, Req1, Env}
+                    end;
+                {error, Error} ->
+                    ?notice(Domain, "HTTP listener did not accepted connection: ~p", 
+                           [Error]),
+                    next
+            end
     end.
 
 
@@ -283,9 +301,6 @@ resume(Env, Rest, Module, Function, Args) ->
         {stop, Req1} ->
             {ok, Req1, Env}
     end.
-
-
-
 
 
 
@@ -356,8 +371,8 @@ check_paths2(_Parts, Paths) ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-
 path_test() ->
+    ?debugMsg("HTTP path test"),
     true = test_path("/a/b/c", []),
     true = test_path("/", ["/"]),
     false = test_path("/", ["/a"]),
@@ -376,54 +391,5 @@ test_path(Req, Paths) ->
     check_paths(list_to_binary(Req), Paths1).
 
 -endif.
-
-
-
-
-% %% @private
-% routes([H|_]=String, Module, Args) when is_integer(H) ->
-%     routes([String], Module, Args);
-
-% routes(Bin, Module, Args) when is_binary(Bin) ->
-%     routes([Bin], Module, Args);
-
-% routes(List, Module, Args) ->
-%     lists:map(
-%         fun(Spec) ->
-%             case Spec of
-%                 {Host, Constraints, PathsList} 
-%                     when is_list(Constraints), is_list(PathsList) -> 
-%                     ok;
-%                 {Host, PathsList} when is_list(PathsList) -> 
-%                     Constraints = [];
-%                 SinglePath when is_binary(SinglePath) ->
-%                     Host = '_', Constraints = [], PathsList = [SinglePath];
-%                 SinglePath when is_list(SinglePath), is_integer(hd(SinglePath)) ->
-%                     Host = '_', Constraints = [], PathsList = [SinglePath];
-%                 PathsList when is_list(PathsList) ->
-%                     Host = '_', Constraints = []
-%             end,
-%             Paths = lists:map(
-%                 fun(PatchSpec) ->
-%                     case PatchSpec of
-%                         {Path, PathConstraints} 
-%                             when is_list(Path), is_list(PathConstraints) ->
-%                             {Path, PathConstraints, Module, Args};
-%                         Path when is_binary(Path) ->
-%                             {Path, [], Module, Args};
-%                         Path when is_list(Path) ->
-%                             {Path, [], Module, Args}
-%                     end
-%                 end,
-%                 PathsList),
-%             {Host, Constraints, Paths}
-%         end,
-%         List).
-
-
-
-
-
-
 
 

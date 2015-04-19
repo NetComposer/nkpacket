@@ -58,12 +58,13 @@ default_port(_) -> invalid.
 
 
 -spec http_init(nkpacket:nkport(), cowboy_req:req(), cowboy_middleware:env()) ->
-    {ok, Req::cowboy_req:req(),  Env::cowboy_middleware:env(), Middlewares::[module()]}.
+    {ok, Req::cowboy_req:req(), Env::cowboy_middleware:env(), Middlewares::[module()]} |
+    {stop, cowboy_req:req()}.
 
 http_init(#nkport{meta=Meta}=NkPort, Req, Env) ->
 	case Meta of
 		#{cowboy_dispatch:=Dispatch} ->
-			Env1 = [{dispatch, Dispatch}, {nkport, NkPort}|Env],
+			Env1 = [{dispatch, Dispatch}, {nkport, NkPort} | Env],
  			{ok, Req, Env1, [cowboy_router, cowboy_handler]};
  		#{cowboy_opts:=CowboyOpts} ->
  			UserEnv = nklib_util:get_value(env, CowboyOpts, []),
@@ -71,7 +72,9 @@ http_init(#nkport{meta=Meta}=NkPort, Req, Env) ->
  											   [cowboy_router, cowboy_handler]),
  			UserEnv1 = [{nkport, NkPort}|UserEnv], 
  			Env1 = nklib_util:store_values(UserEnv1, Env),
- 			{ok, Req, Env1, Middlewares}
+ 			{ok, Req, Env1, Middlewares};
+ 		_ ->
+			{stop, cowboy_req:reply(500, [{<<"server">>, <<"NkPACKET">>}], Req)}
  	end.
 
 

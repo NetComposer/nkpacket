@@ -48,12 +48,8 @@ start() ->
 %% @private OTP standard start callback
 start(_Type, _Args) ->
     {ok, Pid} = nkpacket_sup:start_link(),
-    MainIp = nkpacket_config_cache:main_ip(),
-    MainIp6 = nkpacket_config_cache:main_ip6(),
     {ok, Vsn} = application:get_key(nkpacket, vsn),
     lager:notice("NkPACKET v~s has started.", [Vsn]),
-    lager:notice("Main IP is ~s (~s)", 
-                    [nklib_util:to_host(MainIp), nklib_util:to_host(MainIp6)]),
     {ok, Pid}.
 
 

@@ -30,10 +30,8 @@ shell:
 
 
 # Still failling
-# docs:
-# 	./rebar skip_deps=true doc
-# 	@cp -R apps/riak_core/doc doc/riak_core
-
+docs:
+	./rebar skip_deps=true doc
 
 APPS = kernel stdlib sasl erts ssl tools os_mon runtime_tools crypto inets \
 	xmerl webtool snmp public_key mnesia eunit syntax_tools compiler
@@ -59,6 +57,6 @@ cleanplt:
 
 
 build_tests:
-	erlc -pa ebin -pa deps/lager/ebin -o ebin -I include \
+	erlc -pa ebin -pa deps/lager/ebin -pa deps/nklib/ebin -o ebin -I include \
 	+export_all +debug_info +"{parse_transform, lager_transform}" \
 	test/*.erl

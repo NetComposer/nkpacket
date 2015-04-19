@@ -76,8 +76,8 @@ default_port(_) -> invalid.
 
 listen_init(NkPort) ->
 	lager:notice("Protocol LISTEN init: ~p (~p)", [NkPort, self()]),
-	State = case NkPort#nkport.meta of
-		#{test:={Pid, Ref}} -> #listen_state{pid=Pid, ref=Ref, nkport=NkPort};
+	State = case nkpacket:get_user(NkPort) of
+		{ok, {Pid, Ref}} -> #listen_state{pid=Pid, ref=Ref, nkport=NkPort};
 		_ -> #listen_state{nkport=NkPort}
 	end,
 	maybe_reply(listen_init, State),
@@ -94,8 +94,11 @@ listen_handle_cast(Msg, State) ->
 	{ok, State}.
 
 
+listen_handle_info({'EXIT', _, forced_stop}, State) ->
+	{stop, forced_stop, State};
+
 listen_handle_info(Msg, State) ->
-	lager:warning("Unexpected info: ~p", [Msg]),
+	lager:warning("Unexpected listen info: ~p", [Msg]),
 	{ok, State}.
 
 listen_parse(Ip, Port, Data, State) ->
@@ -125,8 +128,8 @@ listen_stop(Reason, State) ->
 
 conn_init(NkPort) ->
 	lager:notice("Protocol CONN init: ~p (~p)", [NkPort, self()]),
-	State = case NkPort#nkport.meta of
-		#{test:={Pid, Ref}} -> #conn_state{pid=Pid, ref=Ref, nkport=NkPort};
+	State = case nkpacket:get_user(NkPort) of
+		{ok, {Pid, Ref}} -> #conn_state{pid=Pid, ref=Ref, nkport=NkPort};
 		_ -> #conn_state{nkport=NkPort}
 	end,
 	maybe_reply(conn_init, State),
@@ -137,6 +140,11 @@ conn_parse({text, Data}, State) ->
 	lager:notice("Parsing WS TEXT: ~p", [Data]),
 	maybe_reply({parse, {text, Data}}, State),
 	{ok, State};
+
+conn_parse({binary, <<>>}, State) ->
+	lager:error("EMPTY"),
+	{ok, State};
+
 
 conn_parse({binary, Data}, State) ->
 	Msg = erlang:binary_to_term(Data),
@@ -157,7 +165,8 @@ conn_parse({pong, Payload}, State) ->
 
 conn_parse(Data, State) ->
 	Msg = erlang:binary_to_term(Data),
-	lager:notice("Parsing: ~p", [Msg]),
+	#conn_state{nkport=#nkport{domain=Dom}} = State,
+	lager:notice("Parsing: ~p (~p)", [Msg, Dom]),
 	maybe_reply({parse, Msg}, State),
 	{ok, State}.
 
@@ -182,7 +191,7 @@ conn_handle_cast(Msg, State) ->
 
 
 conn_handle_info(Msg, State) ->
-	lager:warning("Unexpected info: ~p", [Msg]),
+	lager:warning("Unexpected conn info: ~p", [Msg]),
 	{ok, State}.
 
 conn_stop(Reason, State) ->

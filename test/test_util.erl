@@ -32,7 +32,7 @@ reset_1() ->
  	timer:sleep(100),
 	Pid = self(),
 	Ref = make_ref(),
-	M = #{test=>{Pid, Ref}},
+	M = #{user=>{Pid, Ref}},
 	{Ref, M}.
 
 
@@ -43,9 +43,9 @@ reset_2() ->
  	timer:sleep(100),
 	Pid = self(),
 	Ref1 = make_ref(),
-	M1 = #{test=>{Pid, Ref1}},
+	M1 = #{user=>{Pid, Ref1}},
 	Ref2 = make_ref(),
-	M2 = #{test=>{Pid, Ref2}},
+	M2 = #{user=>{Pid, Ref2}},
 	{Ref1, M1, Ref2, M2}.
 
 
@@ -57,11 +57,11 @@ reset_3() ->
  	timer:sleep(100),
 	Pid = self(),
 	Ref1 = make_ref(),
-	M1 = #{test=>{Pid, Ref1}},
+	M1 = #{user=>{Pid, Ref1}},
 	Ref2 = make_ref(),
-	M2 = #{test=>{Pid, Ref2}},
+	M2 = #{user=>{Pid, Ref2}},
 	Ref3 = make_ref(),
-	M3 = #{test=>{Pid, Ref3}},
+	M3 = #{user=>{Pid, Ref3}},
 	{Ref1, M1, Ref2, M2, Ref3, M3}.
 
 
@@ -72,6 +72,22 @@ ensure([Ref|Rest]) ->
 	timer:sleep(50),
 	receive {Ref, V} -> error({unexpected, V}) after 0 -> ok end,
 	ensure(Rest).
+
+
+
+get_port(udp) ->
+	{ok, Socket} = gen_udp:open(0, [{reuseaddr, true}]),
+    {ok, Port1} = inet:port(Socket),
+    gen_udp:close(Socket),
+    Port1;
+
+get_port(tcp) ->
+	{ok, Socket} = gen_tcp:listen(0, [{reuseaddr, true}]),
+    {ok, Port1} = inet:port(Socket),
+    gen_tcp:close(Socket),
+    Port1.
+
+
 
 
 

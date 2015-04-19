@@ -25,62 +25,37 @@
 %% Defines
 %% ===================================================================
 
--define(VERSION, "0.1.0").
+-define(CALL_TIMEOUT, 30000).
+
+-define(CONN_LISTEN_OPTS, [user, idle_timeout, refresh_fun]).
+
+-define(CONN_CLIENT_OPTS, [user, idle_timeout, refresh_fun, monitor, path, ws_exts]).
+
 
 -define(
     DO_LOG(Level, Domain, Text, Opts),
         lager:Level([{domain, Domain}], "~p "++Text, [Domain|Opts])).
 
--define(DO_DEBUG(_Domain, _Level, _Text, _List),
-    % case is_function(nkpacket_config_cache:debug_fun(Domain), 4) of
-    %     false -> ok;
-    %     true -> (nkpacket_config_cache:debug_fun(Domain))(Domain, Level, Text, List)
-    % end).
-    ok).
-
-
 -define(debug(Domain, Text, List), 
-    ?DO_DEBUG(Domain, debug, Text, List),
-    case nkpacket_config_cache:log_level(Domain) >= 8 of
-        true -> ?DO_LOG(debug, Domain, Text, List);
-        false -> ok
-    end).
+    ?DO_LOG(debug, Domain, Text, List)).
 
 -define(info(Domain, Text, List), 
-    ?DO_DEBUG(Domain, info, Text, List),
-    case nkpacket_config_cache:log_level(Domain) >= 7 of
-        true -> ?DO_LOG(info, Domain, Text, List);
-        false -> ok
-    end).
+    ?DO_LOG(info, Domain, Text, List)).
 
 -define(notice(Domain, Text, List), 
-    ?DO_DEBUG(Domain, notice, Text, List),
-    case nkpacket_config_cache:log_level(Domain) >= 6 of
-        true -> ?DO_LOG(notice, Domain, Text, List);
-        false -> ok
-    end).
+    ?DO_LOG(notice, Domain, Text, List)).
 
 -define(warning(Domain, Text, List), 
-    ?DO_DEBUG(Domain, warning, Text, List),
-    case nkpacket_config_cache:log_level(Domain) >= 5 of
-        true -> ?DO_LOG(warning, Domain, Text, List);
-        false -> ok
-    end).
+    ?DO_LOG(warning, Domain, Text, List)).
 
 -define(error(Domain, Text, List), 
-    ?DO_DEBUG(Domain, error, Text, List),
-    case nkpacket_config_cache:log_level(Domain) >= 4 of
-        true -> ?DO_LOG(error, Domain, Text, List);
-        false -> ok
-    end).
+    ?DO_LOG(error, Domain, Text, List)).
 
 
 
 %% ===================================================================
 %% Records
 %% ===================================================================
-
-
 
 
 -record(nkport, {
@@ -95,9 +70,8 @@
     protocol :: nkpacket:protocol(),
     pid :: pid(),
     socket :: nkpacket_transport:socket(),
-    meta = #{}
+    meta = #{} :: map()
 }).
-
 
 
 -endif.

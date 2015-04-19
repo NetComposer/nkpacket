@@ -29,7 +29,8 @@
 -include_lib("nklib/include/nklib.hrl").
 
 
-init(Req, [#{test:={Pid, Ref}}]=Opts) ->
+init(Req, Opts) ->
+	[#{user:={Pid, Ref}}] = Opts,
 	Pid ! {Ref, http_init, self()},
     Req2 = cowboy_req:reply(200, [
         {<<"content-type">>, <<"text/plain">>}
@@ -37,7 +38,7 @@ init(Req, [#{test:={Pid, Ref}}]=Opts) ->
     {ok, Req2, Opts}.
 
 
-terminate(_Reason, _Req, [#{test:={Pid, Ref}}]) ->
+terminate(_Reason, _Req, [#{user:={Pid, Ref}}]) ->
 	Pid ! {Ref, http_terminate, self()},
 	ok.
 

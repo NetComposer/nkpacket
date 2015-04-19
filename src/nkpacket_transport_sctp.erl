@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([get_listener/1, connect/1, get_port/1]).
+-export([get_listener/1, connect/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3,   
          handle_cast/2, handle_info/2]).
 
@@ -57,43 +57,15 @@ get_listener(NkPort) ->
 -spec connect(nkpacket:nkport()) ->
     {ok, nkpacket:nkport()} | {error, term()}.
 
-connect(NkPort) ->
-    #nkport{
-        domain = Domain,
-        transp = sctp, 
-        remote_ip = Ip,
-        remote_port = Port, 
-        pid = Pid, 
-        meta = Meta
-    } = NkPort,
-    case nkpacket_connection_lib:is_max(Domain) of
-        false ->
-            Timeout = case maps:get(connect_timeout, Meta, undefined) of
-                undefined -> nkpacket_config_cache:connect_timeout(Domain);
-                Timeout0 -> Timeout0
-            end,
-            Opts = maps:without([connect_timeout], Meta),
-            case 
-                catch gen_server:call(Pid, {connect, Ip, Port, Timeout, Opts}, 2*Timeout) 
-            of
-                {ok, NkPort1} -> 
-                    {ok, NkPort1};
-                {error, Error} -> 
-                    {error, Error};
-                {'EXIT', Error} ->
-                    {error, Error}
-            end;
-        true ->
-            {error, max_connections}
+connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
+    case catch gen_server:call(Pid, {connect, NkPort}, ?CALL_TIMEOUT) of
+        {ok, NkPort1} -> 
+            {ok, NkPort1};
+        {error, Error} ->
+            {error, Error};
+        {'EXIT', Error} -> 
+            {error, Error}
     end.
-
-
-%% @private Get transport current port
--spec get_port(pid()) ->
-    {ok, inet:port_number()}.
-
-get_port(Pid) ->
-    gen_server:call(Pid, get_port).
 
 
 
@@ -110,11 +82,11 @@ start_link(NkPort) ->
 -record(state, {
     nkport :: nkpacket:nkport(),
     socket :: port(),
-    pending_froms1 :: [{{inet:ip_address(), inet:port_number()}, {pid(), term()}, map()}],
+    pending_froms :: [{{inet:ip_address(), inet:port_number()}, {pid(), term()}, map()}],
     pending_conns :: [pid()],
     protocol :: nkpacket:protocol(),
     proto_state :: term(),
-    user_ref :: reference()
+    monitor_ref :: reference()
 }).
 
 
@@ -125,6 +97,7 @@ start_link(NkPort) ->
 init([NkPort]) ->
     #nkport{
         domain = Domain,
+        transp = sctp,
         local_ip = Ip, 
         local_port = Port,
         protocol = Protocol,
@@ -133,40 +106,35 @@ init([NkPort]) ->
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
     ListenOpts = listen_opts(NkPort),
-    Timeout = case maps:get(idle_timeout, Meta, undefined) of
-        undefined -> nkpacket_config_cache:sctp_timeout(Domain);
-        Timeout0 -> Timeout0
-    end,
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
             {ok, Port1} = inet:port(Socket),
-            Meta1 = Meta#{idle_timeout=>Timeout},
-            RemoveOpts = [sctp_out_streams, sctp_in_streams],
+            % RemoveOpts = [sctp_out_streams, sctp_in_streams],
             NkPort1 = NkPort#nkport{
                 local_port = Port1, 
                 listen_ip = Ip,
                 listen_port = Port1,
                 pid = self(),
-                socket = {Socket, 0},
-                meta = maps:without(RemoveOpts, Meta1)
+                socket = {Socket, 0}
             },
             ok = gen_sctp:listen(Socket, true),
-            nklib_proc:put(nkpacket_transports, NkPort1),
-            nklib_proc:put({nkpacket_listen, Domain, Protocol}, NkPort1),
+            StoredNkPort = NkPort1#nkport{meta=#{}},
+            nklib_proc:put(nkpacket_transports, StoredNkPort),
+            nklib_proc:put({nkpacket_listen, Domain, Protocol}, StoredNkPort),
             {Protocol1, ProtoState1} = 
                 nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
-            UserRef = case Meta of
-                #{link:=UserPid} -> erlang:monitor(process, UserPid);
+            MonRef = case Meta of
+                #{monitor:=UserPid} -> erlang:monitor(process, UserPid);
                 _ -> undefined
             end,
             State = #state{ 
-                nkport = NkPort1, 
+                nkport = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)}, 
                 socket = Socket,
-                pending_froms1 = [],
+                pending_froms = [],
                 pending_conns = [],
                 protocol = Protocol1,
                 proto_state = ProtoState1,
-                user_ref = UserRef
+                monitor_ref = MonRef
             },
             {ok, State};
         {error, Error} ->
@@ -180,8 +148,22 @@ init([NkPort]) ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call({connect, Ip, Port, Timeout, Opts}, From, State) ->
-    #state{socket=Socket, pending_froms1=Froms, pending_conns=Conns} = State,
+handle_call({connect, ConnPort}, From, State) ->
+    #nkport{
+        domain = Domain, 
+        remote_ip = Ip, 
+        remote_port = Port, 
+        meta = Meta
+    } = ConnPort,
+    #state{
+        socket = Socket, 
+        pending_froms = Froms, 
+        pending_conns = Conns
+    } = State,
+    Timeout = case maps:get(connect_timeout, Meta, undefined) of
+        undefined -> nkpacket_config_cache:connect_timeout(Domain);
+        Timeout0 -> Timeout0
+    end,
     Self = self(),
     Fun = fun() ->
         case catch gen_sctp:connect_init(Socket, Ip, Port, [], Timeout) of
@@ -198,13 +180,19 @@ handle_call({connect, Ip, Port, Timeout, Opts}, From, State) ->
     end,
     ConnPid = spawn_link(Fun),
     State1 = State#state{
-        pending_froms1 = [{{Ip, Port}, From, Opts}|Froms],
+        pending_froms = [{{Ip, Port}, From, Meta}|Froms],
         pending_conns = [ConnPid|Conns]
     },
     {noreply, State1};
 
-handle_call(get_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
-    {reply, {ok, Port}, State};
+handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
+    {reply, {ok, NkPort}, State};
+
+handle_call(get_local_port, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local_port(NkPort), State};
+
+handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_user(NkPort), State};
 
 handle_call(Msg, From, State) ->
     case call_protocol(listen_handle_call, [Msg, From], State) of
@@ -218,9 +206,9 @@ handle_call(Msg, From, State) ->
 -spec handle_cast(term(), #state{}) ->
     nklib_util:gen_server_cast(#state{}).
 
-handle_cast({connection_error, From}, #state{pending_froms1=Froms}=State) ->
+handle_cast({connection_error, From}, #state{pending_froms=Froms}=State) ->
     Froms1 = lists:keydelete(From, 2, Froms),
-    {noreply, State#state{pending_froms1=Froms1}};
+    {noreply, State#state{pending_froms=Froms1}};
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -242,12 +230,12 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
     State1 = case SAC of
         #sctp_assoc_change{state=comm_up, assoc_id=AssocId} ->
             % lager:error("COMM_UP: ~p, ~p", [Domain, AssocId]),
-            #state{pending_froms1=Froms} = State,
+            #state{pending_froms=Froms} = State,
             case lists:keytake({Ip, Port}, 1, Froms) of
-                {value, {_, From, Opts}, Froms1} -> 
-                    Reply = do_connect(Ip, Port, AssocId, Opts, State),
+                {value, {_, From, Meta}, Froms1} -> 
+                    Reply = do_connect(Ip, Port, AssocId, Meta, State),
                     gen_server:reply(From, Reply),
-                    State#state{pending_froms1=Froms1};
+                    State#state{pending_froms=Froms1};
                 false ->
                     State
             end;
@@ -268,7 +256,7 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
             State; 
         Data when is_binary(Data) ->
             [#sctp_sndrcvinfo{assoc_id=AssocId}] = Anc,
-            case do_connect(Ip, Port, AssocId, #{}, State) of
+            case do_connect(Ip, Port, AssocId, State) of
                 {ok, #nkport{pid=Pid}} ->
                     nkpacket_connection:incoming(Pid, Data);
                 {error, Error} ->
@@ -282,7 +270,7 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
     ok = inet:setopts(Socket, [{active, once}]),
     {noreply, State1};
 
-handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_ref=MRef}=State) ->
+handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=State) ->
     {stop, normal, State};
 
 handle_info({'EXIT', Pid, _Status}=Msg, #state{pending_conns=Conns}=State) ->
@@ -352,24 +340,34 @@ listen_opts(#nkport{domain=Domain, local_ip=Ip, meta=Meta}) ->
 
 
 %% @private
-do_connect(Ip, Port, AssocId, Opts, #state{nkport=NkPort, socket=Socket}) ->
-    #nkport{domain=Domain, protocol=Proto, meta=Meta} = NkPort,
+do_connect(Ip, Port, AssocId, State) ->
+    do_connect(Ip, Port, AssocId, undefined, State).
+
+
+%% @private
+do_connect(Ip, Port, AssocId, Meta, State) ->
+    #state{nkport=NkPort, socket=Socket} = State,
+    #nkport{domain=Domain, protocol=Proto, meta=ListenMeta} = NkPort,
     case nkpacket_transport:get_connected(Domain, {Proto, sctp, Ip, Port}) of
         [NkPort1|_] -> 
             {ok, NkPort1};
         [] -> 
-            case nkpacket_connection_lib:is_max(Domain) of
-                false ->
-                    NkPort1 = NkPort#nkport{
-                        remote_ip = Ip, 
-                        remote_port = Port, 
-                        socket = {Socket, AssocId},
-                        meta = maps:merge(Meta, Opts)
-                    },
-                    {ok, Pid} = nkpacket_connection:start(NkPort1),
-                    {ok, NkPort1#nkport{pid=Pid}};
-                true ->
-                    {error, max_connections}
+            Meta1 = case Meta of
+                undefined -> ListenMeta;
+                _ -> maps:merge(ListenMeta, Meta)
+            end,
+            NkPort1 = NkPort#nkport{
+                remote_ip = Ip, 
+                remote_port = Port,
+                socket = {Socket, AssocId},
+                meta = Meta1
+            },
+            % Connection will monitor us using nkport's pid
+            case nkpacket_connection:start(NkPort1) of
+                {ok, Pid} -> 
+                    {ok, NkPort1#nkport{pid=Pid, meta=#{}}};
+                {error, Error} -> 
+                    {error, Error}
             end
     end.
         

@@ -15,12 +15,11 @@
 %% OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 %% -------------------------------------------------------------------
 
-
-%% @doc Connection 
+%% @doc WS Connection Library Functions
 -module(nkpacket_connection_ws).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([start_handshake/1, init/1, handle/2, encode/2]).
+-export([start_handshake/1, init/1, handle/2, encode/1]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -52,7 +51,7 @@
 %% ===================================================================
 
 -spec start_handshake(#nkport{}) ->
-    {ok, cow_ws:extensions(), binary()} | {error, term()}.
+    {ok, binary()} | {error, term()}.
 
 start_handshake(NkPort) ->
     #nkport{
@@ -60,7 +59,7 @@ start_handshake(NkPort) ->
         transp = Transp, 
         socket = Socket
     } = NkPort,
-    {ok, Req, Key, Extensions, WsOpts} = get_handshake_req(NkPort),
+    {ok, Req, Key} = get_handshake_req(NkPort),
     TranspMod = case Transp of
         ws -> ranch_tcp;
         wss -> ranch_ssl
@@ -71,9 +70,9 @@ start_handshake(NkPort) ->
             case recv(TranspMod, Socket, <<>>) of
                 {ok, Data} ->
                     ?debug(Domain, "received ws reply: ~s", [print_headers(Data)]),
-                    case get_handshake_resp(Data, Key, Extensions, WsOpts) of
-                        {ok, ExtsMap, Rest} ->
-                            {ok, ExtsMap, Rest};
+                    case get_handshake_resp(Data, Key) of
+                        {ok, Rest} ->
+                            {ok, Rest};
                         close ->
                             {error, closed}
                     end;
@@ -95,21 +94,6 @@ get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
         undefined -> <<"/">>;
         Path0 -> Path0
     end,
-    WsOpts = maps:get(ws_opts, Meta, #{}),
-    {Headers1, Extensions} = case maps:get(compress, WsOpts, false) of
-        true -> 
-            {
-                [
-                    {
-                        <<"sec-websocket-extensions">>, 
-                        <<"permessage-deflate; client_max_window_bits; server_max_window_bits=15">>
-                    }
-                ],
-                [<<"permessage-deflate">>]
-            };
-        false -> 
-            {[], []}
-    end,
     Key = cow_ws:key(),
     Headers2 = [
         {<<"connection">>, <<"upgrade">>},
@@ -117,7 +101,6 @@ get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
         {<<"sec-websocket-version">>, <<"13">>},
         {<<"sec-websocket-key">>, Key},
         {<<"host">>, [Host, $:, integer_to_binary(Port)]}
-        | Headers1
     ],
     Headers3 = case maps:get(ws_proto, Meta, undefined) of
         undefined -> 
@@ -129,11 +112,11 @@ get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
             ]
     end,
     Req = cow_http:request(<<"GET">>, Path, 'HTTP/1.1', Headers3),
-    {ok, Req, Key, Extensions, WsOpts}.
+    {ok, Req, Key}.
     
 
 %% @private
-get_handshake_resp(Data, Key, Extensions, Opts) ->
+get_handshake_resp(Data, Key) ->
     {_Version, _Status, _, Rest} = cow_http:parse_status_line(Data),
     {Headers, Rest2} = cow_http:parse_headers(Rest),
     case lists:keyfind(<<"sec-websocket-accept">>, 1, Headers) of
@@ -142,42 +125,10 @@ get_handshake_resp(Data, Key, Extensions, Opts) ->
         {_, Accept} ->
             case cow_ws:encode_key(Key) of
                 Accept ->
-                    ws_handshake_extensions(Rest2, Headers, Extensions, Opts);
+                    {ok, Rest2};
                 _ -> 
                     close
             end
-    end.
-
-
-%% @private
-ws_handshake_extensions(Buffer, Headers, Extensions, Opts) ->
-    case lists:keyfind(<<"sec-websocket-extensions">>, 1, Headers) of
-        false ->
-            {ok, #{}, Buffer};
-        {_, ExtHd} ->
-            ParsedExts = cow_http_hd:parse_sec_websocket_extensions(ExtHd),
-            case ws_validate_extensions(ParsedExts, Extensions, #{}, Opts) of
-                close -> 
-                    close;
-                ExtsMap -> 
-                    {ok, ExtsMap, Buffer}
-            end
-    end.
-
-
-ws_validate_extensions([], _, Acc, _) ->
-    Acc;
-ws_validate_extensions([{Name, Params}|Tail], Extensions, Acc, Opts) ->
-    case lists:member(Name, Extensions) of
-        true when Name == <<"permessage-deflate">> ->
-            case cow_ws:validate_permessage_deflate(Params, Acc, Opts) of
-                {ok, Acc2} -> 
-                    ws_validate_extensions(Tail, Extensions, Acc2, Opts);
-                error -> 
-                    close
-            end;
-        _ ->
-            close
     end.
 
 
@@ -320,11 +271,11 @@ close(Reason, State) ->
 %% ===================================================================
 
 %% @private
--spec encode(cow_ws:frame(), cow_ws:extensions()) ->
+-spec encode(cow_ws:frame()) ->
     binary().
 
-encode(Frame, Extensions) ->
-    cow_ws:masked_frame(Frame, Extensions).
+encode(Frame) ->
+    cow_ws:masked_frame(Frame, #{}).
 
 
 

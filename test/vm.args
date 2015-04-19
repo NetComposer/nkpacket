@@ -5,8 +5,7 @@
 -pa deps/cowlib/ebin
 -pa deps/ranch/ebin
 -pa deps/gun/ebin
--pa ../nklib/ebin
--pa ebin
+-pa deps/nklib/ebin
 
 
 ## Name of the node

@@ -19,6 +19,13 @@
 %% -------------------------------------------------------------------
 
 %% @private Cowboy support
+%% This module implements a "shared" tcp/tls listener.
+%% When a new listener request arrives, it is associated to a existing listener,
+%% if present. If not, a new one is started.
+%% When a new connection arrives, a standard cowboy_protocol is started.
+%% It then cycles over all registered listeners, until one of them accepts 
+%% the request.
+
 -module(nkpacket_cowboy).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
@@ -35,18 +42,17 @@
 %% Private
 %% ===================================================================
 
-%% @private Starts a 'shared' tcp/tls listener.
-%% The caller must include its pid in the nkport.
-%% For http/https, a standard Cowboy is sytarted. A 'cowboy_dispatch'
-%% must be included.
-%% For ws/wss, for each  incoming connection, we will call 
-%% nkpacket_transport_ws:cowboy_init
-start(NkPort) ->
+%% @private Starts a new shared transport or reuses an existing one
+%% Common options (tcp_listeners, tcp_max_connections, certfile, keyfile, 
+%% cowboy_opts) can only be specified by the first caller.
+%% cowboy_opts cannot include middlewares, timeout, compress or env
+%%
+start(#nkport{pid=Pid}=NkPort) when is_pid(Pid) ->
     #nkport{transp=Transp, local_ip=Ip, local_port=Port} = NkPort,
     case nklib_proc:values({nkpacket_cowboy, Transp, Ip, Port}) of
-        [{_, Pid}|_] ->
-            case catch gen_server:call(Pid, {start, NkPort}, infinity) of
-                ok -> {ok, Pid};
+        [{_, Listen}|_] ->
+            case catch gen_server:call(Listen, {start, NkPort}, ?CALL_TIMEOUT) of
+                ok -> {ok, Listen};
                 _ -> {error, shared_failed}
             end;
         [] ->
@@ -64,8 +70,7 @@ start(NkPort) ->
     nkport :: nkpacket:nkport(),
     ranch_id :: term(),
     ranch_pid :: pid(),
-    cowboy_opts = [] :: list(),
-    shared = [] :: [nkpacket:nkport()]
+    cowboy_opts :: list()
 }).
 
 
@@ -79,6 +84,7 @@ init([NkPort]) ->
         transp = Transp, 
         local_ip = Ip, 
         local_port = Port,
+        pid = Pid,
         meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
@@ -87,43 +93,54 @@ init([NkPort]) ->
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {_, Port1}} = InetMod:sockname(Socket),
-            RemoveOpts = [tcp_listeners, tcp_max_connections, certfile, keyfile],
-            NkPort1 = NkPort#nkport{
+            nklib_proc:put({nkpacket_cowboy, Transp, Ip, Port1}),
+            Shared = NkPort#nkport{
                 local_port = Port1, 
                 listen_ip = Ip,
                 listen_port = Port1,
                 pid = self(),
                 socket = Socket,
-                meta = maps:without(RemoveOpts, Meta)
+                meta = #{}
             },
             RanchId = {Transp, Ip, Port1},
             Listeners = maps:get(tcp_listeners, Meta, 100),
             Max = maps:get(tcp_max_connections, Meta, 1024),
-            SharedPort = NkPort#nkport{        
+            Instance = NkPort#nkport{        
                 local_port = Port1, 
                 listen_ip = Ip,
-                listen_port = Port1
+                listen_port = Port1,
+                meta = Meta
             },
-            CowboyOpts = maps:get(cowboy_opts, Meta, []),
+            Timeout = case Meta of
+                #{idle_timeout:=Timeout0} -> Timeout0;
+                _ -> nkpacket_config_cache:http_timeout(Domain)
+            end,
+            CowboyOpts1 = maps:get(cowboy_opts, Meta, []),
+            CowboyOpts2 = nklib_util:store_values(
+                [
+                    {middlewares, [?MODULE]},
+                    {timeout, Timeout},     % Time to close the connection if no requests
+                    {compress, true},       % Allow compress in WS and HTTP?
+                    {env, [{nkports, [Instance]}]}
+                ],
+                CowboyOpts1),
             RanchSpec = ranch:child_spec(
                 RanchId, 
                 Listeners,
                 RanchMod, 
                 [{socket, Socket}, {max_connections, Max}],
                 ?MODULE, 
-                [{nkpacket, CowboyOpts, [SharedPort]}]),
+                CowboyOpts2),
             % we don't want a fail in ranch to switch everything off
             RanchSpec1 = setelement(3, RanchSpec, temporary),
             {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
             link(RanchPid),
-            nklib_proc:put({nkpacket_cowboy, Transp, Ip, Port1}),
-            erlang:monitor(process, NkPort#nkport.pid),
+            erlang:monitor(process, Pid),
             State = #state{
-                nkport = NkPort1#nkport{domain='$nkcowboy'},
+                nkport = Shared#nkport{domain='$nkcowboy'},
                 ranch_id = RanchId,
                 ranch_pid = RanchPid,
-                cowboy_opts = CowboyOpts,
-                shared = [SharedPort]
+                cowboy_opts = CowboyOpts2
             },
             {ok, State};
         {error, Error} ->
@@ -137,20 +154,23 @@ init([NkPort]) ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call({start, #nkport{pid=Pid}=SharedPort}, _From, State) ->
-    #state{shared=Shared, nkport=NkPort} = State,
-    #nkport{local_port=Port} = NkPort,
-    SharedPort1 = SharedPort#nkport{local_port=Port, listen_port=Port},
-    Shared1 = case lists:keymember(Pid, #nkport.pid, Shared) of
+handle_call({start, #nkport{pid=Pid}=Instance}, _From, State) ->
+    #state{nkport=#nkport{local_port=Port}, cowboy_opts=Opts} = State,
+    Instance1 = Instance#nkport{local_port=Port, listen_port=Port},
+    Env1 = nklib_util:get_value(env, Opts),
+    Instances1 = nklib_util:get_value(nkports, Env1),
+    Instances2 = case lists:keymember(Pid, #nkport.pid, Instances1) of
         false ->
             erlang:monitor(process, Pid),
-            [SharedPort1|Shared];
+            [Instance1|Instances1];
         true ->
-            lists:keystore(Pid, #nkport.pid, Shared, SharedPort1)
+            lists:keystore(Pid, #nkport.pid, Instances1, Instance1)
     end,
-    {reply, ok, set_ranch_opts(Shared1, State)};
+    Env2 = nklib_util:store_value(nkports, Instances2, Env1),
+    Opts2 = nklib_util:store_value(env, Env2, Opts),
+    {reply, ok, set_ranch_opts(State#state{cowboy_opts=Opts2})};
 
-handle_call(get_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
+handle_call(get_local_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
     {reply, {ok, Port}, State};
 
 handle_call(get_state, _From, State) ->
@@ -175,17 +195,21 @@ handle_cast(Msg, State) ->
     nklib_util:gen_server_info(#state{}).
 
 handle_info({'DOWN', _MRef, process, Pid, _Reason}=Msg, State) ->
-    #state{shared=Shared} = State,
-    case lists:keytake(Pid, #nkport.pid, Shared) of
+    #state{cowboy_opts=Opts} = State,
+    Env1 = nklib_util:get_value(env, Opts),
+    Instances1 = nklib_util:get_value(nkports, Env1),
+    case lists:keytake(Pid, #nkport.pid, Instances1) of
         false ->
             lager:warning("Module ~p received unexpected info: ~p", [?MODULE, Msg]),
             {noreply, State};
         {value, _, []} ->
             % lager:warning("Last master leave"),
             {stop, normal, State};
-        {value, _, Shared1} ->
+        {value, _, Instances2} ->
             % lager:warning("master leave"),
-            {noreply, set_ranch_opts(Shared1, State)}
+            Env2 = nklib_util:store_value(nkports, Instances2, Env1),
+            Opts1 = nklib_util:store_value(env, Env2, Opts),
+            {noreply, set_ranch_opts(State#state{cowboy_opts=Opts1})}
     end;
 
 handle_info({'EXIT', Pid, Reason}, #state{ranch_pid=Pid}=State) ->
@@ -231,44 +255,36 @@ terminate(Reason, #state{nkport=#nkport{domain=Domain}}=State) ->
 -spec start_link(term(), term(), atom(), term()) ->
     {ok, pid()}.
 
-start_link(Ref, Socket, TranspModule, [{nkpacket, CowboyOpts, Shared}]) ->
-    Env = nklib_util:get_value(env, CowboyOpts, []),
-    CowboyOpts1 = nklib_util:store_values(
-        [
-            {middlewares, [?MODULE]},
-            {env, [{nkpacket, Shared}|Env]},
-            {timeout, 5000},    % Time to close the connection if no requests
-            {compress, true}    % Allow compress in WS and HTTP?
-        ],
-        CowboyOpts),
+start_link(Ref, Socket, TranspModule, Opts) ->
     % Now Cowboy will call execute/2
-    cowboy_protocol:start_link(Ref, Socket, TranspModule, CowboyOpts1).
+    cowboy_protocol:start_link(Ref, Socket, TranspModule, Opts).
 
 
 %% @private Cowboy middleware callback
--spec execute(Req, Env)-> {ok, Req, Env} | {stop, Req}
+-spec execute(Req, Env)-> 
+    {ok, Req, Env} | {stop, Req}
     when Req::cowboy_req:req(), Env::cowboy_middleware:env().
 
 execute(Req, Env) ->
-    Shared = nklib_util:get_value(nkpacket, Env),
-    execute(Shared, Req, Env).
+    Instances = nklib_util:get_value(nkports, Env),
+    execute(Instances, Req, Env).
 
 
 %% @private 
--spec execute([#nkport{}], cowboy_req:req(), list()) ->
+-spec execute([#nkport{}], cowboy_req:req(), cowboy_middleware:env()) ->
     term().
 
 execute([], Req, _Env) ->
     {stop, cowboy_req:reply(404, [{<<"server">>, <<"NkPACKET">>}], Req)};
 
-execute([#nkport{transp=Transp}=SharedPort|Rest], Req, Env) ->
+execute([#nkport{transp=Transp}=Instance|Rest], Req, Env) ->
     Module = case Transp of
         http -> nkpacket_transport_http;
         https -> nkpacket_transport_http;
         ws -> nkpacket_transport_ws;
         wss -> nkpacket_transport_ws
     end,
-    case Module:cowboy_init(SharedPort, Req, Env) of
+    case Module:cowboy_init(Instance, Req, Env) of
         next -> 
             execute(Rest, Req, Env);
         Result ->
@@ -286,10 +302,9 @@ execute([#nkport{transp=Transp}=SharedPort|Rest], Req, Env) ->
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
+listen_opts(#nkport{transp=Transp, local_ip=Ip}) 
         when Transp==ws; Transp==http ->
     [
-        {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
@@ -308,7 +323,6 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
     Cert = maps:get(certfile, Opts, DefCert),
     Key = maps:get(keyfile, Opts, DefKey),
     lists:flatten([
-        {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024},
@@ -319,9 +333,9 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
 
 
 %% @private
-set_ranch_opts(Shared, #state{cowboy_opts=Opts, ranch_id=RanchId}=State) ->
-    ok = ranch_server:set_protocol_options(RanchId, [{nkpacket, Opts, Shared}]),
-    State#state{shared=Shared}.
+set_ranch_opts(#state{cowboy_opts=Opts, ranch_id=RanchId}=State) ->
+    ok = ranch_server:set_protocol_options(RanchId, Opts),
+    State.
 
 
 %% @private
