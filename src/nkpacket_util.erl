@@ -225,6 +225,11 @@ parse_opts([{Key, Val}|Rest], Acc) ->
             parse_pid(Val);
         idle_timeout ->
             parse_integer(Val);
+        refresh_fun ->
+            case is_function(Val, 1) of
+                true -> {ok, Val};
+                false -> error
+            end;
         udp_starts_tcp ->
             parse_boolean(Val);
         udp_no_connections ->

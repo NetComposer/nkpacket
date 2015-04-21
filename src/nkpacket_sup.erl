@@ -32,11 +32,12 @@
 
 %% @private Adds a supervised transport
 -spec add_transport(supervisor:child_spec()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, pid()} | {ok, pid(), term()} | {error, term()}.
 
 add_transport(Spec) ->
     case supervisor:start_child(nkpacket_transports_sup, Spec) of
         {ok, Pid} -> {ok, Pid};
+        {ok, Pid, Info} -> {ok, Pid, Info};
         {error, {Error, _}} -> {error, Error};
         {error, Error} -> {error, Error}
     end.

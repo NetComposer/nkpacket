@@ -250,11 +250,10 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
                 meta = maps:with([host, path|?CONN_LISTEN_OPTS], Meta)
             },
             case nkpacket_connection:start(ConnPort) of
-                {ok, ConnPid} ->
-                    ?debug(Domain, "HTTP listener accepted connection: ~p", [NkPort1]),
+                {ok, NkPort2} ->
+                    ?debug(Domain, "HTTP listener accepted connection: ~p", [NkPort2]),
                     case erlang:function_exported(Protocol, http_init, 3) of
                         true ->
-                            NkPort2 = NkPort1#nkport{pid=ConnPid},
                             case Protocol:http_init(NkPort2, Req, Env) of
                                 {ok, Req1, Env1, Middlewares1} ->
                                     execute(Req1, Env1, Middlewares1);

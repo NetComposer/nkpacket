@@ -312,9 +312,9 @@ cowboy_init(#nkport{domain=Domain, meta=Meta}=NkPort, Req, Env) ->
                     % Connection will monitor listen process (unsing pid()) and 
                     % this cowboy process (using socket)
                     case nkpacket_connection:start(NkPort1) of
-                        {ok, ConnPid} ->
+                        {ok, #nkport{pid=ConnPid}=NkPort2} ->
                             ?debug(Domain, "WS listener accepted connection: ~p", 
-                                  [NkPort1]),
+                                  [NkPort2]),
                             cowboy_websocket:upgrade(Req1, Env, nkpacket_transport_ws, 
                                                      ConnPid, infinity, run);
                         {error, Error} ->

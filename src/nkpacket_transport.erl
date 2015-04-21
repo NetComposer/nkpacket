@@ -301,10 +301,7 @@ raw_connect(Domain, {Protocol, Transp, Ip, Port}, Opts) ->
                 [] -> #nkport{}
             end
     end,
-    #nkport{
-        pid = ListenPid,
-        meta = Meta
-    } = BasePort,
+    #nkport{meta=Meta} = BasePort,
     NkPort1 = BasePort#nkport{
         domain = Domain,
         transp = Transp,
@@ -313,18 +310,7 @@ raw_connect(Domain, {Protocol, Transp, Ip, Port}, Opts) ->
         protocol = Protocol,
         meta = maps:merge(Meta, Opts)
     },
-    case Transp of
-        udp when is_pid(ListenPid) -> nkpacket_transport_udp:connect(NkPort1);
-        udp -> {error, no_listening_transport};
-        tcp -> nkpacket_connection:connect(NkPort1);
-        tls -> nkpacket_connection:connect(NkPort1);
-        sctp when is_pid(ListenPid) -> nkpacket_transport_sctp:connect(NkPort1);
-        sctp -> {error, no_listening_transport};
-        ws -> nkpacket_connection:connect(NkPort1);
-        wss -> nkpacket_connection:connect(NkPort1);
-        http -> {error, http_not_supported};
-        https -> {error, http_not_supported}
-    end.
+    nkpacket_connection:connect(NkPort1).
 
 
 -spec get_listener(nkpacket:nkport()) ->

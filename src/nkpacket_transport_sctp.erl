@@ -59,8 +59,8 @@ get_listener(NkPort) ->
 
 connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
     case catch gen_server:call(Pid, {connect, NkPort}, ?CALL_TIMEOUT) of
-        {ok, NkPort1} -> 
-            {ok, NkPort1};
+        {ok, ConnPid} -> 
+            {ok, ConnPid};
         {error, Error} ->
             {error, Error};
         {'EXIT', Error} -> 
@@ -363,12 +363,7 @@ do_connect(Ip, Port, AssocId, Meta, State) ->
                 meta = Meta1
             },
             % Connection will monitor us using nkport's pid
-            case nkpacket_connection:start(NkPort1) of
-                {ok, Pid} -> 
-                    {ok, NkPort1#nkport{pid=Pid, meta=#{}}};
-                {error, Error} -> 
-                    {error, Error}
-            end
+            nkpacket_connection:start(NkPort1)
     end.
         
 
