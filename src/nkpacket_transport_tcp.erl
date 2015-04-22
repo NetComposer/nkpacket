@@ -132,21 +132,33 @@ init([NkPort]) ->
                 socket = Socket
             },
             RanchId = {Transp, Ip, Port1},
-            Listeners = maps:get(tcp_listeners, Meta, 100),
-            Max = maps:get(tcp_max_connections, Meta, 1024),
+            % Listeners = maps:get(tcp_listeners, Meta, 100),
+            % Max = maps:get(tcp_max_connections, Meta, 1024),
             % Options pased to new connections
             NkPort2 = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)},
-            RanchSpec = ranch:child_spec(
-                RanchId, 
-                Listeners,
-                RanchMod, 
-                [{socket, Socket}, {max_connections, Max}],
-                ?MODULE, 
+            {ok, RanchPid} = ranch_listener_sup:start_link(
+                RanchId,
+                maps:get(tcp_listeners, Meta, 100),
+                RanchMod,
+                [
+                    {socket, Socket}, 
+                    {max_connections,  maps:get(tcp_max_connections, Meta, 1024)}
+                ],
+                ?MODULE,
                 [NkPort2]),
-            % we don't want a fail in ranch to switch everything off
-            RanchSpec1 = setelement(3, RanchSpec, temporary),
-            {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
-            link(RanchPid),
+
+
+            % RanchSpec = ranch:child_spec(
+            %     RanchId, 
+            %     Listeners,
+            %     RanchMod, 
+            %     [{socket, Socket}, {max_connections, Max}],
+            %     ?MODULE, 
+            %     [NkPort2]),
+            % % we don't want a fail in ranch to switch everything off
+            % RanchSpec1 = setelement(3, RanchSpec, temporary),
+            % {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
+            % link(RanchPid),
 
 
             StoredNkPort = NkPort1#nkport{meta=#{}},
@@ -218,7 +230,7 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=Sta
     {stop, normal, State};
 
 handle_info({'EXIT', Pid, Reason}, #state{ranch_pid=Pid}=State) ->
-    {stop, {ranch_failed, Reason}, State};
+    {stop, {ranch_stop, Reason}, State};
 
 handle_info(Msg, State) ->
     case call_protocol(listen_handle_info, [Msg], State) of
@@ -240,13 +252,16 @@ code_change(_OldVsn, State, _Extra) ->
     nklib_util:gen_server_terminate().
 
 terminate(Reason, #state{nkport=#nkport{domain=Domain}}=State) ->  
-    ?debug(Domain, "TCP/TLS listener stop: ~p", [Reason]),
     #state{
         ranch_id = RanchId,
-        nkport = #nkport{transp=Transp, socket=Socket}
+        ranch_pid = RanchPid,
+        nkport = #nkport{domain=Domain, transp=Transp, socket=Socket}
     } = State,
+    ?debug(Domain, "TCP/TLS listener stop: ~p", [Reason]),
     catch call_protocol(listen_stop, [Reason], State),
-    catch nkpacket_sup:del_ranch({ranch_listener_sup, RanchId}),
+    exit(RanchPid, shutdown),
+    timer:sleep(100),   %% Give time to ranch to close acceptors
+    % catch nkpacket_sup:del_ranch({ranch_listener_sup, RanchId}),
     catch ranch_server:cleanup_listener_opts(RanchId),
     {_, TranspMod, _} = get_modules(Transp),
     TranspMod:close(Socket),
