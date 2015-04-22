@@ -7,7 +7,7 @@ all: deps compile
 compile:
 	./rebar compile
 
-compile-nodeps:
+cnodeps:
 	./rebar compile skip_deps=true
 
 deps:

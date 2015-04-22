@@ -84,7 +84,7 @@ init([NkPort]) ->
         transp = Transp, 
         local_ip = Ip, 
         local_port = Port,
-        pid = Pid,
+        pid = ListenPid,
         meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
@@ -103,8 +103,8 @@ init([NkPort]) ->
                 meta = #{}
             },
             RanchId = {Transp, Ip, Port1},
-            Listeners = maps:get(tcp_listeners, Meta, 100),
-            Max = maps:get(tcp_max_connections, Meta, 1024),
+            % Listeners = maps:get(tcp_listeners, Meta, 100),
+            % Max = maps:get(tcp_max_connections, Meta, 1024),
             Instance = NkPort#nkport{        
                 local_port = Port1, 
                 listen_ip = Ip,
@@ -124,18 +124,30 @@ init([NkPort]) ->
                     {env, [{nkports, [Instance]}]}
                 ],
                 CowboyOpts1),
-            RanchSpec = ranch:child_spec(
-                RanchId, 
-                Listeners,
-                RanchMod, 
-                [{socket, Socket}, {max_connections, Max}],
-                ?MODULE, 
+            {ok, RanchPid} = ranch_listener_sup:start_link(
+                RanchId,
+                maps:get(tcp_listeners, Meta, 100),
+                RanchMod,
+                [
+                    {socket, Socket}, 
+                    {max_connections,  maps:get(tcp_max_connections, Meta, 1024)}
+                ],
+                ?MODULE,
                 CowboyOpts2),
-            % we don't want a fail in ranch to switch everything off
-            RanchSpec1 = setelement(3, RanchSpec, temporary),
-            {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
-            link(RanchPid),
-            erlang:monitor(process, Pid),
+
+            % RanchSpec = ranch:child_spec(
+            %     RanchId, 
+            %     Listeners,
+            %     RanchMod, 
+            %     [{socket, Socket}, {max_connections, Max}],
+            %     ?MODULE, 
+            %     CowboyOpts2),
+            % % we don't want a fail in ranch to switch everything off
+            % RanchSpec1 = setelement(3, RanchSpec, temporary),
+            % {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
+            % link(RanchPid),
+
+            erlang:monitor(process, ListenPid),
             State = #state{
                 nkport = Shared#nkport{domain='$nkcowboy'},
                 ranch_id = RanchId,
@@ -213,7 +225,7 @@ handle_info({'DOWN', _MRef, process, Pid, _Reason}=Msg, State) ->
     end;
 
 handle_info({'EXIT', Pid, Reason}, #state{ranch_pid=Pid}=State) ->
-    {stop, Reason, State};
+    {stop, {ranch_stop, Reason}, State};
 
 handle_info(Msg, State) ->
     lager:warning("Module ~p received unexpected info: ~p", [?MODULE, Msg]),
@@ -232,13 +244,15 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     nklib_util:gen_server_terminate().
 
-terminate(Reason, #state{nkport=#nkport{domain=Domain}}=State) ->  
-    ?debug(Domain, "Cowboy listener stop: ~p", [Reason]),
+terminate(Reason, #state{ranch_pid=RanchPid}=State) ->  
+    lager:debug("Cowboy listener stop: ~p", [Reason]),
     #state{
         ranch_id = RanchId,
         nkport = #nkport{transp=Transp, socket=Socket}
     } = State,
-    catch nkpacket_sup:del_ranch({ranch_listener_sup, RanchId}),
+    % catch nkpacket_sup:del_ranch({ranch_listener_sup, RanchId}),
+    exit(RanchPid, shutdown),
+    timer:sleep(100),   %% Give time to ranch to close acceptors
     catch ranch_server:cleanup_listener_opts(RanchId),
     {_, TranspMod, _} = get_modules(Transp),
     TranspMod:close(Socket),

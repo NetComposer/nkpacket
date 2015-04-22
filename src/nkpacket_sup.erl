@@ -23,19 +23,19 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(supervisor).
 
--export([add_transport/1, del_transport/1, get_transports/0]).
+-export([add_listener/1, del_transport/1, get_transports/0]).
 -export([add_ranch/1, del_ranch/1]).
--export([init/1, start_link/0, start_transports_sup/0, start_ranch_sup/0]).
+-export([init/1, start_link/0, start_listen_sup/0, start_ranch_sup/0]).
 
 -include("nkpacket.hrl").
 
 
 %% @private Adds a supervised transport
--spec add_transport(supervisor:child_spec()) ->
+-spec add_listener(supervisor:child_spec()) ->
     {ok, pid()} | {ok, pid(), term()} | {error, term()}.
 
-add_transport(Spec) ->
-    case supervisor:start_child(nkpacket_transports_sup, Spec) of
+add_listener(Spec) ->
+    case supervisor:start_child(nkpacket_listen_sup, Spec) of
         {ok, Pid} -> {ok, Pid};
         {ok, Pid, Info} -> {ok, Pid, Info};
         {error, {Error, _}} -> {error, Error};
@@ -48,8 +48,8 @@ add_transport(Spec) ->
     ok | {error, term()}.
 
 del_transport(Id) ->
-    case catch supervisor:terminate_child(nkpacket_transports_sup, Id) of
-        ok -> supervisor:delete_child(nkpacket_transports_sup, Id);
+    case catch supervisor:terminate_child(nkpacket_listen_sup, Id) of
+        ok -> supervisor:delete_child(nkpacket_listen_sup, Id);
         {error, Reason} -> {error, Reason}
     end.
 
@@ -59,7 +59,7 @@ del_transport(Id) ->
     [{term(), pid()}].
 
 get_transports() ->
-    [{Id, Pid} || {Id, Pid, _, _} <- supervisor:which_children(nkpacket_transports_sup)].
+    [{Id, Pid} || {Id, Pid, _, _} <- supervisor:which_children(nkpacket_listen_sup)].
 
 
 %% @private
@@ -103,8 +103,8 @@ start_link() ->
             5000,
             worker,
             [nkpacket_dns]},
-        {nkpacket_transports_sup,
-            {?MODULE, start_transports_sup, []},
+        {nkpacket_listen_sup,
+            {?MODULE, start_listen_sup, []},
             permanent,
             infinity,
             supervisor,
@@ -119,8 +119,8 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, {{one_for_one, 10, 60}, ChildsSpec}).
 
 %% @private
-start_transports_sup() ->
-    supervisor:start_link({local, nkpacket_transports_sup}, 
+start_listen_sup() ->
+    supervisor:start_link({local, nkpacket_listen_sup}, 
                           ?MODULE, {{one_for_one, 10, 60}, []}).
 
 %% @private

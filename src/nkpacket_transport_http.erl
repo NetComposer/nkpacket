@@ -223,8 +223,6 @@ terminate(Reason, State) ->
     term().
 
 cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, Env) ->
-    
-
     {HostList, PathList} = maps:get(http_match, Meta),
     ReqHost = cowboy_req:host(Req),
     ReqPath = cowboy_req:path(Req),
@@ -246,9 +244,8 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
             },
             % Connection will monitor listen process (unsing pid()) and 
             % this cowboy process (using socket)
-            ConnPort = NkPort1#nkport{
-                meta = maps:with([host, path|?CONN_LISTEN_OPTS], Meta)
-            },
+            Opts = [host, path, cowboy_dispatch, cowboy_opts|?CONN_LISTEN_OPTS],
+            ConnPort = NkPort1#nkport{meta = maps:with(Opts, Meta)},
             case nkpacket_connection:start(ConnPort) of
                 {ok, NkPort2} ->
                     ?debug(Domain, "HTTP listener accepted connection: ~p", [NkPort2]),

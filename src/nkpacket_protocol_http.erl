@@ -74,6 +74,7 @@ http_init(#nkport{meta=Meta}=NkPort, Req, Env) ->
  			Env1 = nklib_util:store_values(UserEnv1, Env),
  			{ok, Req, Env1, Middlewares};
  		_ ->
+ 			lager:warning("Cowboy options not defined at http_init"),
 			{stop, cowboy_req:reply(500, [{<<"server">>, <<"NkPACKET">>}], Req)}
  	end.
 

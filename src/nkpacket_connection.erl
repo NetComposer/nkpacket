@@ -44,15 +44,18 @@
 -spec start(nkpacket:nkport()) ->
     {ok, nkpacket:nkport()} | {error, term()}.
 
-start(NkPort) ->
-    case get_connection_spec(false, NkPort) of
-        {ok, Spec} -> 
-            case nkpacket_sup:add_transport(Spec) of
-                {ok, Pid} -> NkPort#nkport{pid=Pid};
-                {error, Error} -> {error, Error}
+start(#nkport{domain=Domain}=NkPort) ->
+    case nkpacket_connection_lib:is_max(Domain) of
+        false -> 
+            % Connection will monitor pid() in NkPort and option 'monitor'
+            case gen_server:start(?MODULE, [NkPort], []) of
+                {ok, Pid} ->
+                    {ok, NkPort#nkport{pid=Pid}};
+                {error, Error} ->
+                    {error, Error}
             end;
-        {error, Error} -> 
-            {error, Error}
+        true ->
+            {error, max_connections}
     end.
 
 
@@ -60,13 +63,13 @@ start(NkPort) ->
 -spec connect(nkpacket:nkport()) ->
     {ok, nkpacket:nkport()} | {error, term()}.
         
-connect(#nkport{transp=udp, pid=Pid}=NkPort) when is_pid(Pid) ->
+connect(#nkport{transp=udp, pid=Pid}=NkPort) ->
     case is_pid(Pid) of
         true -> nkpacket_transport_udp:connect(NkPort);
         false -> {error, no_listening_transport}
     end;
         
-connect(#nkport{transp=sctp, pid=Pid}=NkPort) when is_pid(Pid) ->
+connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
     case is_pid(Pid) of
         true -> nkpacket_transport_sctp:connect(NkPort);
         false -> {error, no_listening_transport}
@@ -75,45 +78,13 @@ connect(#nkport{transp=sctp, pid=Pid}=NkPort) when is_pid(Pid) ->
 connect(#nkport{transp=Transp}) when Transp==http; Transp==https ->
     {error, not_supported};
 
-connect(NkPort) ->
-    case get_connection_spec(true, NkPort) of
-        {ok, Spec} -> 
-            case nkpacket_sup:add_transport(Spec) of
+connect(#nkport{domain=Domain}=NkPort) ->
+    case nkpacket_connection_lib:is_max(Domain) of
+        false -> 
+            case proc_lib:start(?MODULE, conn_init, [NkPort]) of
                 {ok, _Pid, NkPort1} -> {ok, NkPort1};
                 {error, Error} -> {error, Error}
             end;
-        {error, Error} -> 
-            {error, Error}
-    end.
-
-
-%% @doc Starts a new transport process
--spec get_connection_spec(boolean(), nkpacket:nkport()) ->
-    supervisor:child_spec().
-
-get_connection_spec(Connect, NkPort) ->
-    #nkport{
-        domain = Domain, 
-        transp = Transp, 
-        remote_ip = Ip, 
-        remote_port= Port
-    } = NkPort,
-    case nkpacket_connection_lib:is_max(Domain) of
-        false -> 
-            Spec = {
-                {Domain, Transp, Ip, Port, make_ref()},
-                case Connect of
-                    true ->
-                        {proc_lib, start_link, [?MODULE, conn_init, [NkPort]]};
-                    false ->
-                        {nkpacket_connection, start_link, [NkPort]}
-                end,
-                temporary,
-                5000,
-                worker,
-                [?MODULE]
-            },
-            {ok, Spec};
         true ->
             {error, max_connections}
     end.
@@ -355,18 +326,25 @@ ranch_init(NkPort, Ref) ->
 
 
 %% @private
-conn_init(#nkport{transp=Transp}=NkPort) ->
-    Res = case Transp of
-        tcp -> nkpacket_transport_tcp:connect(NkPort);
-        tls -> nkpacket_transport_tcp:connect(NkPort);
-        ws -> nkpacket_transport_ws:connect(NkPort);
-        wss -> nkpacket_transport_ws:connect(NkPort)
-    end,
-    case Res of
-        {ok, NkPort1, Data} ->
+conn_init(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
+    case nkpacket_transport_tcp:connect(NkPort) of
+        {ok, NkPort1} ->
             {ok, #state{nkport=NkPort2}=State} = init([NkPort1]),
             ok = proc_lib:init_ack({ok, self(), NkPort2}),
-            case Data of <<>> -> ok; _ -> incoming(self(), Data) end,
+            gen_server:enter_loop(?MODULE, [], State);
+        {error, Error} ->
+            proc_lib:init_ack({error, Error})
+    end;
+
+conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
+    case nkpacket_transport_ws:connect(NkPort) of
+        {ok, NkPort1, Rest} ->
+            {ok, #state{nkport=NkPort2}=State} = init([NkPort1]),
+            case Rest of
+                <<>> -> ok;
+                _ -> incoming(self(), Rest)
+            end,
+            ok = proc_lib:init_ack({ok, self(), NkPort2}),
             gen_server:enter_loop(?MODULE, [], State);
         {error, Error} ->
             proc_lib:init_ack({error, Error})

@@ -74,41 +74,36 @@ connect(NkPort) ->
         remote_port = Port, 
         meta = Meta
     } = NkPort,
-    try
-        SocketOpts = outbound_opts(NkPort),
-        {SockTransp, TranspMod} = case Transp of
-            ws -> {tcp, ranch_tcp};
-            wss -> {tls, ranch_ssl}
-        end,
-        ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
-            undefined -> nkpacket_config_cache:connect_timeout(Domain);
-            Timeout0 -> Timeout0
-        end,
-        Socket = case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
-            {ok, Socket0} -> Socket0;
-            {error, Error1} -> throw(Error1) 
-        end,
-        {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
-        NkPort1 = NkPort#nkport{
-            local_ip = LocalIp,
-            local_port = LocalPort,
-            socket = Socket
-        },
-        case nkpacket_connection_ws:start_handshake(NkPort1) of
-            {ok, Rest} -> ok;
-            {error, Error} ->  Rest = throw(Error)
-        end,
-        TranspMod:setopts(Socket, [{active, once}]),
-        {ok, NkPort1, Rest}
-    catch
-        throw:TError -> {error, TError}
+    SocketOpts = outbound_opts(NkPort),
+    TranspMod = case Transp of ws -> tcp, ranch_tcp; wss -> ranch_ssl end,
+    ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
+        undefined -> nkpacket_config_cache:connect_timeout(Domain);
+        Timeout0 -> Timeout0
+    end,
+    case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
+        {ok, Socket} -> 
+            {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
+            NkPort1 = NkPort#nkport{
+                local_ip = LocalIp,
+                local_port = LocalPort,
+                socket = Socket
+            },
+            case nkpacket_connection_ws:start_handshake(NkPort1) of
+                {ok, Rest} -> 
+                    TranspMod:setopts(Socket, [{active, once}]),
+                    {ok, NkPort1, Rest};
+                {error, Error} ->
+                    {error, Error}
+            end;
+        {error, Error} -> 
+            {error, Error}
     end.
 
 
-
-    %% ===================================================================
+%% ===================================================================
 %% gen_server
 %% ===================================================================
+
 
 -record(state, {
     nkport :: nkpacket:nkport(),
@@ -117,7 +112,6 @@ connect(NkPort) ->
     shared :: pid(),
     monitor_ref :: reference()
 }).
-
 
 
 %% @private
@@ -436,5 +430,7 @@ outbound_opts(#nkport{transp=wss, meta=Opts}) ->
 call_protocol(Fun, Args, State) ->
     nkpacket_util:call_protocol(Fun, Args, State, #state.protocol).
 
+
+%% @private
 
 

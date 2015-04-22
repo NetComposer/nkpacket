@@ -54,7 +54,7 @@ get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
 
 %% @private Starts a new connection to a remote server
 -spec connect(nkpacket:nkport()) ->
-    {ok, nkpacket:nkport(), <<>>} | {error, term()}.
+    {ok, nkpacket:nkport()} | {error, term()}.
          
 connect(NkPort) ->
     #nkport{
@@ -79,7 +79,7 @@ connect(NkPort) ->
                 socket = Socket
             },
             InetMod:setopts(Socket, [{active, once}]),
-            {ok, NkPort1, <<>>};
+            {ok, NkPort1};
         {error, Error} -> 
             {error, Error}
     end.
@@ -147,6 +147,8 @@ init([NkPort]) ->
             RanchSpec1 = setelement(3, RanchSpec, temporary),
             {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
             link(RanchPid),
+
+
             StoredNkPort = NkPort1#nkport{meta=#{}},
             nklib_proc:put(nkpacket_transports, StoredNkPort),
             nklib_proc:put({nkpacket_listen, Domain, Protocol}, StoredNkPort),

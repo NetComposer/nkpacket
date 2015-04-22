@@ -293,23 +293,21 @@ raw_connect(Domain, {Protocol, Transp, Ip, Port}, Opts) ->
                 ]
             of
                 [NkPort|_] -> NkPort;
-                [] -> #nkport{}
+                [] -> #nkport{domain=Domain, transp=Transp, protocol=Protocol}
             end;
         _ ->
             case Listening of
                 [NkPort|_] -> NkPort;
-                [] -> #nkport{}
+                [] -> #nkport{domain=Domain, transp=Transp, protocol=Protocol}
             end
     end,
     #nkport{meta=Meta} = BasePort,
     NkPort1 = BasePort#nkport{
-        domain = Domain,
-        transp = Transp,
         remote_ip = Ip, 
         remote_port = Port, 
-        protocol = Protocol,
         meta = maps:merge(Meta, Opts)
     },
+    % If we found a listening transport, connection will monitor it
     nkpacket_connection:connect(NkPort1).
 
 

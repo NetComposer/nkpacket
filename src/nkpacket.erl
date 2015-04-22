@@ -176,7 +176,7 @@
 start_listener(Domain, UserConn, Opts) ->
     case get_listener(Domain, UserConn, Opts) of
         {ok, Spec} ->
-            nkpacket_sup:add_transport(Spec);
+            nkpacket_sup:add_listener(Spec);
         {error, Error} ->
             {error, Error}
     end.
