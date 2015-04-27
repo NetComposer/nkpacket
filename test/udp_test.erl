@@ -65,7 +65,7 @@ basic() ->
 	] = nkpacket:get_all(dom1),
 
 	% Since '1234' is not available, a random one is used
-	% (Oops, in linux it allows to open it again, the old do not receive more packets!)
+	% (Oops, in linux it allows to open it again, the old do not receive any more packets!)
 	Port2 = test_util:get_port(udp),
 	Conn2 = {test_protocol, udp, {0,0,0,0}, Port2},
 	{ok, UdpP2A} = nkpacket:start_listener(dom2, Conn2, 
@@ -80,7 +80,7 @@ basic() ->
 	% Should also work with kill
 	% exit(TcpP2A, kill),
 	exit(TcpP2A, forced_stop),
-	timer:sleep(100),
+	timer:sleep(500),
 	[
 		#nkport{transp=tcp, local_port=Port3, pid=TcpP2B},
 		#nkport{transp=udp, local_port=Port3, pid=UdpP2B}
@@ -104,7 +104,7 @@ basic() ->
 	true = UdpP2C/=UdpP2B,
  	ok = nkpacket:stop_all(dom1),
  	ok = nkpacket:stop_all(dom2),
-	timer:sleep(100),
+	timer:sleep(500),
 	[] = nkpacket:get_all(dom1),
 	[] = nkpacket:get_all(dom2),
 	ok.

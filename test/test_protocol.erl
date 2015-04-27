@@ -81,7 +81,7 @@ listen_init(NkPort) ->
 		_ -> #listen_state{nkport=NkPort}
 	end,
 	maybe_reply(listen_init, State),
-	State.
+	{ok, State}.
 
 
 listen_handle_call(Msg, _From, State) ->
@@ -124,7 +124,7 @@ listen_stop(Reason, State) ->
 }).
 
 -spec conn_init(nkpacket:nkport()) ->
-	#conn_state{}.
+	{ok, #conn_state{}}.
 
 conn_init(NkPort) ->
 	lager:notice("Protocol CONN init: ~p (~p)", [NkPort, self()]),
@@ -133,7 +133,7 @@ conn_init(NkPort) ->
 		_ -> #conn_state{nkport=NkPort}
 	end,
 	maybe_reply(conn_init, State),
-	State.
+	{ok, State}.
 
 
 conn_parse({text, Data}, State) ->

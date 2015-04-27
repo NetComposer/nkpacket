@@ -296,8 +296,6 @@ init([NkPort]) ->
         true -> nkpacket_connection_ws:init(#{});
         _ -> undefined
     end,
-    {Protocol1, ProtoState1} = 
-        nkpacket_util:init_protocol(Protocol, conn_init, NkPort1),
     State = #state{
         transp = Transp,
         nkport = StoredNkPort, 
@@ -310,11 +308,17 @@ init([NkPort]) ->
         ws_state = WsState,
         timeout = Timeout,
         refresh_fun = maps:get(refresh_fun, Meta, undefined),
-        protocol = Protocol1,
-        proto_state = ProtoState1
+        protocol = Protocol
     },
-    {ok, restart_timer(State)}.
-
+    case nkpacket_util:init_protocol(Protocol, conn_init, NkPort1) of
+        {ok, ProtoState} ->
+            State1 = State#state{proto_state=ProtoState},
+            {ok, restart_timer(State1)};
+        {bridge, Bridge, ProtoState} ->
+            State1 = State#state{proto_state=ProtoState},
+            State2 = start_bridge(Bridge, up, State1),
+            {ok, restart_timer(State2)}
+    end.
 
 
 %% @private

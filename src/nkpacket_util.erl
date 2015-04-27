@@ -130,7 +130,7 @@ find_real_ip([_|R], Type) ->
 
 %% @private
 -spec init_protocol(nkpacket:protocol(), atom(), term()) ->
-    {nkpacket:protocol()|undefined, term()}.
+    {ok, undefined} | term().
 
 init_protocol(Protocol, Fun, Arg) ->
     case 
@@ -138,9 +138,9 @@ init_protocol(Protocol, Fun, Arg) ->
         erlang:function_exported(Protocol, Fun, 1) 
     of
         false -> 
-            {undefined, undefined};
+            {ok, undefined};
         true -> 
-            {Protocol, Protocol:Fun(Arg)}
+            Protocol:Fun(Arg)
     end.
 
 

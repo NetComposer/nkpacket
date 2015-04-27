@@ -121,8 +121,7 @@ init([NkPort]) ->
             StoredNkPort = NkPort1#nkport{meta=#{}},
             nklib_proc:put(nkpacket_transports, StoredNkPort),
             nklib_proc:put({nkpacket_listen, Domain, Protocol}, StoredNkPort),
-            {Protocol1, ProtoState1} = 
-                nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
+            {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserPid} -> erlang:monitor(process, UserPid);
                 _ -> undefined
@@ -132,8 +131,8 @@ init([NkPort]) ->
                 socket = Socket,
                 pending_froms = [],
                 pending_conns = [],
-                protocol = Protocol1,
-                proto_state = ProtoState1,
+                protocol = Protocol,
+                proto_state = ProtoState,
                 monitor_ref = MonRef
             },
             {ok, State};

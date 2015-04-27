@@ -27,7 +27,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([transports/1, default_port/1, unparse/2]).
--export([conn_init/1, conn_parse/2, conn_unparse/2, conn_handle_call/3,
+-export([conn_init/1, conn_parse/2, conn_unparse/2, conn_bridge/3, conn_handle_call/3,
 		 conn_handle_cast/2, conn_handle_info/2, conn_stop/2]).
 -export([listen_init/1, listen_parse/4, listen_handle_call/3,
 		 listen_handle_cast/2, listen_handle_info/2, listen_stop/2]).
@@ -100,10 +100,10 @@ unparse(_, _) ->
 
 %% @doc Called when the connection starts
 -spec conn_init(nkpacket:nkport()) ->
-	conn_state().
+	{ok, conn_state()}.
 
 conn_init(_) ->
-	none.
+	{ok, none}.
 
 
 %% @doc This function is called when a new message arrives to the connection
