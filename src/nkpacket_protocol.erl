@@ -124,6 +124,15 @@ conn_unparse(_Term, ConnState) ->
 	{error, not_defined, ConnState}.
 
 
+%% @doc This function is called on incoming data for bridged connections
+-spec conn_bridge(nkpacket:incoming(), up|down, conn_state()) ->
+	{ok, nkpacket:incoming(), conn_state()} | {skip, conn_state()} | 
+	{stop, term(), conn_state()}.
+
+conn_bridge(Data, _Type, ConnState) ->
+	{ok, Data, ConnState}.
+
+
 %% @doc Called when the connection received a gen_server:call/2,3
 -spec conn_handle_call(term(), {pid(), term()}, conn_state()) ->
 	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.

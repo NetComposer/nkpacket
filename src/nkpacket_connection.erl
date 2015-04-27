@@ -420,16 +420,22 @@ handle_cast({incoming, Data}, State) ->
 handle_cast({stop, Reason}, State) ->
     {stop, Reason, State};
 
-handle_cast({bridged, NkPort}, State) ->
-    % ?W("Bridged: ~p, ~p", [?PR(NkPort), ?PR(State#state.nkport)]),
-    {noreply, start_bridge(NkPort, down, State)};
+handle_cast({bridged, Bridge}, State) ->
+    lager:debug("Bridged: ~p, ~p", [?PR(Bridge), ?PR(State#state.nkport)]),
+    {noreply, start_bridge(Bridge, down, State)};
 
-handle_cast(stop_bridge, #state{bridge_monitor=Mon}=State) ->
+handle_cast({stop_bridge, Pid}, #state{bridge=#nkport{pid=Pid}}=State) ->
+    lager:debug("UnBridged: ~p, ~p", [Pid, ?PR(State#state.nkport)]),
+    #state{bridge_monitor=Mon} = State, 
     case is_reference(Mon) of
         true -> erlang:demonitor(Mon);
         false -> ok
     end,
     {noreply, State#state{bridge_monitor=undefined, bridge=undefined}};
+
+handle_cast({stop_bridge, Pid}, State) ->
+    lager:warning("Received unbridge for unknown bridge ~p", [Pid]),
+    {noreply, State};
 
 handle_cast(Msg, State) ->
     case call_protocol(conn_handle_cast, [Msg], State) of
@@ -601,11 +607,18 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
             #nkport{remote_ip=FromIp, remote_port=FromPort} = From,
             #nkport{local_ip=ToIp, local_port=ToPort} = To
     end,
-    case call_protocol(conn_bridge, [Data, Type, To, From], State) of
+    case call_protocol(conn_bridge, [Data, Type], State) of
         undefined ->
-            {ok, State};
-        {ok, State1} ->
-            {ok, State1};
+            case nkpacket_connection:send(To, Data) of
+                ok ->
+                    ?debug(Domain, "Packet ~p bridged from ~p:~p to ~p:~p", 
+                          [Data, FromIp, FromPort, ToIp, ToPort]),
+                    {ok, State};
+                {error, Error} ->
+                    ?notice(Domain, "Packet ~p could not be bridged from ~p:~p to ~p:~p", 
+                           [Data, FromIp, FromPort, ToIp, ToPort]),
+                    {stop, Error, State}
+            end;
         {ok, Data1, State1} ->
             case nkpacket_connection:send(To, Data1) of
                 ok ->
@@ -617,6 +630,8 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
                           [Data1, FromIp, FromPort, ToIp, ToPort]),
                     {stop, Error, State1}
             end;
+        {skip, State1} ->
+            {ok, State1};
         {stop, Reason, State1} ->
             {stop, Reason, State1}
     end;
@@ -630,7 +645,7 @@ do_parse(Data, #state{nkport=#nkport{domain=Domain}}=State) ->
             {ok, State1};
         {bridge, Bridge, State1} ->
             State2 = start_bridge(Bridge, up, State1),
-            {ok, State2};
+            do_parse(Data, State2);
         {stop, Reason, State1} ->
             {stop, Reason, State1}
     end.
