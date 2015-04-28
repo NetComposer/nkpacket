@@ -146,7 +146,7 @@ init_protocol(Protocol, Fun, Arg) ->
 
 %% @private
 -spec call_protocol(atom(), list(), tuple(), integer()) ->
-    {ok, tuple()} | {atom(), term(), tuple()} | undefined.
+    {atom(), tuple()} | {atom(), term(), tuple()} | undefined.
 
 call_protocol(Fun, Args, State, Pos) ->
     Protocol = element(Pos, State),
@@ -167,8 +167,8 @@ call_protocol(Fun, Args, State, Pos) ->
             case apply(Protocol, Fun, Args++[ProtoState]) of
                 ok ->
                     {ok, State};
-                {ok, ProtoState1} -> 
-                    {ok, setelement(Pos+1, State, ProtoState1)};
+                {Class, ProtoState1} when is_atom(Class) -> 
+                    {Class, setelement(Pos+1, State, ProtoState1)};
                 {Class, Value, ProtoState1} when is_atom(Class) -> 
                     {Class, Value, setelement(Pos+1, State, ProtoState1)}
             end
