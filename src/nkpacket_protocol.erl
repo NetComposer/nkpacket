@@ -100,7 +100,7 @@ unparse(_, _) ->
 
 %% @doc Called when the connection starts
 -spec conn_init(nkpacket:nkport()) ->
-	{ok, conn_state()}.
+	{ok, conn_state()} | {stop, term()}.
 
 conn_init(_) ->
 	{ok, none}.

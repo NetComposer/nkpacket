@@ -317,7 +317,10 @@ init([NkPort]) ->
         {bridge, Bridge, ProtoState} ->
             State1 = State#state{proto_state=ProtoState},
             State2 = start_bridge(Bridge, up, State1),
-            {ok, restart_timer(State2)}
+            {ok, restart_timer(State2)};
+        {stop, Reason} ->
+            gen_server:cast(self(), {stop, Reason}),
+            {ok, State}
     end.
 
 
