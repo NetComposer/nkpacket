@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([send/2, stop/1, stop/2, unparse/2, start/1]).
+-export([send/2, async_send/2, stop/1, stop/2, unparse/2, start/1]).
 -export([reset_timeout/2, get_timeout/1]).
 -export([incoming/2, get_all/0, get_all/1, stop_all/0]).
 -export([connect/1, conn_init/1]).
@@ -107,6 +107,14 @@ send(Pid, OutMsg) when is_pid(Pid) ->
         {'EXIT', _} -> {error, no_process};
         Other -> Other
     end.
+
+
+%% @doc Sends a message to a started connection
+-spec async_send(pid(), nkpacket:outcoming()) ->
+    ok.
+
+async_send(Pid, OutMsg) when is_pid(Pid) ->
+    gen_server:cast(Pid, {send, OutMsg}).
 
 
 %% @doc Performs an unparse using connection context
@@ -416,6 +424,10 @@ handle_call(Msg, From, State) ->
 %% @private
 -spec handle_cast(term(), #state{}) ->
     nklib_util:gen_server_cast(#state{}).
+
+handle_cast({send, OutMsg}, #state{nkport=NkPort}=State) ->
+    nkpacket_connection_lib:raw_send(NkPort, OutMsg),
+    {noreply, restart_timer(State)};
 
 handle_cast(reset_timeout, State) ->
     {noreply, restart_timer(State)};
