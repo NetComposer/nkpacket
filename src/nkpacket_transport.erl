@@ -173,7 +173,6 @@ do_send(_Msg, [], Opts) ->
 do_send(Msg, [#nkport{domain=Domain}=NkPort|Rest], Opts) ->
     case encode(Msg, NkPort) of
         {ok, OutMsg} ->
-            lager:warning("SEND: ~p", [OutMsg]),
             case nkpacket_connection:send(NkPort, OutMsg) of
                 ok ->
                     {ok, NkPort};
