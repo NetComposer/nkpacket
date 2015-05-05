@@ -139,13 +139,14 @@ send(Domain, [{_, _, _, _}=Conn|Rest], Msg, #{force_new:=true}=Opts) ->
     end;
 
 send(Domain, [{_, _, _, _}=Conn|Rest]=Spec, Msg, Opts) ->
-    ?debug(Domain, "Transport trying previous connection to ~p (~p)", [Conn, Opts]),
     NkPorts = get_connected(Domain, Conn, Opts),
     case do_send(Msg, NkPorts, Opts) of
         {ok, NkPort1} -> 
+            ?debug(Domain, "Transport used previous connection to ~p (~p)", [Conn, Opts]),
             {ok, NkPort1};
         retry_tcp ->
             Conn1 = setelement(2, Conn, tcp), 
+            ?debug(Domain, "Transport retrying with tcp", []),
             send(Domain, [Conn1|Rest], Msg, Opts);
         {error, Opts1} -> 
             send(Domain, Spec, Msg, Opts1#{force_new=>true})
@@ -301,6 +302,7 @@ raw_connect(Domain, {Protocol, Transp, Ip, Port}, Opts) ->
                 [] -> #nkport{domain=Domain, transp=Transp, protocol=Protocol}
             end
     end,
+    lager:debug("Base port: ~p", [BasePort]),
     #nkport{meta=Meta} = BasePort,
     NkPort1 = BasePort#nkport{
         remote_ip = Ip, 
