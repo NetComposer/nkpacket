@@ -25,7 +25,7 @@
 -behaviour(nkpacket_protocol).
 
 -export([transports/1, default_port/1]).
--export([conn_init/1, conn_parse/2, conn_unparse/2, conn_stop/2]).
+-export([conn_init/1, conn_parse/2, conn_encode/2, conn_stop/2]).
 -export([conn_handle_call/3, conn_handle_cast/2, conn_handle_info/2]).
 -export([listen_init/1, listen_parse/4, listen_stop/2]).
 -export([listen_handle_call/3, listen_handle_cast/2, listen_handle_info/2]).
@@ -170,14 +170,14 @@ conn_parse(Data, State) ->
 	maybe_reply({parse, Msg}, State),
 	{ok, State}.
 
-conn_unparse({nkraw, Msg}, #conn_state{nkport=NkPort}=State) ->
+conn_encode({nkraw, Msg}, #conn_state{nkport=NkPort}=State) ->
 	lager:notice("UnParsing RAW: ~p, ~p", [Msg, NkPort]),
-	maybe_reply({unparse, Msg}, State),
+	maybe_reply({encode, Msg}, State),
 	{ok, Msg, State};
 
-conn_unparse(Msg, #conn_state{nkport=NkPort}=State) ->
+conn_encode(Msg, #conn_state{nkport=NkPort}=State) ->
 	lager:notice("UnParsing: ~p, ~p", [Msg, NkPort]),
-	maybe_reply({unparse, Msg}, State),
+	maybe_reply({encode, Msg}, State),
 	{ok, erlang:term_to_binary(Msg), State}.
 
 conn_handle_call(Msg, _From, State) ->
@@ -201,7 +201,7 @@ conn_stop(Reason, State) ->
 
 
 
-% unparse(Msg, NkPort) ->
+% encode(Msg, NkPort) ->
 % 	lager:notice("Quick UnParsing: ~p, ~p", [Msg, NkPort]),
 % 	{ok, erlang:term_to_binary(Msg)}.
 

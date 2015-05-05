@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([send/2, async_send/2, stop/1, stop/2, unparse/2, start/1]).
+-export([send/2, async_send/2, stop/1, stop/2, encode/2, start/1]).
 -export([reset_timeout/2, get_timeout/1]).
 -export([incoming/2, get_all/0, get_all/1, stop_all/0]).
 -export([connect/1, conn_init/1]).
@@ -117,12 +117,12 @@ async_send(Pid, OutMsg) when is_pid(Pid) ->
     gen_server:cast(Pid, {send, OutMsg}).
 
 
-%% @doc Performs an unparse using connection context
--spec unparse(nkpacket:nkport()|pid(), term()) ->
+%% @doc Performs an encode using connection context
+-spec encode(nkpacket:nkport()|pid(), term()) ->
     {ok, nkpacket:outcoming()} | {error, term()}. 
 
-unparse(Conn, Term) ->
-    case catch gen_server:call(get_pid(Conn), {unparse, Term}, ?CALL_TIMEOUT) of
+encode(Conn, Term) ->
+    case catch gen_server:call(get_pid(Conn), {encode, Term}, ?CALL_TIMEOUT) of
         {ok, OutMsg} -> {ok, OutMsg};
         {error, Error} -> {error, Error};
         {'EXIT', Error} -> {error, Error}
@@ -382,8 +382,8 @@ handle_call(get_remote, _From, #state{nkport=NkPort}=State) ->
 handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
     {reply, nkpacket:get_user(NkPort), State};
 
-handle_call({unparse, Msg}, _From, State) ->
-    case call_protocol(conn_unparse, [Msg], State) of
+handle_call({encode, Msg}, _From, State) ->
+    case call_protocol(conn_encode, [Msg], State) of
         undefined ->
             {reply, {error, undefined_protocol}, State};
         {ok, OutMsg, State1} -> 

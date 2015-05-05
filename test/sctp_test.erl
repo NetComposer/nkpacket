@@ -87,7 +87,7 @@ basic() ->
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, msg1}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
 	[
 		Listen2,
@@ -118,7 +118,7 @@ basic() ->
 	{ok, Conn1R} = nkpacket:send(dom1, {test_protocol, sctp, {127,0,0,1}, Port2}, 
 							     msg2, M1),
 	receive {Ref2, {parse, msg2}} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref1, {unparse, msg2}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 
 	% %% Connection 2 will stop after 1 msec, and will tear down conn1
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,

@@ -70,7 +70,7 @@ basic() ->
 			";transport=ws;connect_timeout=2000;idle_timeout=1000>",
 	{ok, Conn1} = nkpacket:send(dom2, Url1, msg1, M2),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, msg1}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
@@ -84,13 +84,13 @@ basic() ->
 
 	% We send some more data. The same connection is used.
 	{ok, Conn1} = nkpacket:send(dom2, Conn1, msg1b),
-	receive {Ref2, {unparse, msg1b}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1b}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1b}}} -> ok after 1000 -> error(?LINE) end,
 
 	% And in the opposite direction
 	[Listen1, Conn1R] = nkpacket:get_all(dom1),
 	{ok, Conn1R} = nkpacket:send(dom1, Conn1R, msg1c),
-	receive {Ref1, {unparse, msg1c}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, msg1c}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg1c}}} -> ok after 1000 -> error(?LINE) end,
 
 	Conn1T = nkpacket_connection:get_timeout(Conn1),
@@ -109,7 +109,7 @@ basic() ->
 	        "/a/b;transport=ws;connect_timeout=2000;idle_timeout=500>",
 	{ok, Conn2} = nkpacket:send(dom2, Url2, msg2, M2#{connect_timeout=>3000}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, msg2}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
 
@@ -155,7 +155,7 @@ wss() ->
 	Url1 = "<test://localhost:"++integer_to_list(LPort1)++";transport=wss>",
 	{ok, Conn1} = nkpacket:send(dom2, Url1, msg1, M2),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, msg1}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
@@ -169,13 +169,13 @@ wss() ->
 
 	% We send some more data. The same connection is used.
 	{ok, Conn1} = nkpacket:send(dom2, Conn1, msg1b),
-	receive {Ref2, {unparse, msg1b}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1b}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1b}}} -> ok after 1000 -> error(?LINE) end,
 
 	% And in the opposite direction
 	[Listen1, Conn1R] = nkpacket:get_all(dom1),
 	{ok, Conn1R} = nkpacket:send(dom1, Conn1R, msg1c),
-	receive {Ref1, {unparse, msg1c}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, msg1c}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg1c}}} -> ok after 1000 -> error(?LINE) end,
 
 	ok = nkpacket:stop_listener(Ws1),
@@ -283,7 +283,7 @@ multi() ->
     % Now we connect to dom2
 	{ok, Conn2} = nkpacket:send(dom1, "<test://127.0.0.1:"++P1S++"/dom2;transport=ws>", msg2, M1),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref1, {unparse, msg2}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
 	#nkport{
@@ -359,7 +359,7 @@ ping() ->
 
 	{ok, _Conn1} = nkpacket:send(dom2, Url, {nkraw, {ping, <<"ping1">>}}, M2),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, {ping, _}}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, {ping, _}}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {pong, <<"ping1">>}} -> ok after 1000 -> error(?LINE) end,
 	%% WE HAVE AND ADDITIONAL PONG... WHY???
@@ -388,7 +388,7 @@ large() ->
 	LargeMsg = binary:copy(<<"abcdefghij">>, 1000),
 	{ok, Conn1} = nkpacket:send(dom2, Url, LargeMsg, M2),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, LargeMsg}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, LargeMsg}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, LargeMsg}}} -> ok after 1000 -> error(?LINE) end,
 

@@ -79,7 +79,7 @@ basic() ->
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, msg1}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
 	[
 		Listen2,
@@ -134,7 +134,7 @@ tls() ->
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, msg1}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
 	[
 		#nkport{domain = dom1, transp = tls, 
@@ -164,7 +164,7 @@ tls() ->
 	% If we send another message, the same connection is reused
 	{ok, _} = nkpacket:send(dom2, Uri, msg2),
 	receive {Ref1, {parse, msg2}} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, msg2}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 	Conns1 = lists:sort(nkpacket:get_all()),
 
 	% Wait for the timeout
@@ -210,37 +210,37 @@ send() ->
 		nkpacket:send(dom1, {test_protocol, udp, {127,0,0,1}, Listen2}, {msg1, Msg},
 					  M1#{tcp_packet=>4}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref1, {unparse, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end,
 
 	% This is going to use tcp
 	{ok, Conn1} = nkpacket:send(dom1, {test_protocol, udp, {127,0,0,1}, Listen2},
 								{msg1, Msg}, M1#{udp_to_tcp=>true, tcp_packet=>4}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref1, {unparse, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Udp
-	receive {Ref1, {unparse, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Tcp
+	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Udp
+	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Tcp
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end,
 	#nkport{transp=tcp} = Conn1,
 
 	{ok, Conn1} = nkpacket:send(dom1, {test_protocol, tcp, {127,0,0,1}, Listen2},
 				 				msg2, M1),
-	receive {Ref1, {unparse, msg2}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, msg2}} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, Conn1} = nkpacket:send(dom1, Conn1, msg3, M1),
-	receive {Ref1, {unparse, msg3}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, msg3}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, msg3}} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, Conn1} = nkpacket:send(dom1, {current, {test_protocol, tcp, {127,0,0,1}, Listen2}},
 								msg4, M1),
-	receive {Ref1, {unparse, msg4}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, msg4}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, msg4}} -> ok after 1000 -> error(?LINE) end,
 
 	% Force a new connection
 	{ok, Conn2} = nkpacket:send(dom1, {test_protocol, tcp, {127,0,0,1}, Listen2}, 
 								msg5, M1#{tcp_packet=>4, force_new=>true}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref1, {unparse, msg5}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {encode, msg5}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, msg5}} -> ok after 1000 -> error(?LINE) end,
 	true = Conn1#nkport.pid /= Conn2#nkport.pid,

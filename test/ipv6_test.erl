@@ -81,7 +81,7 @@ basic() ->
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-	receive {Ref2, {unparse, msg1}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
 	[
 		Listen2,

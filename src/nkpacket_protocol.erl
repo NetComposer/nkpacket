@@ -26,8 +26,8 @@
 -module(nkpacket_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([transports/1, default_port/1, unparse/2]).
--export([conn_init/1, conn_parse/2, conn_unparse/2, conn_bridge/3, conn_handle_call/3,
+-export([transports/1, default_port/1, encode/2]).
+-export([conn_init/1, conn_parse/2, conn_encode/2, conn_bridge/3, conn_handle_call/3,
 		 conn_handle_cast/2, conn_handle_info/2, conn_stop/2]).
 -export([listen_init/1, listen_parse/4, listen_handle_call/3,
 		 listen_handle_cast/2, listen_handle_info/2, listen_stop/2]).
@@ -79,13 +79,13 @@ transports(_) ->
 default_port(_) ->
     invalid.
 
-%% @doc Implement this function to provide a 'quick' unparse function, 
-%% in case you don't need the connection state to perform the unparse.
-%% Do not implement it or return 'continue' to call conn_unparse/2
--spec unparse(term(), nkpacket:nkport()) ->
-    {ok, nkpacket:incoming()} | continue | {error, term()}.
+%% @doc Implement this function to provide a 'quick' encode function, 
+%% in case you don't need the connection state to perform the encode.
+%% Do not implement it or return 'continue' to call conn_encode/2
+-spec encode(term(), nkpacket:nkport()) ->
+    {ok, nkpacket:outcoming()} | continue | {error, term()}.
 
-unparse(_, _) ->
+encode(_, _) ->
     continue.
 
 
@@ -116,11 +116,11 @@ conn_parse(_Msg, ConnState) ->
 
 
 %% @doc This function is called when a new message must be send to the connection
--spec conn_unparse(term(), conn_state()) ->
-	{ok, nkpacket:incoming(), conn_state()} | {error, term(), conn_state()} |
+-spec conn_encode(term(), conn_state()) ->
+	{ok, nkpacket:outcoming(), conn_state()} | {error, term(), conn_state()} |
 	{stop, Reason::term()}.
 
-conn_unparse(_Term, ConnState) ->
+conn_encode(_Term, ConnState) ->
 	{error, not_defined, ConnState}.
 
 

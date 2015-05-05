@@ -133,7 +133,7 @@ listen() ->
 	
 	% Send a message back, directly through the connection
 	ok = nkpacket_connection:send(Conn1, <<"test2">>),
-	% receive {Ref1, {unparse, <<"test2">>}} -> ok after 1000 -> error(?LINE) end,
+	% receive {Ref1, {encode, <<"test2">>}} -> ok after 1000 -> error(?LINE) end,
 	% We use the parse in test_protocol:conn_parse/4
 	{ok, {{127,0,0,1}, Port1, <<"test2">>}} = gen_udp:recv(Socket, 0, 5000),
 	

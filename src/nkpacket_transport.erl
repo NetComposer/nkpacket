@@ -171,8 +171,9 @@ do_send(_Msg, [], Opts) ->
     {error, Opts};
 
 do_send(Msg, [#nkport{domain=Domain}=NkPort|Rest], Opts) ->
-    case unparse(Msg, NkPort) of
+    case encode(Msg, NkPort) of
         {ok, OutMsg} ->
+            lager:warning("SEND: ~p", [OutMsg]),
             case nkpacket_connection:send(NkPort, OutMsg) of
                 ok ->
                     {ok, NkPort};
@@ -185,38 +186,38 @@ do_send(Msg, [#nkport{domain=Domain}=NkPort|Rest], Opts) ->
                             do_send(Msg, Rest, Opts#{last_error=>udp_too_large})
                     end;
                 {error, Error} ->
-                    ?notice(Domain, "Error sending msg: ~p", [Error]),
+                    ?notice(Domain, "Error sending msg to ~p: ~p", [NkPort, Error]),
                     do_send(Msg, Rest, Opts#{last_error=>Error})
             end;
         error ->
-            {error, Opts#{last_error=>unparse_error}}
+            {error, Opts#{last_error=>encode_error}}
     end.
  
 
 %% @private
-unparse(Term, #nkport{domain=Domain, protocol=Protocol}=NkPort) -> 
-    case erlang:function_exported(Protocol, unparse, 2) of
+encode(Term, #nkport{domain=Domain, protocol=Protocol}=NkPort) -> 
+    case erlang:function_exported(Protocol, encode, 2) of
         true ->
-            case Protocol:unparse(Term, NkPort) of
+            case Protocol:encode(Term, NkPort) of
                 {ok, OutMsg} ->
                     {ok, OutMsg};
                 continue ->
-                    unparse2(Term, NkPort);
+                    encode2(Term, NkPort);
                 {error, Error} ->
                     ?notice(Domain, "Error unparsing msg: ~p", [Error]),
                     error
 
             end;
         false ->
-            unparse2(Term, NkPort)
+            encode2(Term, NkPort)
     end.
 
 
 %% @private
-unparse2(Term, #nkport{domain=Domain, protocol=Protocol}=NkPort) -> 
-    case erlang:function_exported(Protocol, conn_unparse, 2) of
+encode2(Term, #nkport{domain=Domain, protocol=Protocol}=NkPort) -> 
+    case erlang:function_exported(Protocol, conn_encode, 2) of
         true ->
-            case nkpacket_connection:unparse(NkPort, Term) of
+            case nkpacket_connection:encode(NkPort, Term) of
                 {ok, OutMsg} ->
                     {ok, OutMsg};
                 {error, Error} ->
