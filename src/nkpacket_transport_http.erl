@@ -104,7 +104,7 @@ init([NkPort]) ->
         end,
         erlang:monitor(process, SharedPid),
         case Port of
-            0 -> {ok, Port1} = nkpacket:get_local_port(SharedPid);
+            0 -> {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
             _ -> Port1 = Port
         end,
         NkPort1 = NkPort#nkport{
@@ -145,8 +145,8 @@ init([NkPort]) ->
 handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
     {reply, {ok, NkPort}, State};
 
-handle_call(get_local_port, _From, #state{nkport=NkPort}=State) ->
-    {reply, nkpacket:get_local_port(NkPort), State};
+handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local(NkPort), State};
 
 handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
     {reply, nkpacket:get_user(NkPort), State};

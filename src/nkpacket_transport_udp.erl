@@ -233,8 +233,8 @@ handle_call({send_stun, Ip, Port}, From, #state{nkport=NkPort}=State) ->
 handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
     {reply, {ok, NkPort}, State};
 
-handle_call(get_local_port, _From, #state{nkport=NkPort}=State) ->
-    {reply, nkpacket:get_local_port(NkPort), State};
+handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local(NkPort), State};
 
 handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
     {reply, nkpacket:get_user(NkPort), State};

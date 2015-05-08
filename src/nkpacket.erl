@@ -31,7 +31,7 @@
 -export([get_listener/3]).
 -export([send/3, send/4, connect/3]).
 -export([get_all/0, get_all/1, get_listening/4, is_local/2, is_local_ip/1]).
--export([get_nkport/1, get_local_port/1, get_remote/1, get_pid/1, get_user/1]).
+-export([get_nkport/1, get_local/1, get_remote/1, get_pid/1, get_user/1]).
 -export([resolve/2]).
 
 -export_type([domain/0, transport/0, protocol/0, nkport/0]).
@@ -257,27 +257,27 @@ get_nkport(Pid) when is_pid(Pid) ->
 
 
 %% @doc Gets the current port number of a listener or connection
--spec get_local_port(pid()|nkport()) ->
-    {ok, inet:port_number()} | error.
+-spec get_local(pid()|nkport()) ->
+    {ok, {transport(), inet:ip_address(), inet:port_number()}} | error.
 
-get_local_port(#nkport{local_port=Port}) ->
-    {ok, Port};
-get_local_port(Pid) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_local_port, ?CALL_TIMEOUT) of
-        {ok, Port} -> {ok, Port};
+get_local(#nkport{transp=Transp, local_ip=Ip, local_port=Port}) ->
+    {ok, {Transp, Ip, Port}};
+get_local(Pid) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, get_local, ?CALL_TIMEOUT) of
+        {ok, Info} -> {ok, Info};
         _ -> error
     end.
 
 
 %% @doc Gets the current remote peer address and port
 -spec get_remote(pid()|nkport()) ->
-    {ok, {inet:address(), inet:port_number()}} | error.
+    {ok, {transport(), inet:address(), inet:port_number()}} | error.
 
-get_remote(#nkport{remote_ip=Ip, remote_port=Port}) ->
-    {ok, {Ip, Port}};
+get_remote(#nkport{transp=Transp, remote_ip=Ip, remote_port=Port}) ->
+    {ok, {Transp, Ip, Port}};
 get_remote(Pid) when is_pid(Pid) ->
     case catch gen_server:call(Pid, get_remote, ?CALL_TIMEOUT) of
-        {ok, {Ip, Port}} -> {ok, {Ip, Port}};
+        {ok, Info} -> {ok, Info};
         _ -> error
     end.
 

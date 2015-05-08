@@ -182,8 +182,8 @@ handle_call({start, #nkport{pid=Pid}=Instance}, _From, State) ->
     Opts2 = nklib_util:store_value(env, Env2, Opts),
     {reply, ok, set_ranch_opts(State#state{cowboy_opts=Opts2})};
 
-handle_call(get_local_port, _From, #state{nkport=#nkport{local_port=Port}}=State) ->
-    {reply, {ok, Port}, State};
+handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local(NkPort), State};
 
 handle_call(get_state, _From, State) ->
     {reply, State, State};

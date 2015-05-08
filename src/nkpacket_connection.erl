@@ -373,8 +373,8 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
 handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
     {reply, {ok, NkPort}, State};
 
-handle_call(get_local_port, _From, #state{nkport=NkPort}=State) ->
-    {reply, nkpacket:get_local_port(NkPort), State};
+handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
+    {reply, nkpacket:get_local(NkPort), State};
 
 handle_call(get_remote, _From, #state{nkport=NkPort}=State) ->
     {reply, nkpacket:get_remote(NkPort), State};
