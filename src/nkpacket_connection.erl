@@ -654,10 +654,10 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
             {stop, Reason, State1}
     end;
 
-do_parse(Data, #state{nkport=#nkport{domain=Domain}}=State) ->
+do_parse(Data, #state{nkport=#nkport{domain=Domain, protocol=Protocol}}=State) ->
     case call_protocol(conn_parse, [Data], State) of
         undefined ->
-            ?warning(Domain, "Received data for undefined protocol", []),
+            ?warning(Domain, "Received data for undefined protocol ~p", [Protocol]),
             {ok, State};
         {ok, State1} ->
             {ok, State1};
