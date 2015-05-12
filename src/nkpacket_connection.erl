@@ -94,13 +94,16 @@ connect(#nkport{domain=Domain}=NkPort) ->
 -spec send(nkpacket:nkport()|pid(), nkpacket:outcoming()) ->
     ok | {error, term()}.
 
-send(#nkport{pid=ConnPid}=NkPort, OutMsg) ->
+send(#nkport{pid=ConnPid}=NkPort, OutMsg) when node(ConnPid)==node() ->
     case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
         ok -> 
             reset_timeout(ConnPid);
         {error, Error} ->
             {error, Error}
     end;
+
+send(#nkport{pid=ConnPid}, OutMsg) ->
+    send(ConnPid, OutMsg);
 
 send(Pid, OutMsg) when is_pid(Pid) ->
     case catch gen_server:call(Pid, {send, OutMsg}, ?CALL_TIMEOUT) of
