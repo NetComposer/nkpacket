@@ -358,7 +358,7 @@ get_defport(Protocol, Transp) ->
 %% @private Tries to open a network port
 %% If Port==0, it first tries the "default" port for this transport, if defined.
 %% If port is in use if tries again after a while.
--spec open_port(nkpacket:nkport(),list()) ->
+-spec open_port(nkpacket:nkport(), list()) ->
     {ok, port()} | {error, term()}.
 
 open_port(NkPort, Opts) ->
@@ -385,7 +385,7 @@ open_port(NkPort, Opts) ->
     end,
     case Port of
         0 when is_integer(DefPort) ->
-            lager:debug("Opening default ~p:~p (~p)", [Module, DefPort, Opts]),
+            lager:debug("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
             case Module:Fun(DefPort, Opts) of
                 {ok, Socket} ->
                     {ok, Socket};
