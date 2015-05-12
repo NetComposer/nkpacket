@@ -185,7 +185,8 @@ init([NkPort]) ->
             pid = self(),
             socket = Socket
         },
-        StoredNkPort = NkPort1#nkport{meta=#{}},
+        Meta1 = maps:with([user, idle_timeout], Meta),
+        StoredNkPort = NkPort1#nkport{meta=Meta1},
         nklib_proc:put(nkpacket_transports, StoredNkPort),
         nklib_proc:put({nkpacket_listen, Domain, Protocol, udp}, StoredNkPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),

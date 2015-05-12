@@ -118,7 +118,8 @@ init([NkPort]) ->
                 socket = {Socket, 0}
             },
             ok = gen_sctp:listen(Socket, true),
-            StoredNkPort = NkPort1#nkport{meta=#{}},
+            Meta1 = maps:with([user, idle_timeout], Meta),
+            StoredNkPort = NkPort1#nkport{meta=Meta1},
             nklib_proc:put(nkpacket_transports, StoredNkPort),
             nklib_proc:put({nkpacket_listen, Domain, Protocol, sctp}, StoredNkPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
