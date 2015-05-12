@@ -120,7 +120,7 @@ init([NkPort]) ->
             ok = gen_sctp:listen(Socket, true),
             StoredNkPort = NkPort1#nkport{meta=#{}},
             nklib_proc:put(nkpacket_transports, StoredNkPort),
-            nklib_proc:put({nkpacket_listen, Domain, Protocol}, StoredNkPort),
+            nklib_proc:put({nkpacket_listen, Domain, Protocol, sctp}, StoredNkPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserPid} -> erlang:monitor(process, UserPid);

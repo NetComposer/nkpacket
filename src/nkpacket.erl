@@ -376,19 +376,16 @@ get_all(Domain) ->
     [nkport()].
 
 get_listening(Domain, Protocol, Transp, Class) ->
-    Fun = fun({#nkport{transp=TTransp, listen_ip=LIp}=T, _}) -> 
-        case TTransp==Transp of
-            true ->
-                case Class of
-                    ipv4 when size(LIp)==4 -> {true, T};
-                    ipv6 when size(LIp)==8 -> {true, T};
-                    _ -> false
-                end;
-            false ->
-                false
+    Fun = fun({#nkport{listen_ip=LIp}=T, _}) -> 
+        case Class of
+            ipv4 when size(LIp)==4 -> {true, T};
+            ipv6 when size(LIp)==8 -> {true, T};
+            _ -> false
         end
     end,
-    nklib_util:filtermap(Fun, nklib_proc:values({nkpacket_listen, Domain, Protocol})).
+    nklib_util:filtermap(
+        Fun, 
+        nklib_proc:values({nkpacket_listen, Domain, Protocol, Transp})).
 
 
 
@@ -399,11 +396,11 @@ get_listening(Domain, Protocol, Transp, Class) ->
 
 is_local(Domain, #uri{}=Uri) ->
     case nkpacket_dns:resolve(Domain, Uri) of
-        {ok, [{Protocol, _Transp, _Ip, _Port}|_]=Conns} ->
+        {ok, [{Protocol, Transp, _Ip, _Port}|_]=Conns} ->
             Listen = [
                 {Transp, Ip, Port} ||
-                {#nkport{transp=Transp, local_ip=Ip, local_port=Port}, _Pid} 
-                <- nklib_proc:values({nkpacket_listen, Domain, Protocol})
+                {#nkport{local_ip=Ip, local_port=Port}, _Pid} 
+                <- nklib_proc:values({nkpacket_listen, Domain, Protocol, Transp})
             ],
             LocalIps = nkpacket_config_cache:local_ips(),
             is_local(Listen, Conns, LocalIps);

@@ -116,7 +116,7 @@ init([NkPort]) ->
         },   
         StoredNkPort = NkPort1#nkport{meta=maps:with([host, path], Meta)},
         nklib_proc:put(nkpacket_transports, StoredNkPort),
-        nklib_proc:put({nkpacket_listen, Domain, Protocol}, StoredNkPort),
+        nklib_proc:put({nkpacket_listen, Domain, Protocol, Transp}, StoredNkPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
         MonRef = case Meta of
             #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
