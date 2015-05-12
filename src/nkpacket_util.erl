@@ -23,9 +23,11 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([log_level/1, get_local_ips/0, find_main_ip/0, find_main_ip/2]).
+-export([get_local_uri/2, get_remote_uri/2]).
 -export([init_protocol/3, call_protocol/4]).
 -export([parse_opts/1]).
 
+-include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
 
 
@@ -173,6 +175,35 @@ call_protocol(Fun, Args, State, Pos) ->
                     {Class, Value, setelement(Pos+1, State, ProtoState1)}
             end
     end.
+
+
+%% @doc Gets a binary represtation of an uri based on local address
+-spec get_local_uri(term(), nkpacket:nkport()) ->
+    binary().
+
+get_local_uri(Scheme, #nkport{transp=Transp, local_ip=Ip, local_port=Port}) ->
+    get_uri(Scheme, Transp, Ip, Port).
+
+
+%% @doc Gets a binary represtation of an uri based on remote address
+-spec get_remote_uri(term(), nkpacket:nkport()) ->
+    binary().
+
+get_remote_uri(Scheme, #nkport{transp=Transp, remote_ip=Ip, remote_port=Port}) ->
+    get_uri(Scheme, Transp, Ip, Port).
+
+    
+%% @private
+get_uri(Scheme, Transp, Ip, Port) ->
+    list_to_binary([
+        "<", nklib_util:to_binary(Scheme), "://", nklib_util:to_host(Ip), ":", 
+        nklib_util:to_binary(Port), ";transport=", nklib_util:to_binary(Transp), ">"
+    ]).
+
+
+
+
+
 
 
 %% ===================================================================
