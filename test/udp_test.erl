@@ -49,7 +49,7 @@ basic() ->
 	Conn1 = {test_protocol, udp, {0,0,0,0}, 0},
 	% First '0' port try to open default transport port (1234)
 	{ok, UdpP1} = nkpacket:start_listener(dom1, Conn1, #{}),
-	{ok, Port1} = nkpacket:get_local_port(UdpP1),
+	{ok, {udp, {0,0,0,0}, Port1}} = nkpacket:get_local(UdpP1),
 	case Port1 of
 		1234 -> ok;
 		_ -> lager:warning("Could not open port 1234")

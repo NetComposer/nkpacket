@@ -51,8 +51,8 @@ basic() ->
 	Url = "<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>",
 	{ok, Tcp1} = nkpacket:start_listener(dom1, Url, M1),
 	{ok, Tcp2} = nkpacket:start_listener(dom2, {test_protocol, tcp, All6, 0}, M2),
-	{ok, LPort1} = nkpacket:get_local_port(Tcp1),	
-	{ok, LPort2} = nkpacket:get_local_port(Tcp2),
+	{ok, {tcp, _, LPort1}} = nkpacket:get_local(Tcp1),	
+	{ok, {tcp, _, LPort2}} = nkpacket:get_local(Tcp2),
 	case LPort2 of
 		1235 -> ok;
 		_ -> lager:warning("Could not open 1235")
