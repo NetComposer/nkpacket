@@ -174,10 +174,10 @@ conn_stop(_Reason, _State) ->
 
 %% @doc Called when the listening transport starts
 -spec listen_init(nkpacket:nkport()) ->
-	listen_state().
+	{ok, listen_state()}.
 
 listen_init(_) ->
-	none.
+	{ok, none}.
 
 
 %% @doc This function is called only for UDP transports using no_connections=>true
