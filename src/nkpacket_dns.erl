@@ -38,6 +38,7 @@
 %% Public
 %% ===================================================================
 
+
 %% @doc Finds the ips, transports and ports to try for `Uri', following RFC3263
 -spec resolve(nkpacket:domain(), nklib:user_uri()) -> 
     {ok, [nkpacket:raw_connection()]} | {error, term()}.
@@ -91,7 +92,7 @@ resolve(Domain, Uri) ->
     {error, term()}.
 
 resolve_uri(Domain, #uri{}=Uri) ->
-    #uri{scheme=Scheme, domain=Host, opts=Opts, port=Port} = Uri,
+    #uri{scheme=Scheme, domain=Host, opts=Opts, ext_opts=ExtOpts, port=Port} = Uri,
     try
         Host1 = case Host of
             <<"all">> -> <<"0.0.0.0">>;
@@ -105,7 +106,13 @@ resolve_uri(Domain, #uri{}=Uri) ->
             _ -> 
                 TargetIp = IsNumeric = false
         end,
-        UriTransp = case nklib_util:get_value(<<"transport">>, Opts) of
+        RawTransp =  case nklib_util:get_value(<<"transport">>, Opts) of
+            undefined -> 
+                nklib_util:get_value(<<"transport">>, ExtOpts);
+            RawTransp0 ->
+                RawTransp0
+        end,
+        UriTransp = case RawTransp of
             Atom when is_atom(Atom) -> 
                 Atom;
             Other -> 
