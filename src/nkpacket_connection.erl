@@ -289,7 +289,7 @@ init([NkPort]) ->
                 https -> nkpacket_config_cache:http_timeout(Domain)
             end
     end,
-    ?debug(Domain, "created ~p connection ~p (~p, ~p) ~p", 
+    ?debug(Domain, "created ~p connection ~p to/from (~p, ~p) ~p", 
            [Transp, {Ip, Port}, Protocol, self(), Meta]),
     ListenMonitor = case is_pid(ListenPid) of
         true -> erlang:monitor(process, ListenPid);
