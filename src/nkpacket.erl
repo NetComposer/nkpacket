@@ -475,7 +475,7 @@ is_local_ip(Ip) ->
     {error, term()}.
 
 
-resolve(Domain, #uri{path=Path, opts=Opts, headers=Headers}=Uri) ->
+resolve(Domain, #uri{path=Path, ext_opts=Opts, headers=Headers}=Uri) ->
     Opts1 = case Path of
         <<>> -> Opts;
         _ -> [{path, Path}|Opts]
