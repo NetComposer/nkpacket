@@ -66,8 +66,8 @@ basic() ->
 		} = Listen1
 	] = nkpacket:get_all(dom1),
 	
-	Url1 = "<test://localhost:"++integer_to_list(LPort1)++
-			";transport=ws;connect_timeout=2000;idle_timeout=1000>",
+	Url1 = "test://localhost:"++integer_to_list(LPort1)++
+			";transport=ws;connect_timeout=2000;idle_timeout=1000",
 	{ok, Conn1} = nkpacket:send(dom2, Url1, msg1, M2),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
@@ -105,8 +105,8 @@ basic() ->
 	receive {Ref2, {parse, {text, <<"my text">>}}} -> ok after 1000 -> error(?LINE) end,
 
 	% Since we use a different URL, it opens a new connection
-	Url2 = "<test://127.0.0.1:"++integer_to_list(LPort1)++
-	        "/a/b;transport=ws;connect_timeout=2000;idle_timeout=500>",
+	Url2 = "test://127.0.0.1:"++integer_to_list(LPort1)++
+	        "/a/b;transport=ws;connect_timeout=2000;idle_timeout=500",
 	{ok, Conn2} = nkpacket:send(dom2, Url2, msg2, M2#{connect_timeout=>3000}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
@@ -202,8 +202,8 @@ multi() ->
 	{ok, Ws2} = nkpacket:start_listener(dom2, "<test://all:"++P1S++"/dom2;transport=ws>",
 										M2#{idle_timeout=>1000}),
 
-	Url = "<test://all:"++P1S++"/any;transport=ws;host=localhost; path= \"dom3, test\"; "
-		 "ws_proto=proto1>",
+	Url = "test://all:"++P1S++"/any;transport=ws;host=localhost; path= \"dom3, test\"; "
+		 "ws_proto=proto1",
 	{ok, Ws3} = nkpacket:start_listener(dom3, Url, M3),
 
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
@@ -330,7 +330,7 @@ multi() ->
 
 	% Sent to the other url, starts a new connection
 	{ok, Conn4} = 
-		nkpacket:send(dom4, "<test://localhost:"++P1S++"/test;transport=ws;ws_proto=proto1>", 
+		nkpacket:send(dom4, "<test://localhost:"++P1S++"/test;transport=ws>;ws_proto=proto1", 
 					  msg5),
 	receive {Ref3, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref3, {parse, {binary, msg5}}} -> ok after 1000 -> error(?LINE) end,
