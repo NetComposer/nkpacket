@@ -525,8 +525,8 @@ resolve(Domain, Uri) ->
 
 make_static_server(#{dir:=Dir}=Static, Opts) ->
     Base = case Opts of
-        #{path:=<<"/">>} -> <<"/">>;
-        #{path:=Path} -> Path;
+        #{path_list:=[<<"/">>]} -> <<"/">>;
+        #{path_list:=[Path]} -> Path;
         _ -> <<"/">>
     end,
     Extra = maps:get(extra, Static, []),

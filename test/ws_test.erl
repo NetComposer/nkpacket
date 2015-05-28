@@ -120,7 +120,7 @@ basic() ->
         listen_ip=undefined, listen_port=undefined,
         % resource= <<"/a/b">>, protocol=test_protocol, 
         meta=#{
-        	path := <<"/a/b">>
+        	path_list := [<<"/a/b">>]
         }
 	} = Conn2,
 	true = Port1 /= Port2,
@@ -218,7 +218,7 @@ multi() ->
 			remote_ip = undefined, remote_port = undefined,
 			listen_ip = {0,0,0,0}, listen_port = P1,
 			protocol = test_protocol, pid = Ws1, 
-			meta = #{path := <<"/dom1/more">>}
+			meta = #{path_list := [<<"/dom1/more">>]}
 		} = Listen1
 	] = nkpacket:get_all(dom1),
  	[
@@ -227,7 +227,7 @@ multi() ->
           	local_ip = {0,0,0,0},local_port = P1,
           	listen_ip = {0,0,0,0},listen_port = P1,
           	protocol = test_protocol, pid = Ws2, 
-          	meta = #{path := <<"/dom2">>}
+          	meta = #{path_list := [<<"/dom2">>]}
         } = Listen2
     ] = nkpacket:get_all(dom2),
  	[
@@ -236,8 +236,8 @@ multi() ->
 			listen_ip = {0,0,0,0},listen_port = P1,
 			protocol = test_protocol, pid = Ws3, 
 			meta = #{
-				path := <<"dom3, test">>,
-				host := <<"localhost">>,
+				path_list := [<<"/dom3">>, <<"/test">>],
+				host_list := [<<"localhost">>],
 				ws_proto := <<"proto1">>
 			}
 		}
@@ -255,7 +255,7 @@ multi() ->
         local_ip = {127,0,0,1}, local_port = Conn1Port,
         remote_ip = {127,0,0,1}, remote_port = P1,
         listen_ip = undefined, listen_port = undefined,
-        meta = #{path := <<"/dom1/more">>}
+        meta = #{path_list := [<<"/dom1/more">>]}
     } = Conn1,
     [
     	Listen1,
@@ -264,7 +264,7 @@ multi() ->
          	local_ip = {0,0,0,0}, local_port = P1,
          	remote_ip = {127,0,0,1}, remote_port = Conn1Port,
          	listen_ip = {0,0,0,0}, listen_port = P1,
-         	meta = #{path := <<"/dom1/more">>}
+         	meta = #{path_list := [<<"/dom1/more">>]}
         }
     ] = nkpacket:get_all(dom1),
 	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,
@@ -292,7 +292,7 @@ multi() ->
         remote_ip = {127,0,0,1}, remote_port = P1,
         listen_ip = {0,0,0,0}, listen_port = P1,
         protocol = test_protocol,
-        meta = #{path := <<"/dom2">>}
+        meta = #{path_list := [<<"/dom2">>]}
     } = Conn2, 								% Outgoing
     [Listen1, Conn2] = nkpacket:get_all(dom1),
     [
@@ -302,7 +302,7 @@ multi() ->
           	local_ip = {0,0,0,0}, local_port = P1,
           	remote_ip = {127,0,0,1}, remote_port = Conn2Port,
           	listen_ip = {0,0,0,0}, listen_port = P1,
-        	meta = #{path := <<"/dom2">>}
+        	meta = #{path_list := [<<"/dom2">>]}
         }
     ] = nkpacket:get_all(dom2),
 	receive {Ref1, conn_stop} -> ok after 2000 -> error(?LINE) end,

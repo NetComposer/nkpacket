@@ -59,12 +59,12 @@ get_connected(Domain, Conn) ->
 
 get_connected(Domain, {_Proto, Transp, _Ip, _Port}=Conn, Opts) 
               when Transp==ws; Transp==wss; Transp==http; Transp==https ->
-    Path = maps:get(path, Opts, <<"/">>),
+    Path = maps:get(path_list, Opts, []),
     [
         NkPort || 
         {#nkport{meta=Meta}=NkPort, _} 
             <- nklib_proc:values({nkpacket_connection, Domain, Conn}),
-            maps:get(path, Meta, <<"/">>)==Path
+            maps:get(path_list, Meta, [])==Path
     ];
 
 get_connected(Domain, {_, _, _, _}=Conn, _Opts) ->
@@ -89,7 +89,7 @@ send(Domain, [#uri{domain=Host}=Uri|Rest], Msg, Opts) ->
         {ok, RawConns, UriOpts} ->
             ?debug(Domain, "Transport send to ~p (~p)", [RawConns, Rest]),
             Opts1 = maps:merge(UriOpts, Opts),
-            Opts2 = maps:merge(#{host=>Host}, Opts1),
+            Opts2 = maps:merge(#{host_list=>[Host]}, Opts1),
             send(Domain, RawConns++Rest, Msg, Opts2);
         {error, Error} ->
             ?notice(Domain, "Error sending to ~p: ~p", [Uri, Error]),

@@ -86,13 +86,13 @@ start_handshake(NkPort) ->
 
 %% @private
 get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
-    Host = case maps:get(host, Meta, undefined) of
-        undefined -> nklib_util:to_host(Ip);
-        Host0 -> Host0
+    Host = case maps:get(host_list, Meta, []) of
+        [] -> nklib_util:to_host(Ip);
+        [Host0] -> Host0
     end,
-    Path = case maps:get(path, Meta, undefined) of
-        undefined -> <<"/">>;
-        Path0 -> Path0
+    Path = case maps:get(path_list, Meta, []) of
+        [] -> <<"/">>;
+        [Path0] -> Path0
     end,
     Key = cow_ws:key(),
     Headers2 = [

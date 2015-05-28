@@ -25,6 +25,7 @@
 -export([log_level/1, get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2]).
 -export([init_protocol/3, call_protocol/4]).
+-export([parse_paths/1, check_paths/2]).
 -export([parse_opts/1]).
 
 -include("nkpacket.hrl").
@@ -201,11 +202,52 @@ get_uri(Scheme, Transp, Ip, Port) ->
     ]).
 
 
+%% @private
+-spec parse_paths([binary()]) ->
+    [[binary()]].
+
+parse_paths(List) ->
+    parse_paths(List, []).
 
 
+%% @private
+parse_paths([], Acc) ->
+    Acc;
+
+parse_paths([Spec|Rest], Acc) ->
+    [<<>>|Parts] = binary:split(Spec, <<"/">>, [global]),
+    parse_paths(Rest, [Parts|Acc]).
+
+%% @private
+check_paths(_ReqPath, []) ->
+    true;
+
+check_paths(ReqPath, Paths) ->
+    case binary:split(ReqPath, <<"/">>, [global]) of
+        [<<>>, <<>>] -> check_paths1([<<>>], Paths);
+        [<<>>|ReqParts] -> check_paths1(ReqParts, Paths)
+    end.
 
 
+%% @private
+check_paths1(_, []) ->
+    false;
 
+check_paths1(Parts, [FirstPath|Rest]) ->
+    case check_paths2(Parts, FirstPath) of
+        true -> true;
+        false -> check_paths1(Parts, Rest)
+    end.
+
+
+%% @private
+check_paths2([Common|Rest1], [Common|Rest2]) -> 
+    check_paths2(Rest1, Rest2);
+
+check_paths2(_Parts, Paths) -> 
+    Paths==[].
+
+  
 %% ===================================================================
 %% Options Parser
 %% =================================================================
@@ -292,9 +334,24 @@ parse_opts([{Key, Val}|Rest], Acc) ->
         tcp_listeners ->
             parse_integer(Val);
         host ->
-            parse_text(Val);
+            case parse_tokens(Val) of
+                {ok, HostList} -> {ok, host_list, HostList};
+                error -> error
+            end;
+        host_list when is_list(Val), is_binary(hd(Val)) ->
+            {ok, Val};
+        host_list ->
+            lager:error("HL: ~p", [Val]),
+            error;
         path ->
-            parse_text(Val);
+            case parse_path(Val) of
+                {ok, PathList} -> {ok, path_list, PathList};
+                error -> error
+            end;
+        path_list when is_list(Val), is_binary(hd(Val)) ->
+            {ok, Val};
+        path_list ->
+            error;
         cowboy_opts ->
             parse_list(Val);
         ws_proto ->
@@ -325,6 +382,8 @@ parse_opts([{Key, Val}|Rest], Acc) ->
     case Res of
         {ok, Val1} -> 
             parse_opts(Rest, maps:put(Key1, Val1, Acc));
+        {ok, NewKey, Val1} -> 
+            parse_opts(Rest, maps:put(NewKey, Val1, Acc));
         ignore ->
             parse_opts(Rest, Acc);
         error ->
@@ -365,11 +424,66 @@ parse_list(_) ->
     error.
 
 %% @private
-parse_text(Term) ->
-    case nklib_parse:unquote(Term) of
-        error -> error;
-        Bin -> {ok, Bin}
+parse_tokens(Value) ->
+    case nklib_parse:unquote(Value) of
+        error -> 
+            error;
+        Bin -> 
+            case nklib_parse:tokens(Bin) of
+                error ->
+                    error;
+                Tokens ->
+                    {ok, [Term || {Term, _} <- Tokens]}
+            end
     end.
 
-    
+  
+%% @private
+parse_path(Value) ->
+    case parse_tokens(Value) of
+        {ok, Terms} -> 
+            {ok, [nklib_parse:path(Path) || Path <- Terms]};
+        error -> 
+            error
+    end.
+
+
+
+%% ===================================================================
+%% Tests
+%% =================================================================
+
+  
+
+% -define(TEST, true).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+path_test() ->
+    ?debugMsg("HTTP path test"),
+    true = test_path("/a/b/c", ""),
+    true = test_path("/", "/"),
+    false = test_path("/", "/a"),
+    true = test_path("/", "/a, bc, /"),
+    true = test_path("/a/b/c", "a"),
+    false = test_path("/a/b/c", "b"),
+    true = test_path("/a/b/c", "b, a/b/c"),
+    true = test_path("/a/b/c", "b, /a/b"),
+    false = test_path("/a/b/c", "b,a/b/c/d"),
+    true = test_path("/a/b/c", "b, a/b/c/d, /a/b/c"),
+    ok.
+
+
+test_path(Req, Path) ->
+    {ok, PathList} = parse_path(Path),
+    PathList1 = parse_paths(PathList),
+    check_paths(list_to_binary(Req), PathList1).
+
+-endif.
+
+
+
+
+
+
 

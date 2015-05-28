@@ -25,7 +25,6 @@
 -export([get_listener/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
--export([parse_paths/1, check_paths/2]).
 -export([cowboy_init/3, resume/5]).
 
 -include_lib("nklib/include/nklib.hrl").
@@ -86,11 +85,9 @@ init([NkPort]) ->
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
-        Host = maps:get(host, Meta, <<>>),
-        HostList = [H || {H, _} <- nklib_parse:tokens(Host)],
-        Path = maps:get(path, Meta, <<>>),
-        PathList = [P || {P, _} <- nklib_parse:tokens(Path)],
-        ParsedPaths = nkpacket_transport_http:parse_paths(PathList),
+        HostList = maps:get(host_list, Meta, []),
+        PathList = maps:get(path_list, Meta, []),
+        ParsedPaths = nkpacket_util:parse_paths(PathList),
         Meta1 = Meta#{http_match=>{HostList, ParsedPaths}},
         % This is the port for tcp/tls and also what will be sent to cowboy_init
         Instance = NkPort#nkport{
@@ -114,7 +111,7 @@ init([NkPort]) ->
             pid = self(),
             socket = SharedPid
         },   
-        Meta2 = maps:with([user, idle_timeout, path, host], Meta),
+        Meta2 = maps:with([user, idle_timeout, path_list, host_list], Meta),
         StoredNkPort = NkPort1#nkport{meta=Meta2},
         nklib_proc:put(nkpacket_transports, StoredNkPort),
         nklib_proc:put({nkpacket_listen, Domain, Protocol, Transp}, StoredNkPort),
@@ -231,7 +228,7 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
     % lager:warning("T2: ~p", [(PathList==[] orelse check_paths(ReqPath, PathList))]),
     case 
         (HostList==[] orelse lists:member(ReqHost, HostList)) andalso
-        (PathList==[] orelse check_paths(ReqPath, PathList))
+        (PathList==[] orelse nkpacket_util:check_paths(ReqPath, PathList))
     of
         false ->
             next;
@@ -245,7 +242,7 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
             % Connection will monitor listen process (unsing pid()) and 
             % this cowboy process (using socket)
             Opts = [
-                host, path, cowboy_dispatch, cowboy_opts
+                host_list, path_list, cowboy_dispatch, cowboy_opts
                 | ?CONN_LISTEN_OPTS
             ],
             ConnPort = NkPort1#nkport{meta = maps:with(Opts, Meta)},
@@ -311,84 +308,5 @@ resume(Env, Rest, Module, Function, Args) ->
 %% @private
 call_protocol(Fun, Args, State) ->
     nkpacket_util:call_protocol(Fun, Args, State, #state.protocol).
-
-
-%% @private
--spec parse_paths([string()|binary()]) ->
-    [[binary()]].
-
-parse_paths(List) ->
-    parse_paths(List, []).
-
-
-%% @private
-parse_paths([], Acc) ->
-    Acc;
-
-parse_paths([Spec|Rest], Acc) when is_binary(Spec) ->
-    case binary:split(Spec, <<"/">>, [global]) of
-        [<<>>|Parts] -> parse_paths(Rest, [Parts|Acc]);     % starting /
-        Parts -> parse_paths(Rest, [Parts|Acc])
-    end;
-
-parse_paths([Spec|Rest], Acc) when is_list(Spec), is_integer(hd(Spec)) ->
-    parse_paths([list_to_binary(Spec)|Rest], Acc).
-
-
-%% @private
-check_paths(_ReqPath, []) ->
-    true;
-
-check_paths(ReqPath, Paths) ->
-    case binary:split(ReqPath, <<"/">>, [global]) of
-        [<<>>, <<>>] -> check_paths1([<<>>], Paths);
-        [<<>>|ReqParts] -> check_paths1(ReqParts, Paths)
-    end.
-
-
-%% @private
-check_paths1(_, []) ->
-    false;
-
-check_paths1(Parts, [FirstPath|Rest]) ->
-    case check_paths2(Parts, FirstPath) of
-        true -> true;
-        false -> check_paths1(Parts, Rest)
-    end.
-
-
-%% @private
-check_paths2([Common|Rest1], [Common|Rest2]) -> 
-    check_paths2(Rest1, Rest2);
-
-check_paths2(_Parts, Paths) -> 
-    Paths==[].
-
-    
-
-% -define(TEST, true).
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-path_test() ->
-    ?debugMsg("HTTP path test"),
-    true = test_path("/a/b/c", []),
-    true = test_path("/", ["/"]),
-    false = test_path("/", ["/a"]),
-    true = test_path("/", ["/a", "bc", "/"]),
-    true = test_path("/a/b/c", ["a"]),
-    false = test_path("/a/b/c", ["d"]),
-    true = test_path("/a/b/c", ["d", "a/b/c"]),
-    true = test_path("/a/b/c", ["d", "/a/b"]),
-    false = test_path("/a/b/c", ["d", "a/b/c/d"]),
-    true = test_path("/a/b/c", ["d", "a/b/c/d", "/a/b/c"]),
-    ok.
-
-
-test_path(Req, Paths) ->
-    Paths1 = parse_paths(Paths),
-    check_paths(list_to_binary(Req), Paths1).
-
--endif.
 
 
