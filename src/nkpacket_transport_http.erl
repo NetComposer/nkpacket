@@ -244,7 +244,10 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
             },
             % Connection will monitor listen process (unsing pid()) and 
             % this cowboy process (using socket)
-            Opts = [host, path, cowboy_dispatch, cowboy_opts|?CONN_LISTEN_OPTS],
+            Opts = [
+                host, path, cowboy_dispatch, cowboy_opts
+                | ?CONN_LISTEN_OPTS
+            ],
             ConnPort = NkPort1#nkport{meta = maps:with(Opts, Meta)},
             case nkpacket_connection:start(ConnPort) of
                 {ok, NkPort2} ->
