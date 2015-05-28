@@ -216,6 +216,7 @@ terminate(Reason, State) ->
 
 %% @private Called from nkpacket_transport_tcp:execute/2, inside
 %% cowboy's connection process
+%% NkPort is related to this server's NkPort, Env is the common cowboy environment
 -spec cowboy_init(#nkport{}, cowboy_req:req(), list()) ->
     term().
 
@@ -224,8 +225,6 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
     ReqHost = cowboy_req:host(Req),
     ReqPath = cowboy_req:path(Req),
     % lager:warning("HTTP START: ~p ~p, ~p, ~p", [ReqHost, HostList, ReqPath, PathList]),
-    % lager:warning("T1: ~p", [(HostList==[] orelse lists:member(ReqHost, HostList))]),
-    % lager:warning("T2: ~p", [(PathList==[] orelse check_paths(ReqPath, PathList))]),
     case 
         (HostList==[] orelse lists:member(ReqHost, HostList)) andalso
         (PathList==[] orelse nkpacket_util:check_paths(ReqPath, PathList))
@@ -241,14 +240,11 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
             },
             % Connection will monitor listen process (unsing pid()) and 
             % this cowboy process (using socket)
-            Opts = [
-                host_list, path_list, cowboy_dispatch, cowboy_opts
-                | ?CONN_LISTEN_OPTS
-            ],
-            ConnPort = NkPort1#nkport{meta = maps:with(Opts, Meta)},
+            ConnPort = NkPort1#nkport{meta = maps:with(?CONN_LISTEN_OPTS, Meta)},
             case nkpacket_connection:start(ConnPort) of
-                {ok, NkPort2} ->
-                    ?debug(Domain, "HTTP listener accepted connection: ~p", [NkPort2]),
+                {ok, ConnPort1} ->
+                    ?debug(Domain, "HTTP listener accepted connection: ~p", [ConnPort1]),
+                    NkPort2 = NkPort#nkport{meta=maps:with([user, web_proto], Meta)},
                     case erlang:function_exported(Protocol, http_init, 3) of
                         true ->
                             case Protocol:http_init(NkPort2, Req, Env) of
@@ -280,7 +276,7 @@ execute(Req, Env, [Module|Rest]) ->
             execute(Req1, Env1, Rest);
         {suspend, Module, Function, Args} ->
             erlang:hibernate(?MODULE, resume,
-                            [Env, Rest, Module, Function, Args]);
+                             [Env, Rest, Module, Function, Args]);
         {stop, Req1} ->
             {ok, Req1, Env}
     end.
@@ -293,7 +289,7 @@ resume(Env, Rest, Module, Function, Args) ->
             execute(Req1, Env1, Rest);
         {suspend, Module1, Function1, Args1} ->
             erlang:hibernate(?MODULE, resume,
-                            [Env, Rest, Module1, Function1, Args1]);
+                             [Env, Rest, Module1, Function1, Args1]);
         {stop, Req1} ->
             {ok, Req1, Env}
     end.

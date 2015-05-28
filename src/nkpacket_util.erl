@@ -338,31 +338,22 @@ parse_opts([{Key, Val}|Rest], Acc) ->
                 {ok, HostList} -> {ok, host_list, HostList};
                 error -> error
             end;
-        host_list when is_list(Val), is_binary(hd(Val)) ->
-            {ok, Val};
-        host_list ->
-            lager:error("HL: ~p", [Val]),
-            error;
         path ->
             case parse_path(Val) of
                 {ok, PathList} -> {ok, path_list, PathList};
                 error -> error
             end;
-        path_list when is_list(Val), is_binary(hd(Val)) ->
-            {ok, Val};
-        path_list ->
-            error;
         cowboy_opts ->
             parse_list(Val);
         ws_proto ->
             {ok, nklib_util:to_lower(Val)};
-        static_server ->
+        web_proto ->
             case Val of
-                #{dir:=_Dir} -> {ok, Val};
+                {static, #{path:=_}} -> {ok, Val};
+                {dispatch, #{routes:=_}} -> {ok, Val};
+                {custom, #{env:=_, middlewares:=_}} -> {ok, Val};
                 _ -> error
             end;
-        cowboy_dispatch ->
-            parse_list(Val);
         connect_timeout ->
             parse_integer(Val);
         listen_ip ->

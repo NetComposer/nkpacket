@@ -27,9 +27,9 @@
 
 -define(CALL_TIMEOUT, 30000).
 
--define(CONN_LISTEN_OPTS, [user, idle_timeout, refresh_fun]).
+-define(CONN_LISTEN_OPTS, [user, idle_timeout, path_list, refresh_fun]).
 
--define(CONN_CLIENT_OPTS, [user, idle_timeout, refresh_fun, monitor, path, ws_exts]).
+-define(CONN_CLIENT_OPTS, [user, idle_timeout, path_list, refresh_fun, monitor]).
 
 
 -define(

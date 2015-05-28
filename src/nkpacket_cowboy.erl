@@ -43,10 +43,14 @@
 %% ===================================================================
 
 %% @private Starts a new shared transport or reuses an existing one
-%% Common options (tcp_listeners, tcp_max_connections, certfile, keyfile, 
-%% cowboy_opts) can only be specified by the first caller.
-%% cowboy_opts cannot include middlewares, timeout, compress or env
 %%
+%% The 'meta' field in NkPort can include options, but it will only be read from 
+%% the first started server: tcp_listeners, tcp_max_connections, certfile, keyfile
+%%
+%% It can also include 'cowboy_opts' with the same limitation. 
+%% The following options are fixed: timeout, compress
+%%
+%% Each server can provide its own 'web_proto'
 start(#nkport{pid=Pid}=NkPort) when is_pid(Pid) ->
     #nkport{transp=Transp, local_ip=Ip, local_port=Port} = NkPort,
     case nklib_proc:values({nkpacket_cowboy, Transp, Ip, Port}) of
@@ -118,10 +122,10 @@ init([NkPort]) ->
             CowboyOpts1 = maps:get(cowboy_opts, Meta, []),
             CowboyOpts2 = nklib_util:store_values(
                 [
+                    {env, [{nkports, [Instance]}]},
                     {middlewares, [?MODULE]},
                     {timeout, Timeout},     % Time to close the connection if no requests
-                    {compress, true},       % Allow compress in WS and HTTP?
-                    {env, [{nkports, [Instance]}]}
+                    {compress, true}        % Allow compress in WS and HTTP?
                 ],
                 CowboyOpts1),
             {ok, RanchPid} = ranch_listener_sup:start_link(

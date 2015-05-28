@@ -21,7 +21,7 @@
 %% @doc Main management module.
 %% TODO: 
 %% - WS Client Compression
-%% - Simplify HTTP/WS listeners not using Cowboy's process but only cowlib
+%% - Simplify HTTP/WS listeners not using Cowboy's process but only cowlib?
 
 
 -module(nkpacket).
@@ -60,12 +60,29 @@
 -type nkport() :: #nkport{}.
 
 
--type static_server() ::
-    #{
-        dir => string() | binary(),         % (Mandatory) Directory to serve
-        index_file => string() | binary(),  % File to use as index
-        extra => cowboy_static:opts()
-    }.
+-type cowboy_opts() :: 
+    [
+        {max_empty_lines, non_neg_integer()} | 
+        {max_header_name_length, non_neg_integer()} | 
+        {max_header_value_length, non_neg_integer()} | 
+        {max_headers, non_neg_integer()} | 
+        {max_keepalive, non_neg_integer()} | 
+        {max_request_line_length, non_neg_integer()} | 
+        {onresponse, cowboy:onresponse_fun()}
+    ].
+
+-type web_proto() ::
+    {static, 
+        nkpacket_cowboy_static:opts()} |
+    {dispatch, 
+        #{
+            routes => cowboy_router:routes()
+        }} |
+    {custom, 
+        #{
+            env => cowboy_middleware:env(),
+            middlewares => [module()]
+        }}.
 
 
 %% Options for listeners
@@ -97,15 +114,14 @@
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Hosts to filter (comma separated)
         path => string() | binary(),            % Paths to filter (comma separated)
-        cowboy_opts => cowboy_protocol:opts(),  % See nkpacket_cowboy:start_link/4
+        cowboy_opts => cowboy_opts(),
 
         % WS/WSS
         ws_proto => string() | binary(),        % Websocket Subprotocol
         % ws_opts => map(),                     % See nkpacket_connection_ws
         %                                       % (i.e. #{compress=>true})
         % HTTP/HTTPS
-        static_server => static_server(),
-        cowboy_dispatch => cowboy_router:dispatch_rules()
+        web_proto => web_proto()
     }.
 
 
@@ -198,10 +214,10 @@ start_listener(Domain, UserConn, Opts) ->
 get_listener(Domain, {Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
-            Opts2 = case Opts1 of
-                #{static_server:=Static} ->
-                    Dispatch = make_static_server(Static, Opts1),
-                    Opts1#{cowboy_dispatch=>Dispatch};
+            Opts2 = case Transp==http orelse Transp==https of
+                true ->
+                    WebProto = make_web_proto(Opts1),
+                    Opts1#{web_proto=>WebProto};
                 _ ->
                     Opts1
             end,
@@ -221,8 +237,7 @@ get_listener(Domain, {Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
 get_listener(Domain, Uri, Opts) when is_map(Opts) ->
     case resolve(Domain, Uri) of
         {ok, [Conn], UriOpts} ->
-            Opts1 = maps:merge(UriOpts, Opts),
-            get_listener(Domain, Conn, Opts1);
+            get_listener(Domain, Conn, maps:merge(UriOpts, Opts));
         {ok, _, _} ->
             {error, invalid_uri};
         {error, Error} ->
@@ -364,8 +379,7 @@ connect(Domain, Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)),
 connect(Domain, Uri, Opts) when is_map(Opts) ->
     case resolve(Domain, Uri) of
         {ok, Conns, UriOpts} ->
-            Opts1 = maps:merge(UriOpts, Opts),
-            connect(Domain, Conns, Opts1);
+            connect(Domain, Conns, maps:merge(UriOpts, Opts));
         {error, Error} ->
             {error, Error}
     end.
@@ -491,23 +505,19 @@ is_local_ip(Ip) ->
     {error, term()}.
 
 
-resolve(Domain, #uri{path=Path, ext_opts=Opts, headers=Headers}=Uri) ->
-    Opts1 = case Path of
-        <<>> -> Opts;
-        _ -> [{path, Path}|Opts]
+resolve(Domain, #uri{path=Path, ext_opts=Opts, ext_headers=Headers}=Uri) ->
+    Opts1 = maps:from_list(Opts),
+    Opts2 = case Path of
+        <<>> -> Opts1;
+        _ -> Opts1#{path=>Path}
     end,
-    case nkpacket_util:parse_opts(Opts1) of
-        {ok, Opts2} ->
-            Opts3 = case Headers of 
-                [] -> Opts2;
-                _ -> Opts2#{user=>Headers}
-            end,
-            case nkpacket_dns:resolve(Domain, Uri) of
-                {ok, Conns} ->
-                    {ok, Conns, Opts3};
-                {error, Error} ->
-                    {error, Error}
-            end;
+    Opts3 = case Headers of 
+        [] -> Opts2;
+        _ -> Opts2#{user=>Headers}
+    end,
+    case nkpacket_dns:resolve(Domain, Uri) of
+        {ok, Conns} ->
+            {ok, Conns, Opts3};
         {error, Error} ->
             {error, Error}
     end;
@@ -520,26 +530,32 @@ resolve(Domain, Uri) ->
 
 
 %% @private
--spec make_static_server(static_server(), listener_opts()) ->
-    cowboy_router:dispatch_rules().
+-spec make_web_proto(listener_opts()) ->
+    web_proto().
 
-make_static_server(#{dir:=Dir}=Static, Opts) ->
-    Base = case Opts of
-        #{path_list:=[<<"/">>]} -> <<"/">>;
-        #{path_list:=[Path]} -> Path;
-        _ -> <<"/">>
-    end,
-    Extra = maps:get(extra, Static, []),
-    Routes = [
-        case Static of
-            #{index_file:=Index} -> 
-                {Base, cowboy_static, {file, Dir, Index}};
-            _ ->
-               [] 
-        end,
-        {<<Base/binary, "/[...]">>, cowboy_static, {dir, Dir, Extra}}
+make_web_proto(#{web_proto:={static, #{path:=_}=Static}}=Opts) ->
+    PathList = maps:get(path_list, Opts, [<<>>]),
+    Routes1 = [
+        [
+            {<<Path/binary, "/[...]">>, nkpacket_cowboy_static, Static}
+        ]
+        || Path <- PathList
     ],
-    lager:warning("R: ~p", [lists:flatten(Routes)]),
-    cowboy_router:compile([{'_', lists:flatten(Routes)}]).
+    Routes2 = lists:flatten(Routes1),
+    lager:warning("Routes2: ~p", [Routes2]),
+    {custom, 
+        #{
+            env => [{dispatch, cowboy_router:compile([{'_', Routes2}])}],
+            middlewares => [cowboy_router, cowboy_handler]
+        }};
 
+make_web_proto(#{web_proto:={dispatch, #{routes:=Routes}}}) ->
+    {custom, 
+        #{
+            env => [{dispatch, cowboy_router:compile(Routes)}],
+            middlewares => [cowboy_router, cowboy_handler]
+        }};
 
+make_web_proto(#{web_proto:={custom, #{env:=Env, middlewares:=Mods}}=Proto})
+    when is_list(Env), is_list(Mods) ->
+    Proto.

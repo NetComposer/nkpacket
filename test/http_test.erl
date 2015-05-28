@@ -26,51 +26,39 @@
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
-http_test_() ->
-  	{setup, spawn, 
-    	fun() -> 
-    		ok = nkpacket_app:start(),
-    		?debugMsg("Starting HTTP test")
-		end,
-		fun(_) -> 
-			ok
-		end,
-	    fun(_) ->
-		    [
-				fun() -> basic() end,
-				fun() -> https() end
-			]
-		end
-  	}.
+% http_test_() ->
+%   	{setup, spawn, 
+%     	fun() -> 
+%     		ok = nkpacket_app:start(),
+%     		?debugMsg("Starting HTTP test")
+% 		end,
+% 		fun(_) -> 
+% 			ok
+% 		end,
+% 	    fun(_) ->
+% 		    [
+% 				fun() -> basic() end,
+% 				fun() -> https() end
+% 			]
+% 		end
+%   	}.
 
 
 basic() ->
 	Port = test_util:get_port(tcp),
 	{Ref1, M1, Ref2, M2, Ref3, M3} = test_util:reset_3(),
  	Url1 = "<http://all:"++integer_to_list(Port)++"/test1>",
-	Dispatch1 = cowboy_router:compile([
-		{'_', [
-			{"/test1", test_cowboy_handler, [M1]}
-		]}
-	]),
-	{ok, Http1} = nkpacket:start_listener(dom1, Url1, M1#{cowboy_dispatch=>Dispatch1}),
+	WebProto1 = {dispatch, #{routes => [{'_', [{"/test1", test_cowboy_handler, [M1]}]}]}},
+	{ok, Http1} = nkpacket:start_listener(dom1, Url1, M1#{web_proto=>WebProto1}),
  	Url2 = "<http://all:"++integer_to_list(Port)++"/test2>",
-	Dispatch2 = cowboy_router:compile([
-		{'_', [
-			{"/test2", test_cowboy_handler, [M2]}
-		]}
-	]),
-	{ok, Http2} = nkpacket:start_listener(dom2, Url2, M2#{cowboy_dispatch=>Dispatch2}),
-	Dispatch3 = cowboy_router:compile([
-		{'_', [
-			{"/test3", test_cowboy_handler, [M3]}
-		]}
-	]),
+	WebProto2 = {dispatch, #{routes => [{'_', [{"/test2", test_cowboy_handler, [M2]}]}]}},
+	{ok, Http2} = nkpacket:start_listener(dom2, Url2, M2#{web_proto=>WebProto2}),
+	WebProto3 = {dispatch, #{routes => [{'_', [{"/test3", test_cowboy_handler, [M3]}]}]}},
  	Url3 = "<http://all:"++integer_to_list(Port)++">",
 	{ok, Http3} = nkpacket:start_listener(dom3, Url3, M3#{
 		host => "localhost",
 		path => "/test3, /test3b/test3bb",
-		cowboy_opts => [{env, [{dispatch, Dispatch3}]}]
+		web_proto => WebProto3
 	}),
 	timer:sleep(100),
 
@@ -145,12 +133,8 @@ https() ->
 	Port = test_util:get_port(tcp),
 	{Ref1, M1} = test_util:reset_1(),
  	Url1 = "<https://all:"++integer_to_list(Port)++">",
-	Dispatch1 = cowboy_router:compile([
-		{'_', [
-			{"/test1", test_cowboy_handler, [M1]}
-		]}
-	]),
-	{ok, Http1} = nkpacket:start_listener(dom1, Url1, M1#{cowboy_dispatch=>Dispatch1}),
+	WebProto1 = {dispatch, #{routes => [{'_', [{"/test1", test_cowboy_handler, [M1]}]}]}},
+	{ok, Http1} = nkpacket:start_listener(dom1, Url1, M1#{web_proto=>WebProto1}),
 	{ok, Gun} = gun:open("127.0.0.1", Port, #{transport=>ssl, retry=>0}),
 	{ok, 200, _, <<"Hello World!">>} = get(Gun, "/test1", []),
 	P = receive {Ref1, http_init, P1} -> P1 after 1000 -> error(?LINE) end,
@@ -158,6 +142,15 @@ https() ->
 	{ok, 404, H1} = get(Gun, "/kk", []),
 	<<"Cowboy">> = nklib_util:get_value(<<"server">>, H1),
 	ok = nkpacket:stop_listener(Http1).
+
+
+static() ->
+	Port = 8021, %test_util:get_port(tcp),
+ 	Url1 = "http://all:"++integer_to_list(Port),
+	Path = filename:join(code:priv_dir(nkpacket), "static"),
+	WebProto1 = {static, #{path=>Path, index_file=>"index.html"}},
+	{ok, _S1} = nkpacket:start_listener(dom1, Url1, #{web_proto=>WebProto1}).
+
 
 
 
