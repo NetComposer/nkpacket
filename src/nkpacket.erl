@@ -59,6 +59,15 @@
 %% An opened port (listener or connection)
 -type nkport() :: #nkport{}.
 
+
+-type static_server() ::
+    #{
+        dir => string() | binary(),         % (Mandatory) Directory to serve
+        index_file => string() | binary(),  % File to use as index
+        extra => cowboy_static:opts()
+    }.
+
+
 %% Options for listeners
 -type listener_opts() ::
     #{
@@ -95,6 +104,7 @@
         % ws_opts => map(),                     % See nkpacket_connection_ws
         %                                       % (i.e. #{compress=>true})
         % HTTP/HTTPS
+        static_server => static_server(),
         cowboy_dispatch => cowboy_router:dispatch_rules()
     }.
 
@@ -164,7 +174,6 @@
     cow_ws:frame().                 % Only WS
 
 
-
 %% ===================================================================
 %% Public functions
 %% ===================================================================
@@ -189,13 +198,20 @@ start_listener(Domain, UserConn, Opts) ->
 get_listener(Domain, {Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
+            Opts2 = case Opts1 of
+                #{static_server:=Static} ->
+                    Dispatch = make_static_server(Static, Opts1),
+                    Opts1#{cowboy_dispatch=>Dispatch};
+                _ ->
+                    Opts1
+            end,
             NkPort = #nkport{
                 domain = Domain,
                 transp = Transp,
                 local_ip = Ip,
                 local_port = Port,
                 protocol = Protocol,
-                meta = Opts1
+                meta = Opts2
             },
             nkpacket_transport:get_listener(NkPort);
         {error, Error} ->
@@ -465,7 +481,7 @@ is_local_ip(Ip) ->
 
 
 %% ===================================================================
-%% Config Parsers
+%% Internal
 %% ===================================================================
 
 
@@ -501,5 +517,29 @@ resolve(Domain, Uri) ->
         [PUri] -> resolve(Domain, PUri);
         _ -> {error, invalid_uri}
     end.
+
+
+%% @private
+-spec make_static_server(static_server(), listener_opts()) ->
+    cowboy_router:dispatch_rules().
+
+make_static_server(#{dir:=Dir}=Static, Opts) ->
+    Base = case Opts of
+        #{path:=<<"/">>} -> <<"/">>;
+        #{path:=Path} -> Path;
+        _ -> <<"/">>
+    end,
+    Extra = maps:get(extra, Static, []),
+    Routes = [
+        case Static of
+            #{index_file:=Index} -> 
+                {Base, cowboy_static, {file, Dir, Index}};
+            _ ->
+               [] 
+        end,
+        {<<Base/binary, "/[...]">>, cowboy_static, {dir, Dir, Extra}}
+    ],
+    lager:warning("R: ~p", [lists:flatten(Routes)]),
+    cowboy_router:compile([{'_', lists:flatten(Routes)}]).
 
 

@@ -299,6 +299,11 @@ parse_opts([{Key, Val}|Rest], Acc) ->
             parse_list(Val);
         ws_proto ->
             {ok, nklib_util:to_lower(Val)};
+        static_server ->
+            case Val of
+                #{dir:=_Dir} -> {ok, Val};
+                _ -> error
+            end;
         cowboy_dispatch ->
             parse_list(Val);
         connect_timeout ->
