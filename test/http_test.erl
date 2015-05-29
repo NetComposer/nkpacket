@@ -27,22 +27,23 @@
 -include_lib("kernel/include/file.hrl").
 -include("nkpacket.hrl").
 
-% http_test_() ->
-%   	{setup, spawn, 
-%     	fun() -> 
-%     		ok = nkpacket_app:start(),
-%     		?debugMsg("Starting HTTP test")
-% 		end,
-% 		fun(_) -> 
-% 			ok
-% 		end,
-% 	    fun(_) ->
-% 		    [
-% 				fun() -> basic() end,
-% 				fun() -> https() end
-% 			]
-% 		end
-%   	}.
+http_test_() ->
+  	{setup, spawn, 
+    	fun() -> 
+    		ok = nkpacket_app:start(),
+    		?debugMsg("Starting HTTP test")
+		end,
+		fun(_) -> 
+			ok
+		end,
+	    fun(_) ->
+		    [
+				fun() -> basic() end,
+				fun() -> https() end,
+				fun() -> static() end
+			]
+		end
+  	}.
 
 
 basic() ->
@@ -146,7 +147,7 @@ https() ->
 
 
 static() ->
-	Port = 8021, %test_util:get_port(tcp),
+	Port = 8080, %test_util:get_port(tcp),
 	Path = filename:join(code:priv_dir(nkpacket), "www"),
 
  	Url1 = "http://all:"++integer_to_list(Port),
@@ -192,17 +193,25 @@ static() ->
 	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/1/2/dir1/file1.txt", []),
 
 	ok = nkpacket:stop_listener(S1),
-	timer:sleep(1000),
-	get(Gun, "/dir1", []).
+	timer:sleep(100),
 
+	{ok, Gun2} = gun:open("127.0.0.1", Port, #{transport=>tcp, retry=>0}),
+	{ok, 404, _} = get(Gun2, "/dir1/file1.txt", []),
+	{ok, 200, _, <<"file1.txt">>} = get(Gun2, "/1/2/dir1/file1.txt", []),
 
+	Url3 = "http://all:"++integer_to_list(Port)++"/1/2/",
+	WebProto3 = {static, #{path=>Path}},
+	{ok, S3} = nkpacket:start_listener(dom1, Url3, 
+		#{web_proto=>WebProto3, path=>"/a, b/", host=>"localhost"}),
+	{ok, 404, _} = get(Gun2, "/a/index.html", []),
 
+	{ok, Gun3} = gun:open("localhost", Port, #{transport=>tcp, retry=>0}),
+	{ok, 200, _, _} = get(Gun3, "/a/index.html", []),
+	{ok, 200, _, _} = get(Gun3, "/b/index.html", []),
+	{ok, 404, _} = get(Gun3, "/c/index.html", []),
 
-
-
-
-
-
+	ok = nkpacket:stop_listener(S2),
+	ok = nkpacket:stop_listener(S3).
 
 
 

@@ -234,10 +234,10 @@ handle_info({'DOWN', _MRef, process, Pid, _Reason}=Msg, State) ->
             lager:warning("Module ~p received unexpected info: ~p", [?MODULE, Msg]),
             {noreply, State};
         {value, _, []} ->
-            lager:warning("Last server leave"),
+            % lager:warning("Last server leave"),
             {stop, normal, State};
         {value, _, Instances2} ->
-            lager:warning("Server leave"),
+            % lager:warning("Server leave"),
             Env2 = nklib_util:store_value(nkports, Instances2, Env1),
             Opts1 = nklib_util:store_value(env, Env2, Opts),
             {noreply, set_ranch_opts(State#state{cowboy_opts=Opts1})}
@@ -300,7 +300,6 @@ start_link(Ref, Socket, TranspModule, Opts) ->
 
 execute(Req, Env) ->
     Instances = nklib_util:get_value(nkports, Env),
-    lager:warning("Instances: ~p", [Instances]),
     execute(Instances, Req, Env).
 
 
