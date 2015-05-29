@@ -29,7 +29,7 @@
 -module(nkpacket_cowboy).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([start/1]).
+-export([start/1, get_all/0, get_env/1]).
 -export([init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
 -export([start_link/4, execute/2]).
@@ -64,6 +64,20 @@ start(#nkport{pid=Pid}=NkPort) when is_pid(Pid) ->
     end.
 
 
+%% @private
+-spec get_all() ->
+    [{{nkpacket:transport(), inet:ip_address(), inet:port()}, pid()}].
+
+get_all() ->
+    nklib_proc:values(?MODULE).
+
+
+-spec get_env({nkpacket:transport(), inet:ip_address(), inet:port()}) ->
+    ok.
+
+get_env({_Transp, _Ip, _Port}=RanchId) ->
+    ranch_server:get_protocol_options(RanchId).
+
 
 
 %% ===================================================================
@@ -97,6 +111,7 @@ init([NkPort]) ->
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {_, Port1}} = InetMod:sockname(Socket),
+            nklib_proc:put(?MODULE, {Transp, Ip, Port1}),
             nklib_proc:put({nkpacket_cowboy, Transp, Ip, Port1}),
             Shared = NkPort#nkport{
                 local_port = Port1, 
@@ -219,10 +234,10 @@ handle_info({'DOWN', _MRef, process, Pid, _Reason}=Msg, State) ->
             lager:warning("Module ~p received unexpected info: ~p", [?MODULE, Msg]),
             {noreply, State};
         {value, _, []} ->
-            % lager:warning("Last master leave"),
+            lager:warning("Last server leave"),
             {stop, normal, State};
         {value, _, Instances2} ->
-            % lager:warning("master leave"),
+            lager:warning("Server leave"),
             Env2 = nklib_util:store_value(nkports, Instances2, Env1),
             Opts1 = nklib_util:store_value(env, Env2, Opts),
             {noreply, set_ranch_opts(State#state{cowboy_opts=Opts1})}
@@ -285,6 +300,7 @@ start_link(Ref, Socket, TranspModule, Opts) ->
 
 execute(Req, Env) ->
     Instances = nklib_util:get_value(nkports, Env),
+    lager:warning("Instances: ~p", [Instances]),
     execute(Instances, Req, Env).
 
 

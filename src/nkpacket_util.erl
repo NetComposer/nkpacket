@@ -225,7 +225,8 @@ check_paths(_ReqPath, []) ->
 check_paths(ReqPath, Paths) ->
     case binary:split(ReqPath, <<"/">>, [global]) of
         [<<>>, <<>>] -> check_paths1([<<>>], Paths);
-        [<<>>|ReqParts] -> check_paths1(ReqParts, Paths)
+        [<<>>|ReqParts] -> check_paths1(ReqParts, Paths);
+        _ -> false
     end.
 
 

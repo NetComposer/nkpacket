@@ -24,6 +24,7 @@
 -compile([export_all]).
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("nklib/include/nklib.hrl").
+-include_lib("kernel/include/file.hrl").
 -include("nkpacket.hrl").
 
 % http_test_() ->
@@ -146,10 +147,61 @@ https() ->
 
 static() ->
 	Port = 8021, %test_util:get_port(tcp),
+	Path = filename:join(code:priv_dir(nkpacket), "www"),
+
  	Url1 = "http://all:"++integer_to_list(Port),
-	Path = filename:join(code:priv_dir(nkpacket), "static"),
 	WebProto1 = {static, #{path=>Path, index_file=>"index.html"}},
-	{ok, _S1} = nkpacket:start_listener(dom1, Url1, #{web_proto=>WebProto1}).
+	{ok, S1} = nkpacket:start_listener(dom1, Url1, #{web_proto=>WebProto1}),
+
+ 	Url2 = "http://all:"++integer_to_list(Port)++"/1/2/",
+	WebProto2 = {static, #{path=>Path}},
+	{ok, S2} = nkpacket:start_listener(dom1, Url2, #{web_proto=>WebProto2}),
+
+	{ok, Gun} = gun:open("127.0.0.1", Port, #{transport=>tcp, retry=>0}),
+	{ok, 200, H1, <<"index_root">>} = get(Gun, "/", []),
+	[
+		{<<"connection">>, <<"keep-alive">>},
+		{<<"content-length">>, <<"10">>},
+		{<<"content-type">>, <<"text/html">>},
+		{<<"date">>, _},
+		{<<"etag">>, Etag},
+		{<<"last-modified">>, Date},
+		{<<"server">>, <<"NkPACKET">>}
+	] = lists:sort(H1),
+	File1 = filename:join(Path, "index.html"),
+	{ok, #file_info{mtime=Mtime}} = file:read_file_info(File1, [{time, universal}]),
+	Etag = <<$", (integer_to_binary(erlang:phash2({10, Mtime}, 16#ffffffff)))/binary, $">>,
+	Date = cowboy_clock:rfc1123(Mtime),
+
+	{ok, 400, _} = get(Gun, "../..", []),
+	{ok, 403, _} = get(Gun, "/1/2/", []),
+	{ok, 200, _, <<"index_root">>} = get(Gun, "/1/2/index.html", []),
+	{ok, 404, _} = get(Gun, "/1/2/index.htm", []),
+	{ok, 200, _, <<"index_dir1">>} = get(Gun, "/dir1", []),
+	{ok, 403, _} = get(Gun, "/1/2/dir1", []),
+	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/dir1/file1.txt", []),
+	[
+		{<<"connection">>, <<"keep-alive">>},
+		{<<"content-length">>, <<"9">>},
+		{<<"content-type">>, <<"text/plain">>},
+		{<<"date">>, _},
+		{<<"etag">>, _},
+		{<<"last-modified">>, _},
+		{<<"server">>,<<"NkPACKET">>}
+	] = lists:sort(H2),
+	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/1/2/dir1/file1.txt", []),
+
+	ok = nkpacket:stop_listener(S1),
+	timer:sleep(1000),
+	get(Gun, "/dir1", []).
+
+
+
+
+
+
+
+
 
 
 

@@ -542,7 +542,7 @@ make_web_proto(#{web_proto:={static, #{path:=_}=Static}}=Opts) ->
         || Path <- PathList
     ],
     Routes2 = lists:flatten(Routes1),
-    lager:warning("Routes2: ~p", [Routes2]),
+    % lager:warning("Routes2: ~p", [Routes2]),
     {custom, 
         #{
             env => [{dispatch, cowboy_router:compile([{'_', Routes2}])}],

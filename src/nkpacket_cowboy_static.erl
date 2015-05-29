@@ -36,29 +36,38 @@
 
 init(Req, #{path:=Path}=Opts) ->
 	PathInfo = cowboy_req:path_info(Req),
+	Req1 = cowboy_req:set_resp_header(<<"server">>, <<"NkPACKET">>, Req),
 	case lists:member(<<"..">>, PathInfo) of
 		true ->
-			{cowboy_rest, Req, {error, malformed}};
+			{cowboy_rest, Req1, {error, malformed}};
 		false ->
 			Dir = nklib_parse:fullpath(filename:absname(Path)),
 			FilePath = filename:join([Dir|PathInfo]),
-			lager:warning("Static web server looking for ~s", [FilePath]),
-			case file:read_file_info(FilePath, [{time, universal}]) of
-				{ok, #file_info{type=directory}} ->
-					case maps:get(index_file, Opts, undefined) of
-						undefined -> 
-							{cowboy_rest, Req, {error, forbidden}};
-						Index ->
-							FilePath1 = filename:join(FilePath, Index),
-							init(Req, Opts#{path:=FilePath1, index_file:=undefined})
-					end;
-				{ok, Info} ->
-					{cowboy_rest, Req, {Opts#{path:=FilePath}, Info}};
-				{error, enoent} ->
-					{cowboy_rest, Req, {error, not_found}};
-				_ ->
-					{cowboy_rest, Req, {error, forbidden}}
-			end
+			init_file(Req1, Opts, FilePath)
+	end.
+
+
+%% @private
+-spec init_file(cowboy_req:req(), opts(), binary()) -> 
+	{cowboy_rest, cowboy_req:req(), state()}.
+
+init_file(Req, Opts, FilePath) ->
+	lager:debug("Static web server looking for ~s", [FilePath]),
+	case file:read_file_info(FilePath, [{time, universal}]) of
+		{ok, #file_info{type=directory}} ->
+			case maps:get(index_file, Opts, undefined) of
+				undefined -> 
+					{cowboy_rest, Req, {error, forbidden}};
+				Index ->
+					FilePath1 = filename:join(FilePath, Index),
+					init_file(Req, Opts#{index_file:=undefined}, FilePath1)
+			end;
+		{ok, Info} ->
+			{cowboy_rest, Req, {Opts#{path:=FilePath}, Info}};
+		{error, enoent} ->
+			{cowboy_rest, Req, {error, not_found}};
+		_ ->
+			{cowboy_rest, Req, {error, forbidden}}
 	end.
 
 
