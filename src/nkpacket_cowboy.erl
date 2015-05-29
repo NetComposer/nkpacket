@@ -29,7 +29,7 @@
 -module(nkpacket_cowboy).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([start/1, get_all/0, get_env/1]).
+-export([start/2, get_all/0, get_servers/3]).
 -export([init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
 -export([start_link/4, execute/2]).
@@ -51,16 +51,19 @@
 %% The following options are fixed: timeout, compress
 %%
 %% Each server can provide its own 'web_proto'
-start(#nkport{pid=Pid}=NkPort) when is_pid(Pid) ->
+-spec start(nkpacket:nkport(), module()) ->
+    {ok, pid()} | {error, term()}.
+
+start(#nkport{pid=Pid}=NkPort, Callback) when is_pid(Pid) ->
     #nkport{transp=Transp, local_ip=Ip, local_port=Port} = NkPort,
-    case nklib_proc:values({nkpacket_cowboy, Transp, Ip, Port}) of
-        [{_, Listen}|_] ->
-            case catch gen_server:call(Listen, {start, NkPort}, ?CALL_TIMEOUT) of
+    case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
+        [{_Servers, Listen}|_] ->
+            case catch gen_server:call(Listen, {start, Pid, Callback}, infinity) of
                 ok -> {ok, Listen};
                 _ -> {error, shared_failed}
             end;
         [] ->
-            gen_server:start(?MODULE, [NkPort], [])
+            gen_server:start(?MODULE, [NkPort, Callback], [])
     end.
 
 
@@ -69,14 +72,21 @@ start(#nkport{pid=Pid}=NkPort) when is_pid(Pid) ->
     [{{nkpacket:transport(), inet:ip_address(), inet:port()}, pid()}].
 
 get_all() ->
-    nklib_proc:values(?MODULE).
+    [
+        {Transp, Ip, Port, Pid, get_servers(Transp, Ip, Port)}
+        || {{Transp, Ip, Port}, Pid} <- nklib_proc:values(?MODULE)
+    ].
 
 
--spec get_env({nkpacket:transport(), inet:ip_address(), inet:port()}) ->
-    ok.
+%% @private
+-spec get_servers(nkpacket:transport(), inet:address(), inet:port_number()) ->
+    [{pid(), module()}].
 
-get_env({_Transp, _Ip, _Port}=RanchId) ->
-    ranch_server:get_protocol_options(RanchId).
+get_servers(Transp, Ip, Port) -> 
+    case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
+        [{L, _}|_] -> L;
+        [] -> []
+    end.
 
 
 
@@ -88,7 +98,7 @@ get_env({_Transp, _Ip, _Port}=RanchId) ->
     nkport :: nkpacket:nkport(),
     ranch_id :: term(),
     ranch_pid :: pid(),
-    cowboy_opts :: list()
+    servers :: [{pid(), module(), reference()}]
 }).
 
 
@@ -96,7 +106,7 @@ get_env({_Transp, _Ip, _Port}=RanchId) ->
 -spec init(term()) ->
     nklib_util:gen_server_init(#state{}).
 
-init([NkPort]) ->
+init([NkPort, Callback]) ->
     #nkport{
         domain = Domain,
         transp = Transp, 
@@ -111,25 +121,17 @@ init([NkPort]) ->
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {_, Port1}} = InetMod:sockname(Socket),
-            nklib_proc:put(?MODULE, {Transp, Ip, Port1}),
-            nklib_proc:put({nkpacket_cowboy, Transp, Ip, Port1}),
             Shared = NkPort#nkport{
+                domain = '$nkcowboy',
                 local_port = Port1, 
                 listen_ip = Ip,
                 listen_port = Port1,
                 pid = self(),
+                protocol = undefined,
                 socket = Socket,
                 meta = #{}
             },
             RanchId = {Transp, Ip, Port1},
-            % Listeners = maps:get(tcp_listeners, Meta, 100),
-            % Max = maps:get(tcp_max_connections, Meta, 1024),
-            Instance = NkPort#nkport{        
-                local_port = Port1, 
-                listen_ip = Ip,
-                listen_port = Port1,
-                meta = Meta
-            },
             Timeout = case Meta of
                 #{idle_timeout:=Timeout0} -> Timeout0;
                 _ -> nkpacket_config_cache:http_timeout(Domain)
@@ -137,10 +139,10 @@ init([NkPort]) ->
             CowboyOpts1 = maps:get(cowboy_opts, Meta, []),
             CowboyOpts2 = nklib_util:store_values(
                 [
-                    {env, [{nkports, [Instance]}]},
+                    {env, [{?MODULE, RanchId}]},
                     {middlewares, [?MODULE]},
                     {timeout, Timeout},     % Time to close the connection if no requests
-                    {compress, true}        % Allow compress in WS and HTTP?
+                    {compress, true}        
                 ],
                 CowboyOpts1),
             {ok, RanchPid} = ranch_listener_sup:start_link(
@@ -153,27 +155,15 @@ init([NkPort]) ->
                 ],
                 ?MODULE,
                 CowboyOpts2),
-
-            % RanchSpec = ranch:child_spec(
-            %     RanchId, 
-            %     Listeners,
-            %     RanchMod, 
-            %     [{socket, Socket}, {max_connections, Max}],
-            %     ?MODULE, 
-            %     CowboyOpts2),
-            % % we don't want a fail in ranch to switch everything off
-            % RanchSpec1 = setelement(3, RanchSpec, temporary),
-            % {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
-            % link(RanchPid),
-
-            erlang:monitor(process, ListenPid),
+            nklib_proc:put(?MODULE, {Transp, Ip, Port1}),
+            ListenRef = monitor(process, ListenPid),
             State = #state{
-                nkport = Shared#nkport{domain='$nkcowboy'},
+                nkport = Shared,
                 ranch_id = RanchId,
                 ranch_pid = RanchPid,
-                cowboy_opts = CowboyOpts2
+                servers = [{ListenPid, Callback, ListenRef}]
             },
-            {ok, State};
+            {ok, register(State)};
         {error, Error} ->
             ?error(Domain, "could not start ~p transport on ~p:~p (~p)", 
                    [Transp, Ip, Port, Error]),
@@ -185,21 +175,15 @@ init([NkPort]) ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call({start, #nkport{pid=Pid}=Instance}, _From, State) ->
-    #state{nkport=#nkport{local_port=Port}, cowboy_opts=Opts} = State,
-    Instance1 = Instance#nkport{local_port=Port, listen_port=Port},
-    Env1 = nklib_util:get_value(env, Opts),
-    Instances1 = nklib_util:get_value(nkports, Env1),
-    Instances2 = case lists:keymember(Pid, #nkport.pid, Instances1) of
+handle_call({start, ListenPid, Callback}, _From, #state{servers=Servers}=State) ->
+    Servers1 = case lists:keymember(ListenPid, 1, Servers) of
         false ->
-            erlang:monitor(process, Pid),
-            [Instance1|Instances1];
+            ListenRef = erlang:monitor(process, ListenPid),
+            [{ListenPid, Callback, ListenRef}|Servers];
         true ->
-            lists:keystore(Pid, #nkport.pid, Instances1, Instance1)
+            Servers
     end,
-    Env2 = nklib_util:store_value(nkports, Instances2, Env1),
-    Opts2 = nklib_util:store_value(env, Env2, Opts),
-    {reply, ok, set_ranch_opts(State#state{cowboy_opts=Opts2})};
+    {reply, ok, register(State#state{servers=Servers1})};
 
 handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
     {reply, nkpacket:get_local(NkPort), State};
@@ -226,21 +210,18 @@ handle_cast(Msg, State) ->
     nklib_util:gen_server_info(#state{}).
 
 handle_info({'DOWN', _MRef, process, Pid, _Reason}=Msg, State) ->
-    #state{cowboy_opts=Opts} = State,
-    Env1 = nklib_util:get_value(env, Opts),
-    Instances1 = nklib_util:get_value(nkports, Env1),
-    case lists:keytake(Pid, #nkport.pid, Instances1) of
-        false ->
-            lager:warning("Module ~p received unexpected info: ~p", [?MODULE, Msg]),
-            {noreply, State};
+    #state{servers=Servers} = State,
+    case lists:keytake(Pid, 1, Servers) of
         {value, _, []} ->
             % lager:warning("Last server leave"),
             {stop, normal, State};
-        {value, _, Instances2} ->
+        {value, {Pid, _Module, Ref}, Servers1} ->
+            demonitor(Ref),
             % lager:warning("Server leave"),
-            Env2 = nklib_util:store_value(nkports, Instances2, Env1),
-            Opts1 = nklib_util:store_value(env, Env2, Opts),
-            {noreply, set_ranch_opts(State#state{cowboy_opts=Opts1})}
+            {noreply, register(State#state{servers=Servers1})};
+        false ->
+            lager:warning("Module ~p received unexpected info: ~p", [?MODULE, Msg]),
+            {noreply, State}
     end;
 
 handle_info({'EXIT', Pid, Reason}, #state{ranch_pid=Pid}=State) ->
@@ -269,7 +250,6 @@ terminate(Reason, #state{ranch_pid=RanchPid}=State) ->
         ranch_id = RanchId,
         nkport = #nkport{transp=Transp, socket=Socket}
     } = State,
-    % catch nkpacket_sup:del_ranch({ranch_listener_sup, RanchId}),
     exit(RanchPid, shutdown),
     timer:sleep(100),   %% Give time to ranch to close acceptors
     catch ranch_server:cleanup_listener_opts(RanchId),
@@ -299,25 +279,21 @@ start_link(Ref, Socket, TranspModule, Opts) ->
     when Req::cowboy_req:req(), Env::cowboy_middleware:env().
 
 execute(Req, Env) ->
-    Instances = nklib_util:get_value(nkports, Env),
-    execute(Instances, Req, Env).
+    {Transp, Ip, Port} = nklib_util:get_value(?MODULE, Env),
+    Servers = get_servers(Transp, Ip, Port),
+    lager:warning("Servers: ~p", [Servers]),
+    execute(Servers, Req, Env).
 
 
 %% @private 
--spec execute([#nkport{}], cowboy_req:req(), cowboy_middleware:env()) ->
+-spec execute([{pid(), module()}], cowboy_req:req(), cowboy_middleware:env()) ->
     term().
 
 execute([], Req, _Env) ->
     {stop, cowboy_req:reply(404, [{<<"server">>, <<"NkPACKET">>}], Req)};
 
-execute([#nkport{transp=Transp}=Instance|Rest], Req, Env) ->
-    Module = case Transp of
-        http -> nkpacket_transport_http;
-        https -> nkpacket_transport_http;
-        ws -> nkpacket_transport_ws;
-        wss -> nkpacket_transport_ws
-    end,
-    case Module:cowboy_init(Instance, Req, Env) of
+execute([{Pid, Module}|Rest], Req, Env) ->
+    case Module:cowboy_init(Pid, Req, Env) of
         next -> 
             execute(Rest, Req, Env);
         Result ->
@@ -366,8 +342,11 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
 
 
 %% @private
-set_ranch_opts(#state{cowboy_opts=Opts, ranch_id=RanchId}=State) ->
-    ok = ranch_server:set_protocol_options(RanchId, Opts),
+register(#state{nkport=Shared, servers=Servers}=State) ->
+    #nkport{transp=Transp, local_ip=Ip, local_port=Port} = Shared,
+    List = [{Pid, Module} || {Pid, Module, _Ref} <- Servers],
+    lager:warning("NEW ~p: ~p", [{Transp, Ip, Port}, List]),
+    nklib_proc:put({?MODULE, Transp, Ip, Port}, List),
     State.
 
 

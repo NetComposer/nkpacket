@@ -270,7 +270,16 @@ init([NkPort]) ->
     process_flag(trap_exit, true),          % Allow call to terminate/2
     NkPort1 = NkPort#nkport{pid=self()},
     Conn = {Protocol, Transp, Ip, Port},
-    StoredNkPort = NkPort1#nkport{meta=maps:with([path_list], Meta)},
+    StoredNkPort = if
+        Transp==ws; Transp==wss ->
+            #{host:=Host, path:=Path, ws_proto:=WsProto} = Meta,
+            NkPort1#nkport{meta=#{host=>Host, path=>Path, ws_proto=>WsProto}};
+        Transp==http; Transp==https ->
+            #{host:=Host, path:=Path} = Meta,
+            NkPort1#nkport{meta=#{host=>Host, path=>Path}};
+        true ->
+            NkPort1
+    end,
     nklib_proc:put({nkpacket_connection, Domain, Conn}, StoredNkPort), 
     nklib_proc:put(nkpacket_transports, StoredNkPort),
     nklib_counters:async([nkpacket_connections, {nkpacket_connections, Domain}]),

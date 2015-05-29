@@ -137,7 +137,7 @@ conn_init(NkPort) ->
 
 
 conn_parse({text, Data}, State) ->
-	lager:notice("Parsing WS TEXT: ~p", [Data]),
+	lager:debug("Parsing WS TEXT: ~p", [Data]),
 	maybe_reply({parse, {text, Data}}, State),
 	{ok, State};
 
@@ -148,7 +148,7 @@ conn_parse({binary, <<>>}, State) ->
 
 conn_parse({binary, Data}, State) ->
 	Msg = erlang:binary_to_term(Data),
-	lager:notice("Parsing WS BIN: ~p", [Msg]),
+	lager:debug("Parsing WS BIN: ~p", [Msg]),
 	maybe_reply({parse, {binary, Msg}}, State),
 	{ok, State};
 
@@ -159,24 +159,24 @@ conn_parse(pong, State) ->
 	{ok, State};
 
 conn_parse({pong, Payload}, State) ->
-	lager:notice("Parsing WS PONG: ~p", [Payload]),
+	lager:debug("Parsing WS PONG: ~p", [Payload]),
 	maybe_reply({pong, Payload}, State),
 	{ok, State};
 
 conn_parse(Data, State) ->
 	Msg = erlang:binary_to_term(Data),
 	#conn_state{nkport=#nkport{domain=Dom}} = State,
-	lager:notice("Parsing: ~p (~p)", [Msg, Dom]),
+	lager:debug("Parsing: ~p (~p)", [Msg, Dom]),
 	maybe_reply({parse, Msg}, State),
 	{ok, State}.
 
 conn_encode({nkraw, Msg}, #conn_state{nkport=NkPort}=State) ->
-	lager:notice("UnParsing RAW: ~p, ~p", [Msg, NkPort]),
+	lager:debug("UnParsing RAW: ~p, ~p", [Msg, NkPort]),
 	maybe_reply({encode, Msg}, State),
 	{ok, Msg, State};
 
 conn_encode(Msg, #conn_state{nkport=NkPort}=State) ->
-	lager:notice("UnParsing: ~p, ~p", [Msg, NkPort]),
+	lager:debug("UnParsing: ~p, ~p", [Msg, NkPort]),
 	maybe_reply({encode, Msg}, State),
 	{ok, erlang:term_to_binary(Msg), State}.
 

@@ -25,7 +25,7 @@
 -export([log_level/1, get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2]).
 -export([init_protocol/3, call_protocol/4]).
--export([parse_paths/1, check_paths/2]).
+-export([check_paths/2]).
 -export([parse_opts/1]).
 
 -include("nkpacket.hrl").
@@ -203,52 +203,27 @@ get_uri(Scheme, Transp, Ip, Port) ->
 
 
 %% @private
--spec parse_paths([binary()]) ->
-    [[binary()]].
-
-parse_paths(List) ->
-    parse_paths(List, []).
-
-
-%% @private
-parse_paths([], Acc) ->
-    Acc;
-
-parse_paths([Spec|Rest], Acc) ->
-    [<<>>|Parts] = binary:split(Spec, <<"/">>, [global]),
-    parse_paths(Rest, [Parts|Acc]).
-
-%% @private
-check_paths(_ReqPath, []) ->
+check_paths(_, <<"/">>) ->
     true;
 
-check_paths(ReqPath, Paths) ->
-    case binary:split(ReqPath, <<"/">>, [global]) of
-        [<<>>, <<>>] -> check_paths1([<<>>], Paths);
-        [<<>>|ReqParts] -> check_paths1(ReqParts, Paths);
-        _ -> false
-    end.
-
+ check_paths(ReqPath, BasePath) ->
+    [<<>>|ReqParts] = binary:split(ReqPath, <<"/">>, [global]),
+    [<<>>|BaseParts] = binary:split(BasePath, <<"/">>, [global]),
+    check_paths_iter(ReqParts, BaseParts).
+    
 
 %% @private
-check_paths1(_, []) ->
-    false;
+check_paths_iter([Part|Rest1], [Part|Rest2]) ->
+    check_paths_iter(Rest1, Rest2);
 
-check_paths1(Parts, [FirstPath|Rest]) ->
-    case check_paths2(Parts, FirstPath) of
-        true -> true;
-        false -> check_paths1(Parts, Rest)
-    end.
+check_paths_iter(_, []) ->
+    true;
+
+check_paths_iter(_A, _B) ->
+    % lager:warning("F: ~p, ~p", [_A, _B]),
+    false.
 
 
-%% @private
-check_paths2([Common|Rest1], [Common|Rest2]) -> 
-    check_paths2(Rest1, Rest2);
-
-check_paths2(_Parts, Paths) -> 
-    Paths==[].
-
-  
 %% ===================================================================
 %% Options Parser
 %% =================================================================
@@ -258,7 +233,13 @@ check_paths2(_Parts, Paths) ->
     {ok, map()} | {error, term()}.
 
 parse_opts(Map) when is_map(Map) ->
-    parse_opts(maps:to_list(Map), #{});
+    case maps:size(Map) of
+        0 -> {ok, #{}};
+        _ -> parse_opts(maps:to_list(Map), #{})
+    end;
+
+parse_opts([]) ->
+    {ok, #{}};
 
 parse_opts(List) when is_list(List) ->
     parse_opts(List, #{}).
@@ -293,8 +274,6 @@ parse_opts([{Key, Val}|Rest], Acc) ->
 
         user ->
             {ok, Val};
-        supervisor ->
-            parse_pid(Val);
         monitor ->
             parse_pid(Val);
         idle_timeout ->
@@ -335,13 +314,13 @@ parse_opts([{Key, Val}|Rest], Acc) ->
         tcp_listeners ->
             parse_integer(Val);
         host ->
-            case parse_tokens(Val) of
-                {ok, HostList} -> {ok, host_list, HostList};
+            case parse_text(Val) of
+                {ok, Host} -> {ok, Host};
                 error -> error
             end;
         path ->
             case parse_path(Val) of
-                {ok, PathList} -> {ok, path_list, PathList};
+                {ok, Path} -> {ok, Path};
                 error -> error
             end;
         cowboy_opts ->
@@ -416,27 +395,18 @@ parse_list(_) ->
     error.
 
 %% @private
-parse_tokens(Value) ->
+parse_text(Value) ->
     case nklib_parse:unquote(Value) of
-        error -> 
-            error;
-        Bin -> 
-            case nklib_parse:tokens(Bin) of
-                error ->
-                    error;
-                Tokens ->
-                    {ok, [Term || {Term, _} <- Tokens]}
-            end
+        error -> error;
+        Bin -> {ok, Bin}
     end.
 
   
 %% @private
 parse_path(Value) ->
-    case parse_tokens(Value) of
-        {ok, Terms} -> 
-            {ok, [nklib_parse:path(Path) || Path <- Terms]};
-        error -> 
-            error
+    case nklib_parse:unquote(Value) of
+        error -> error;
+        Bin -> {ok, nklib_parse:path(Bin)}
     end.
 
 
@@ -446,30 +416,26 @@ parse_path(Value) ->
 %% =================================================================
 
   
-
 % -define(TEST, true).
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 path_test() ->
     ?debugMsg("HTTP path test"),
-    true = test_path("/a/b/c", ""),
+    true = test_path("/a/b/c", "/"),
     true = test_path("/", "/"),
     false = test_path("/", "/a"),
-    true = test_path("/", "/a, bc, /"),
     true = test_path("/a/b/c", "a"),
     false = test_path("/a/b/c", "b"),
-    true = test_path("/a/b/c", "b, a/b/c"),
-    true = test_path("/a/b/c", "b, /a/b"),
-    false = test_path("/a/b/c", "b,a/b/c/d"),
-    true = test_path("/a/b/c", "b, a/b/c/d, /a/b/c"),
+    true = test_path("/a/b/c", "a/b/c"),
+    true = test_path("/a/b/c", "a/b/c/"),
+    true = test_path("/a/b/c", "/a/b/"),
+    false = test_path("/a/b/c", "a/b/c/d"),
     ok.
 
 
 test_path(Req, Path) ->
-    {ok, PathList} = parse_path(Path),
-    PathList1 = parse_paths(PathList),
-    check_paths(list_to_binary(Req), PathList1).
+    check_paths(parse_path(Req), parse_path(Path)).
 
 -endif.
 

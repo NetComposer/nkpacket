@@ -505,20 +505,24 @@ is_local_ip(Ip) ->
     {error, term()}.
 
 
-resolve(Domain, #uri{path=Path, ext_opts=Opts, ext_headers=Headers}=Uri) ->
-    Opts1 = maps:from_list(Opts),
+resolve(Domain, #uri{}=Uri) ->
+    #uri{domain=Host, path=Path, ext_opts=Opts, ext_headers=Headers} = Uri,
+    Opts1 = [{host, Host}|Opts],
     Opts2 = case Path of
         <<>> -> Opts1;
-        _ -> Opts1#{path=>Path}
+        _ -> [{path, Path}|Opts1]
     end,
     Opts3 = case Headers of 
         [] -> Opts2;
-        _ -> Opts2#{user=>Headers}
+        _ -> [{user, Headers}|Opts2]
     end,
-    case nkpacket_dns:resolve(Domain, Uri) of
-        {ok, Conns} ->
-            {ok, Conns, Opts3};
-        {error, Error} ->
+    case nkpacket_util:parse_opts(Opts3) of
+        {ok, Opts4} -> 
+            case nkpacket_dns:resolve(Domain, Uri) of
+                {ok, Conns} -> {ok, Conns, Opts4};
+                {error, Error} -> {error, Error}
+            end;
+        {error, Error} -> 
             {error, Error}
     end;
 
@@ -534,7 +538,7 @@ resolve(Domain, Uri) ->
     web_proto().
 
 make_web_proto(#{web_proto:={static, #{path:=_}=Static}}=Opts) ->
-    PathList = maps:get(path_list, Opts, [<<>>]),
+    PathList = maps:get(path, Opts, [<<>>]),
     Routes1 = [
         [
             {<<Path/binary, "/[...]">>, nkpacket_cowboy_static, Static}
