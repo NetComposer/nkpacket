@@ -327,7 +327,7 @@ parse_opts([{Key, Val}|Rest], Acc) ->
             parse_list(Val);
         ws_proto ->
             {ok, nklib_util:to_lower(Val)};
-        web_proto ->
+        http_proto ->
             case Val of
                 {static, #{path:=_}} -> {ok, Val};
                 {dispatch, #{routes:=_}} -> {ok, Val};

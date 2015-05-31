@@ -270,20 +270,15 @@ init([NkPort]) ->
     process_flag(trap_exit, true),          % Allow call to terminate/2
     NkPort1 = NkPort#nkport{pid=self()},
     Conn = {Protocol, Transp, Ip, Port},
-    StoredNkPort = if
-<<<<<<< HEAD
-        Transp==ws; Transp==wss; Transp==http; Transp==https ->
-=======
-        Transp==ws; Transp==wss ->
-            #{host:=Host, path:=Path, ws_proto:=WsProto} = Meta,
-            NkPort1#nkport{meta=#{host=>Host, path=>Path, ws_proto=>WsProto}};
-        Transp==http; Transp==https ->
->>>>>>> 83d1d2c55395deebe851a944b533a24dd4277913
-            #{host:=Host, path:=Path} = Meta,
-            NkPort1#nkport{meta=#{host=>Host, path=>Path}};
+    StoredMeta = if
+        Proto==http; Proto==https ->
+            maps:with([host, path, ws_proto], Meta);
+        Proto==ws; Proto==wss ->
+            maps:with([host, path, ws_proto], Meta);
         true ->
-            NkPort1
+            #{}
     end,
+    StoredNkPort = NkPort1#nkport{meta=StoredMeta},
     nklib_proc:put({nkpacket_connection, Domain, Conn}, StoredNkPort), 
     nklib_proc:put(nkpacket_transports, StoredNkPort),
     nklib_counters:async([nkpacket_connections, {nkpacket_connections, Domain}]),
@@ -322,7 +317,7 @@ init([NkPort]) ->
     end,
     State = #state{
         transp = Transp,
-        nkport = StoredNkPort, 
+        nkport = NkPort1, 
         socket = Socket, 
         listen_monitor = ListenMonitor,
         srv_monitor = SrvMonitor,

@@ -83,17 +83,14 @@ connect(NkPort) ->
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} -> 
             {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
-            Base = #{host=>nklib_util:to_host(Ip), path=><<"/">>},
-            Meta1 = maps:merge(Base, Meta),
             NkPort1 = NkPort#nkport{
                 local_ip = LocalIp,
                 local_port = LocalPort,
-                socket = Socket,
-                meta = Meta1
+                socket = Socket
             },
             case nkpacket_connection_ws:start_handshake(NkPort1) of
                 {ok, WsProto, Rest} -> 
-                    NkPort2 = NkPort#nkport{meta=Meta1#{ws_proto=>WsProto}},
+                    NkPort2 = NkPort#nkport{meta=Meta#{ws_proto=>WsProto}},
                     TranspMod:setopts(Socket, [{active, once}]),
                     {ok, NkPort2, Rest};
                 {error, Error} ->
@@ -114,10 +111,7 @@ connect(NkPort) ->
     protocol :: nkpacket:protocol(),
     proto_state :: term(),
     shared :: pid(),
-    monitor_ref :: reference(),
-    host :: binary(),
-    path :: binary(),
-    ws_proto :: binary()
+    monitor_ref :: reference()
 }).
 
 
@@ -146,7 +140,9 @@ init([NkPort]) ->
             listen_ip = Ip,
             pid = self()
         },
-        case nkpacket_cowboy:start(NkPort1, ?MODULE) of
+        Filter1 = maps:with([host, path, ws_proto], Meta),
+        Filter2 = Filter1#{id=>self(), module=>?MODULE},
+        case nkpacket_cowboy:start(NkPort1, Filter2) of
             {ok, SharedPid} -> ok;
             {error, Error} -> SharedPid = throw(Error)
         end,
@@ -155,16 +151,14 @@ init([NkPort]) ->
             0 -> {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
             _ -> Port1 = Port
         end,
-        Base = #{host => <<"all">>, path => <<"/">>, ws_proto => <<"all">>},
-        Meta2 = maps:merge(Base, Meta),
         NkPort2 = NkPort1#nkport{
             local_port = Port1,
             listen_port = Port1,
             socket = SharedPid,
-            meta = Meta2
+            meta = maps:with(?CONN_LISTEN_OPTS, Meta)        
         },   
-        StoredMeta = maps:with([host, path, ws_proto], Meta2),
-        StoredNkPort = NkPort2#nkport{meta=StoredMeta},
+        % We need this to locate conections
+        StoredNkPort = NkPort2#nkport{meta=Filter1},
         nklib_proc:put(nkpacket_transports, StoredNkPort),
         nklib_proc:put({nkpacket_listen, Domain, Protocol, Transp}, StoredNkPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort2),
@@ -173,14 +167,11 @@ init([NkPort]) ->
             _ -> undefined
         end,
         State = #state{
-            nkport = NkPort2,
+            nkport = NkPort2#nkport{},
             protocol = Protocol,
             proto_state = ProtoState,
             shared = SharedPid,
-            monitor_ref = MonRef,
-            host = maps:get(host, Meta2),
-            path = maps:get(path, Meta2),
-            ws_proto = maps:get(ws_proto, Meta2)
+            monitor_ref = MonRef
         },
         {ok, State}
     catch
@@ -204,40 +195,28 @@ handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
 handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
     {reply, nkpacket:get_user(NkPort), State};
 
-handle_call({check, ReqHost, ReqPath, ReqProto, Ip, Port, Pid}, _From, State) ->
-    #state{host=Host, path=Path, ws_proto=Proto, nkport=NkPort} = State,
-    lager:warning("WS INIT: ~p, ~p, ~p, ~p, ~p, ~p: ~p", 
-                  [ReqHost, ReqPath, ReqProto, Host, Path, Proto,
-                  nkpacket_util:check_paths(ReqPath, Path)]),
-    case 
-        (Host == <<"all">> orelse ReqHost==Host) andalso
-        nkpacket_util:check_paths(ReqPath, Path) andalso
-        (Proto == <<"all">> orelse ReqProto==Proto)
-    of
-        false ->
-            {reply, next, State};
-        true ->
-            #nkport{domain=Domain, meta=Meta} = NkPort,
-            Meta1 = maps:with(?CONN_LISTEN_OPTS, 
-                                Meta#{host=>Host, path=>ReqPath, ws_proto=>Proto}),
-            NkPort1 = NkPort#nkport{
-                remote_ip = Ip,
-                remote_port = Port,
-                meta = Meta1,
-                socket = Pid
-            },
-            % Connection will monitor listen process (unsing 'pid' and 
-            % the cowboy process (using 'socket')
-            case nkpacket_connection:start(NkPort1) of
-                {ok, #nkport{pid=ConnPid}=NkPort2} ->
-                    ?debug(Domain, "WS listener accepted connection: ~p", 
-                          [NkPort2]),
-                    {reply, {ok, ConnPid, Proto}, State};
-                {error, Error} ->
-                    ?notice(Domain, "WS listener did not accepted connection:"
-                            " ~p", [Error]),
-                    {reply, next, State}
-            end
+handle_call({start, Ip, Port, Pid}, _From, State) ->
+    #state{nkport=NkPort} = State,
+    % lager:warning("WS INIT: ~p, ~p, ~p, ~p, ~p, ~p: ~p", 
+    %               [ReqHost, ReqPath, ReqProto, Host, Path, Proto,
+    %               nkpacket_util:check_paths(ReqPath, Path)]),
+    #nkport{domain=Domain} = NkPort,
+    NkPort1 = NkPort#nkport{
+        remote_ip = Ip,
+        remote_port = Port,
+        socket = Pid
+    },
+    % Connection will monitor listen process (unsing 'pid' and 
+    % the cowboy process (using 'socket')
+    case nkpacket_connection:start(NkPort1) of
+        {ok, #nkport{pid=ConnPid}=NkPort2} ->
+            ?debug(Domain, "WS listener accepted connection: ~p", 
+                  [NkPort2]),
+            {reply, {ok, ConnPid}, State};
+        {error, Error} ->
+            ?notice(Domain, "WS listener did not accepted connection:"
+                    " ~p", [Error]),
+            {reply, next, State}
     end;
 
 handle_call(Msg, From, State) ->
@@ -311,19 +290,10 @@ terminate(Reason, State) ->
     term().
 
 cowboy_init(Pid, Req, Env) ->
-    ReqHost = cowboy_req:host(Req),
-    ReqPath = cowboy_req:path(Req),
-    Hd = <<"sec-websocket-protocol">>,
-    ReqProto = cowboy_req:parse_header(Hd, Req, []),
     {Ip, Port} = cowboy_req:peer(Req),
-    Check = {check, ReqHost, ReqPath, ReqProto, Ip, Port, self()},
-    case catch gen_server:call(Pid, Check, infinity) of
-        {ok, ConnPid, Proto} ->
-            Req1 = case Proto of
-                <<"all">> -> Req;
-                _ -> cowboy_req:set_resp_header(Hd, Proto, Req)
-            end,
-            cowboy_websocket:upgrade(Req1, Env, nkpacket_transport_ws, 
+    case catch gen_server:call(Pid, {check, Ip, Port, Pid}, infinity) of
+        {ok, ConnPid} ->
+            cowboy_websocket:upgrade(Req, Env, nkpacket_transport_ws, 
                                      ConnPid, infinity, run);
         next ->
             next;

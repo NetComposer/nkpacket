@@ -71,7 +71,7 @@
         {onresponse, cowboy:onresponse_fun()}
     ].
 
--type web_proto() ::
+-type http_proto() ::
     {static, 
         nkpacket_cowboy_static:opts()} |
     {dispatch, 
@@ -112,16 +112,16 @@
         tcp_listeners => integer(),             % Default 100
 
         % WS/WSS/HTTP/HTTPS options
-        host => string() | binary(),            % Hosts to filter (comma separated)
-        path => string() | binary(),            % Paths to filter (comma separated)
+        host => string() | binary(),            % Listen only on this host
+        path => string() | binary(),            % Listen on this path and subpaths
         cowboy_opts => cowboy_opts(),
 
         % WS/WSS
-        ws_proto => string() | binary(),        % Websocket Subprotocol
+        ws_proto => string() | binary(),        % Listen only on this protocol
         % ws_opts => map(),                     % See nkpacket_connection_ws
         %                                       % (i.e. #{compress=>true})
         % HTTP/HTTPS
-        web_proto => web_proto()
+        http_proto => http_proto()
     }.
 
 
@@ -143,9 +143,9 @@
         tcp_packet => 1 | 2 | 4 | raw,      
 
         % WS/WSS
-        host => string() | binary(),
-        path => string() | binary(),
-        ws_proto => string() | binary()
+        host => string() | binary(),        % Host header to use
+        path => string() | binary(),        % Path to use
+        ws_proto => string() | binary()     % Proto to use
     }.
 
 
@@ -217,7 +217,7 @@ get_listener(Domain, {Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
             Opts2 = case Transp==http orelse Transp==https of
                 true ->
                     WebProto = make_web_proto(Opts1),
-                    Opts1#{web_proto=>WebProto};
+                    Opts1#{http_proto=>WebProto};
                 _ ->
                     Opts1
             end,
@@ -535,9 +535,9 @@ resolve(Domain, Uri) ->
 
 %% @private
 -spec make_web_proto(listener_opts()) ->
-    web_proto().
+    http_proto().
 
-make_web_proto(#{web_proto:={static, #{path:=_}=Static}}=Opts) ->
+make_web_proto(#{http_proto:={static, #{path:=_}=Static}}=Opts) ->
     PathList = maps:get(path, Opts, [<<>>]),
     Routes1 = [
         [
@@ -553,13 +553,13 @@ make_web_proto(#{web_proto:={static, #{path:=_}=Static}}=Opts) ->
             middlewares => [cowboy_router, cowboy_handler]
         }};
 
-make_web_proto(#{web_proto:={dispatch, #{routes:=Routes}}}) ->
+make_web_proto(#{http_proto:={dispatch, #{routes:=Routes}}}) ->
     {custom, 
         #{
             env => [{dispatch, cowboy_router:compile(Routes)}],
             middlewares => [cowboy_router, cowboy_handler]
         }};
 
-make_web_proto(#{web_proto:={custom, #{env:=Env, middlewares:=Mods}}=Proto})
+make_web_proto(#{http_proto:={custom, #{env:=Env, middlewares:=Mods}}=Proto})
     when is_list(Env), is_list(Mods) ->
     Proto.

@@ -243,7 +243,7 @@ cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, En
                     ?debug(Domain, "HTTP listener accepted connection: ~p", [NkPort2]),
                     case erlang:function_exported(Protocol, http_init, 3) of
                         true ->
-                            UserMeta = maps:with([user, web_proto], Meta),
+                            UserMeta = maps:with([user, http_proto], Meta),
                             UserPort = NkPort2#nkport{meta=UserMeta},
                             case Protocol:http_init(UserPort, Req, Env) of
                                 {ok, Req1, Env1, Middlewares1} ->

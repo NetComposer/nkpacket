@@ -61,29 +61,32 @@ get_connected(_Domain, {_Proto, Transp, _Ip, _Port}, _Opts)
               when Transp==http; Transp==https ->
     [];
 
-get_connected(Domain, {_Proto, Transp, Ip, _Port}=Conn, Opts) 
+get_connected(Domain, {_Proto, Transp, _Ip, _Port}=Conn, Opts) 
               when Transp==ws; Transp==wss ->
-    Host = case Opts of
-        #{host:=Host0} -> Host0;
-        _ -> nklib_util:to_host(Ip)
-    end,
-    Path = case Opts of
-        #{path:=Path0} -> Path0;
-        _ -> <<"/">>
-    end,
-    WsProto = case Opts of
-        #{ws_proto:=WsProto0} -> WsProto0;
-        _ -> <<"/">>
-    end,
+    Host = maps:get(host, Opts, all),
+    Path = maps:get(path, Opts, <<"/">>),
+    WsProto = maps:get(ws_proto, Opts, all),
     All = [
         NkPort || 
         {NkPort, _} <- nklib_proc:values({nkpacket_connection, Domain, Conn})
     ],
     lists:filter(
-        fun(#nkport{meta=#{host:=ConnHost, path:=ConnPath, ws_proto:=ConnWsProto}}) -> 
-            (ConnHost == <<"all">> orelse Host==ConnHost) 
-            andalso Path==ConnPath andalso
-            (ConnWsProto == <<"all">> orelse WsProto==ConnWsProto) 
+        fun(#nkport{meta=Meta}) ->
+            case maps:get(host, Meta, all) of
+                all -> true;
+                Host -> true;
+                _ -> false
+            end andalso
+            case maps:get(path, Meta, all) of
+                all -> true;
+                Path -> true;
+                _ -> false
+            end andalso
+            case maps:get(ws_proto, Meta, all) of
+                all -> true;
+                WsProto -> true;
+                _ -> false
+            end
         end,
         All);
 

@@ -63,7 +63,7 @@ default_port(_) -> invalid.
 
 http_init(#nkport{meta=Meta}, Req, Env) ->
 	case Meta of
- 		#{web_proto:={custom, #{env:=UserEnv, middlewares:=Middlewares}}} ->
+ 		#{http_proto:={custom, #{env:=UserEnv, middlewares:=Middlewares}}} ->
  			% UserEnv1 = [{nkport, NkPort}|UserEnv], 
  			Env1 = nklib_util:store_values(UserEnv, Env),
  			{ok, Req, Env1, Middlewares};
