@@ -65,6 +65,25 @@ reset_3() ->
 	{Ref1, M1, Ref2, M2, Ref3, M3}.
 
 
+reset_4() ->
+	ok = nkpacket_config:register_protocol(test, test_protocol),
+ 	ok = nkpacket:stop_all(dom1),
+ 	ok = nkpacket:stop_all(dom2),
+ 	ok = nkpacket:stop_all(dom3),
+ 	ok = nkpacket:stop_all(dom4),
+ 	timer:sleep(100),
+	Pid = self(),
+	Ref1 = make_ref(),
+	M1 = #{user=>{Pid, Ref1}},
+	Ref2 = make_ref(),
+	M2 = #{user=>{Pid, Ref2}},
+	Ref3 = make_ref(),
+	M3 = #{user=>{Pid, Ref3}},
+	Ref4 = make_ref(),
+	M4 = #{user=>{Pid, Ref4}},
+	{Ref1, M1, Ref2, M2, Ref3, M3, Ref4, M4}.
+
+
 ensure([]) -> 
 	ok;
 

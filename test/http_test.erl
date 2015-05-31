@@ -70,7 +70,7 @@ basic() ->
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
 			protocol = nkpacket_protocol_http, pid=Http1, socket = CowPid,
-			meta = #{path_list := [<<"/test1">>]}
+			meta = #{path := [<<"/test1">>]}
 		}
 	] = nkpacket:get_all(dom1),
 	[
@@ -79,7 +79,7 @@ basic() ->
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
 			pid = Http2, socket = CowPid,
-			meta = #{path_list := [<<"/test2">>]}
+			meta = #{path := [<<"/test2">>]}
 		}
 	] = nkpacket:get_all(dom2),
 	[
@@ -89,8 +89,8 @@ basic() ->
 			listen_ip = {0,0,0,0}, listen_port = Port,
 			pid = Http3, socket = CowPid,
 			meta = #{
-				host_list := [<<"localhost">>],
-				path_list := [<<"/test3">>, <<"/test3b/test3bb">>]
+				host := [<<"localhost">>],
+				path := [<<"/test3">>, <<"/test3b/test3bb">>]
 			}
 		}
 	] = nkpacket:get_all(dom3),

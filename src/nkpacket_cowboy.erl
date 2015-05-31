@@ -53,8 +53,8 @@
 %% Each server can provide its own 'web_proto'
 start(#nkport{pid=Pid}=NkPort) when is_pid(Pid) ->
     #nkport{transp=Transp, local_ip=Ip, local_port=Port} = NkPort,
-    case nklib_proc:values({nkpacket_cowboy, Transp, Ip, Port}) of
-        [{_, Listen}|_] ->
+    case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
+        [{_Servers, Listen}|_] ->
             case catch gen_server:call(Listen, {start, NkPort}, ?CALL_TIMEOUT) of
                 ok -> {ok, Listen};
                 _ -> {error, shared_failed}
@@ -69,7 +69,10 @@ start(#nkport{pid=Pid}=NkPort) when is_pid(Pid) ->
     [{{nkpacket:transport(), inet:ip_address(), inet:port()}, pid()}].
 
 get_all() ->
-    nklib_proc:values(?MODULE).
+    [
+        {Transp, Ip, Port, Pid, Servers} ||
+        {{Transp, Ip, Port, Servers}, Pid} <- nklib_proc:values(?MODULE)
+    ].
 
 
 -spec get_env({nkpacket:transport(), inet:ip_address(), inet:port()}) ->
@@ -103,6 +106,7 @@ init([NkPort]) ->
         local_ip = Ip, 
         local_port = Port,
         pid = ListenPid,
+        protocol = Protocol,
         meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
@@ -111,8 +115,9 @@ init([NkPort]) ->
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {_, Port1}} = InetMod:sockname(Socket),
-            nklib_proc:put(?MODULE, {Transp, Ip, Port1}),
-            nklib_proc:put({nkpacket_cowboy, Transp, Ip, Port1}),
+            nklib_proc:put(?MODULE, {Transp, Ip, Port1, [ListenPid]}),
+            nklib_proc:put({?MODULE, Transp, Ip, Port1}, [ListenPid]),
+            nklib_proc:put({?MODULE, ListenPid}, {Domain, Protocol, Meta}),
             Shared = NkPort#nkport{
                 local_port = Port1, 
                 listen_ip = Ip,
@@ -186,7 +191,10 @@ init([NkPort]) ->
     nklib_util:gen_server_call(#state{}).
 
 handle_call({start, #nkport{pid=Pid}=Instance}, _From, State) ->
-    #state{nkport=#nkport{local_port=Port}, cowboy_opts=Opts} = State,
+    #state{nkport=SharedPort, cowboy_opts=Opts} = State,
+    #nkport{transp=Transp, local_ip=Ip, local_port=Port} = SharedPort,
+    lager:warning("ADDED INSTANCE"),
+
     Instance1 = Instance#nkport{local_port=Port, listen_port=Port},
     Env1 = nklib_util:get_value(env, Opts),
     Instances1 = nklib_util:get_value(nkports, Env1),
@@ -197,6 +205,9 @@ handle_call({start, #nkport{pid=Pid}=Instance}, _From, State) ->
         true ->
             lists:keystore(Pid, #nkport.pid, Instances1, Instance1)
     end,
+    ListenPids = [IPid || #nkport{pid=IPid} <- Instances1],
+    nklib_proc:put(?MODULE, {Transp, Ip, Port, ListenPids}),
+    nklib_proc:put({?MODULE, Transp, Ip, Port}, ListenPids),
     Env2 = nklib_util:store_value(nkports, Instances2, Env1),
     Opts2 = nklib_util:store_value(env, Env2, Opts),
     {reply, ok, set_ranch_opts(State#state{cowboy_opts=Opts2})};
@@ -300,6 +311,7 @@ start_link(Ref, Socket, TranspModule, Opts) ->
 
 execute(Req, Env) ->
     Instances = nklib_util:get_value(nkports, Env),
+    lager:warning("INST: ~p", [length(Instances)]),
     execute(Instances, Req, Env).
 
 

@@ -27,9 +27,9 @@
 
 -define(CALL_TIMEOUT, 30000).
 
--define(CONN_LISTEN_OPTS, [user, idle_timeout, path_list, refresh_fun]).
+-define(CONN_LISTEN_OPTS, [user, idle_timeout, host, path, ws_proto, refresh_fun]).
 
--define(CONN_CLIENT_OPTS, [user, idle_timeout, path_list, refresh_fun, monitor]).
+-define(CONN_CLIENT_OPTS, [user, idle_timeout, host, path, ws_proto, refresh_fun, monitor]).
 
 
 -define(
@@ -57,6 +57,7 @@
 %% Records
 %% ===================================================================
 
+%% Meta can contain most values from listener_opts and connect_opts
 
 -record(nkport, {
     domain :: nkpacket:domain(),

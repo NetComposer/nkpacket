@@ -57,19 +57,32 @@ get_connected(Domain, Conn) ->
 -spec get_connected(nkpacket:domain(), nkpacket:raw_connection(), map()) ->
     [nkpacket:nkport()].
 
-get_connected(Domain, {_Proto, Transp, _Ip, _Port}=Conn, Opts) 
+get_connected(Domain, {_Proto, Transp, Ip, _Port}=Conn, Opts) 
               when Transp==ws; Transp==wss; Transp==http; Transp==https ->
-    Path = maps:get(path_list, Opts, []),
-    [
+    Host = case Opts of
+        #{host:=Host0} -> Host0;
+        _ -> nklib_util:to_host(Ip)
+    end,
+    Path = case Opts of
+        #{path:=Path0} -> Path0;
+        _ -> <<"/">>
+    end,
+    All = [
         NkPort || 
-        {#nkport{meta=Meta}=NkPort, _} 
-            <- nklib_proc:values({nkpacket_connection, Domain, Conn}),
-            maps:get(path_list, Meta, [])==Path
-    ];
+        {NkPort, _} <- nklib_proc:values({nkpacket_connection, Domain, Conn})
+    ],
+    lists:filter(
+        fun(#nkport{meta=#{host:=ConnHost, path:=ConnPath}}) -> 
+            (ConnHost == <<"all">> orelse Host==ConnHost) 
+            andalso Path==ConnPath 
+        end,
+        All);
 
 get_connected(Domain, {_, _, _, _}=Conn, _Opts) ->
-    [NkPort || 
-        {NkPort, _} <- nklib_proc:values({nkpacket_connection, Domain, Conn})].
+    [
+        NkPort || 
+        {NkPort, _} <- nklib_proc:values({nkpacket_connection, Domain, Conn})
+    ].
 
 
 %% @private
@@ -84,13 +97,13 @@ send(Domain, [Uri|Rest], Msg, Opts) when is_binary(Uri); is_list(Uri) ->
             send(Domain, Rest, Msg, Opts#{last_error=>{invalid_uri, Uri}})
     end;
      
-send(Domain, [#uri{domain=Host}=Uri|Rest], Msg, Opts) ->
+send(Domain, [#uri{}=Uri|Rest], Msg, Opts) ->
     case nkpacket:resolve(Domain, Uri) of
         {ok, RawConns, UriOpts} ->
             ?debug(Domain, "Transport send to ~p (~p)", [RawConns, Rest]),
             Opts1 = maps:merge(UriOpts, Opts),
-            Opts2 = maps:merge(#{host_list=>[Host]}, Opts1),
-            send(Domain, RawConns++Rest, Msg, Opts2);
+            lager:warning("OPTS1: ~p", [Opts1]),
+            send(Domain, RawConns++Rest, Msg, Opts1);
         {error, Error} ->
             ?notice(Domain, "Error sending to ~p: ~p", [Uri, Error]),
             send(Domain, Rest, Msg, Opts#{last_error=>Error})

@@ -83,10 +83,12 @@ connect(NkPort) ->
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} -> 
             {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
+            Base = #{host=>nklib_util:to_host(Ip), path=> <<"/">>},
             NkPort1 = NkPort#nkport{
                 local_ip = LocalIp,
                 local_port = LocalPort,
-                socket = Socket
+                socket = Socket,
+                meta = maps:merge(Base, Meta)
             },
             case nkpacket_connection_ws:start_handshake(NkPort1) of
                 {ok, Rest} -> 
@@ -134,15 +136,13 @@ init([NkPort]) ->
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
-        HostList = maps:get(host_list, Meta, []),
-        PathList = maps:get(path_list, Meta, []),
-        ParsedPaths = nkpacket_util:parse_paths(PathList),
-        Meta1 = Meta#{http_match=>{HostList, ParsedPaths}},
+        Base = #{host => <<"all">>, path => <<"/">>, ws_proto => <<"all">>},
+        InstanceMeta  = maps:merge(Base, Meta),
         % This is the port for tcp/tls and also what will be sent to cowboy_init
         Instance = NkPort#nkport{
             listen_ip = Ip,
             pid = self(),
-            meta = Meta1       % We need to send everything to nkpacket_cowboy
+            meta = InstanceMeta
         },
         case nkpacket_cowboy:start(Instance) of
             {ok, SharedPid} -> ok;
@@ -153,15 +153,13 @@ init([NkPort]) ->
             0 -> {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
             _ -> Port1 = Port
         end,
-        NkPort1 = NkPort#nkport{
+        NkPort1 = Instance#nkport{
             local_port = Port1,
-            listen_ip = Ip,
             listen_port = Port1,
-            pid = self(),
             socket = SharedPid
         },   
-        Meta2 = maps:with([user, idle_timeout, path_list, host_list, ws_proto], Meta),
-        StoredNkPort = NkPort1#nkport{meta=Meta2},
+        StoredMeta = maps:with([host, path, ws_proto], InstanceMeta),
+        StoredNkPort = NkPort1#nkport{meta=StoredMeta},
         nklib_proc:put(nkpacket_transports, StoredNkPort),
         nklib_proc:put({nkpacket_listen, Domain, Protocol, Transp}, StoredNkPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
@@ -169,9 +167,8 @@ init([NkPort]) ->
             #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
             _ -> undefined
         end,
-        Meta3 = maps:with([user, path_list, host_list, ws_proto], Meta),
         State = #state{
-            nkport = NkPort1#nkport{meta=Meta3},
+            nkport = NkPort1#nkport{meta=maps:with([user], Meta)},
             protocol = Protocol,
             proto_state = ProtoState,
             shared = SharedPid,
@@ -270,52 +267,47 @@ terminate(Reason, State) ->
     term().
 
 cowboy_init(#nkport{domain=Domain, meta=Meta}=NkPort, Req, Env) ->
-    {HostList, PathList} = maps:get(http_match, Meta),
+    #{host:=Host, path:=Path, ws_proto:=WsProto} = Meta,
     ReqHost = cowboy_req:host(Req),
     ReqPath = cowboy_req:path(Req),
+    Hd = <<"sec-websocket-protocol">>,
+    ReqWsProtos = cowboy_req:parse_header(Hd, Req, []),
+    lager:warning("WS INIT: ~p, ~p, ~p, ~p, ~p, ~p: ~p", 
+                  [ReqHost, ReqPath, ReqWsProtos, Host, Path, WsProto,
+                  nkpacket_util:check_paths(ReqPath, Path)]),
+
     case 
-        (HostList==[] orelse lists:member(ReqHost, HostList)) andalso
-        (PathList==[] orelse nkpacket_util:check_paths(ReqPath, PathList))
+        (Host == <<"all">> orelse ReqHost==Host) andalso
+        nkpacket_util:check_paths(ReqPath, Path) andalso
+        (WsProto == <<"all">> orelse lists:member(WsProto, ReqWsProtos))
     of
         false ->
             next;
         true ->
-            Req1 = case Meta of
-                #{ws_proto:=WsProto} ->
-                    Hd = <<"sec-websocket-protocol">>,
-                    ReqWsProtos = cowboy_req:parse_header(Hd, Req, []),
-                    case lists:member(WsProto, ReqWsProtos) of
-                        true -> cowboy_req:set_resp_header(Hd, WsProto, Req);
-                        false -> next
-                    end;
-                _ ->
-                    Req
-            end,
-            case Req1 of
-                next ->
-                    next;
-                _ ->
-                    {RemoteIp, RemotePort} = cowboy_req:peer(Req1),
-                    NkPort1 = NkPort#nkport{
-                        remote_ip = RemoteIp,
-                        remote_port = RemotePort,
-                        socket = self(),
-                        meta = maps:with(
-                            [path_list, host_list, ws_proto|?CONN_LISTEN_OPTS], Meta)
-                    },
-                    % Connection will monitor listen process (unsing pid()) and 
-                    % this cowboy process (using socket)
-                    case nkpacket_connection:start(NkPort1) of
-                        {ok, #nkport{pid=ConnPid}=NkPort2} ->
-                            ?debug(Domain, "WS listener accepted connection: ~p", 
-                                  [NkPort2]),
-                            cowboy_websocket:upgrade(Req1, Env, nkpacket_transport_ws, 
-                                                     ConnPid, infinity, run);
-                        {error, Error} ->
-                            ?notice(Domain, "WS listener did not accepted connection:"
-                                    " ~p", [Error]),
-                            next
-                    end
+            {RemoteIp, RemotePort} = cowboy_req:peer(Req),
+            Meta1 = maps:with(?CONN_LISTEN_OPTS, Meta#{host=>ReqHost, path=>ReqPath}),
+            NkPort1 = NkPort#nkport{
+                remote_ip = RemoteIp,
+                remote_port = RemotePort,
+                socket = self(),
+                meta = Meta1
+            },
+            % Connection will monitor listen process (unsing pid()) and 
+            % this cowboy process (using socket)
+            case nkpacket_connection:start(NkPort1) of
+                {ok, #nkport{pid=ConnPid}=NkPort2} ->
+                    ?debug(Domain, "WS listener accepted connection: ~p", 
+                          [NkPort2]),
+                    Req1 = case WsProto of
+                        <<"all">> -> Req;
+                        _ -> cowboy_req:set_resp_header(Hd, WsProto, Req)
+                    end,
+                    cowboy_websocket:upgrade(Req1, Env, nkpacket_transport_ws, 
+                                             ConnPid, infinity, run);
+                {error, Error} ->
+                    ?notice(Domain, "WS listener did not accepted connection:"
+                            " ~p", [Error]),
+                    next
             end
     end.
 
