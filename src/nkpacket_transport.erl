@@ -57,8 +57,12 @@ get_connected(Domain, Conn) ->
 -spec get_connected(nkpacket:domain(), nkpacket:raw_connection(), map()) ->
     [nkpacket:nkport()].
 
+get_connected(_Domain, {_Proto, Transp, _Ip, _Port}, _Opts) 
+              when Transp==http; Transp==https ->
+    [];
+
 get_connected(Domain, {_Proto, Transp, Ip, _Port}=Conn, Opts) 
-              when Transp==ws; Transp==wss; Transp==http; Transp==https ->
+              when Transp==ws; Transp==wss ->
     Host = case Opts of
         #{host:=Host0} -> Host0;
         _ -> nklib_util:to_host(Ip)
@@ -67,14 +71,19 @@ get_connected(Domain, {_Proto, Transp, Ip, _Port}=Conn, Opts)
         #{path:=Path0} -> Path0;
         _ -> <<"/">>
     end,
+    WsProto = case Opts of
+        #{ws_proto:=WsProto0} -> WsProto0;
+        _ -> <<"/">>
+    end,
     All = [
         NkPort || 
         {NkPort, _} <- nklib_proc:values({nkpacket_connection, Domain, Conn})
     ],
     lists:filter(
-        fun(#nkport{meta=#{host:=ConnHost, path:=ConnPath}}) -> 
+        fun(#nkport{meta=#{host:=ConnHost, path:=ConnPath, ws_proto:=ConnWsProto}}) -> 
             (ConnHost == <<"all">> orelse Host==ConnHost) 
-            andalso Path==ConnPath 
+            andalso Path==ConnPath andalso
+            (ConnWsProto == <<"all">> orelse WsProto==ConnWsProto) 
         end,
         All);
 

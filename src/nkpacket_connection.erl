@@ -271,7 +271,14 @@ init([NkPort]) ->
     NkPort1 = NkPort#nkport{pid=self()},
     Conn = {Protocol, Transp, Ip, Port},
     StoredNkPort = if
+<<<<<<< HEAD
         Transp==ws; Transp==wss; Transp==http; Transp==https ->
+=======
+        Transp==ws; Transp==wss ->
+            #{host:=Host, path:=Path, ws_proto:=WsProto} = Meta,
+            NkPort1#nkport{meta=#{host=>Host, path=>Path, ws_proto=>WsProto}};
+        Transp==http; Transp==https ->
+>>>>>>> 83d1d2c55395deebe851a944b533a24dd4277913
             #{host:=Host, path:=Path} = Meta,
             NkPort1#nkport{meta=#{host=>Host, path=>Path}};
         true ->
