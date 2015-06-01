@@ -143,7 +143,15 @@ init_protocol(Protocol, Fun, Arg) ->
         false -> 
             {ok, undefined};
         true -> 
-            Protocol:Fun(Arg)
+            try 
+                Protocol:Fun(Arg)
+            catch
+                Class:Reason ->
+                    Stacktrace = erlang:get_stacktrace(),
+                    lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
+                                [Class, Reason, Protocol, Fun, Arg, Stacktrace]),
+                    erlang:Class([{reason, Reason}, {stacktrace, Stacktrace}])
+            end
     end.
 
 
@@ -167,13 +175,19 @@ call_protocol(Fun, Args, State, Pos) ->
         false ->
             undefined;
         true ->
-            case apply(Protocol, Fun, Args++[ProtoState]) of
+            try apply(Protocol, Fun, Args++[ProtoState]) of
                 ok ->
                     {ok, State};
                 {Class, ProtoState1} when is_atom(Class) -> 
                     {Class, setelement(Pos+1, State, ProtoState1)};
                 {Class, Value, ProtoState1} when is_atom(Class) -> 
                     {Class, Value, setelement(Pos+1, State, ProtoState1)}
+            catch
+                Class:Reason ->
+                    Stacktrace = erlang:get_stacktrace(),
+                    lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
+                                [Class, Reason, Protocol, Fun, Args, Stacktrace]),
+                    erlang:Class([{reason, Reason}, {stacktrace, Stacktrace}])
             end
     end.
 
