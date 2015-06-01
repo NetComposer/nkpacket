@@ -24,7 +24,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([transports/1, default_port/1]).
--export([http_init/3]).
+-export([http_init/4]).
 
 -include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
@@ -57,19 +57,19 @@ default_port(https) -> 443;
 default_port(_) -> invalid.
 
 
--spec http_init(nkpacket:nkport(), cowboy_req:req(), cowboy_middleware:env()) ->
+-spec http_init(nkpacket:http_proto(), pid(), 
+			    cowboy_req:req(), cowboy_middleware:env()) ->
     {ok, Req::cowboy_req:req(), Env::cowboy_middleware:env(), Middlewares::[module()]} |
     {stop, cowboy_req:req()}.
 
-http_init(#nkport{meta=Meta}, Req, Env) ->
-	case Meta of
- 		#{http_proto:={custom, #{env:=UserEnv, middlewares:=Middlewares}}} ->
- 			% UserEnv1 = [{nkport, NkPort}|UserEnv], 
+http_init(HttpProto, _ConnPid, Req, Env) ->
+	case HttpProto of
+ 		{custom, #{env:=UserEnv, middlewares:=Middlewares}} ->
  			Env1 = nklib_util:store_values(UserEnv, Env),
  			{ok, Req, Env1, Middlewares};
  		_ ->
- 			lager:warning("Cowboy options not defined at http_init: ~p", [Meta]),
-			{stop, cowboy_req:reply(500, [{<<"server">>, <<"NkPACKET">>}], Req)}
+ 			lager:warning("Invalid HTTP Protocol: ~p", [HttpProto]),
+			{stop, nkpacket_cowboy:reply(500, Req)}
  	end.
 
 

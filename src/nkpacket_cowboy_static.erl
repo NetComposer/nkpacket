@@ -34,16 +34,18 @@
 -spec init(cowboy_req:req(), opts()) -> 
 	{cowboy_rest, cowboy_req:req(), state()}.
 
-init(Req, #{path:=Path}=Opts) ->
-	PathInfo = cowboy_req:path_info(Req),
+init(Req, #{path:=DirPath}=Opts) ->
 	Req1 = cowboy_req:set_resp_header(<<"server">>, <<"NkPACKET">>, Req),
-	case lists:member(<<"..">>, PathInfo) of
-		true ->
-			{cowboy_rest, Req1, {error, malformed}};
-		false ->
-			Dir = nklib_parse:fullpath(filename:absname(Path)),
-			FilePath = filename:join([Dir|PathInfo]),
-			init_file(Req1, Opts, FilePath)
+	PathInfo = cowboy_req:path_info(Req),
+	FilePath = nklib_parse:fullpath(filename:join([DirPath|PathInfo])),
+	DirPathSize = byte_size(DirPath),
+	%% Check we don't go outside DirPath
+	case FilePath of
+		<<DirPath:DirPathSize/binary, _/binary>> ->
+			init_file(Req1, Opts, FilePath);
+		_ ->
+			lager:warning("Client trying to access ~s", [FilePath]),
+			{cowboy_rest, Req1, {error, malformed}}
 	end.
 
 

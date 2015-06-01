@@ -24,7 +24,6 @@
 
 -export([connect/3, send/4, get_connected/2, get_connected/3]).
 -export([get_listener/1, open_port/2, get_defport/2]).
-
 -export_type([socket/0]).
 
 -compile({no_auto_import,[get/1]}).
@@ -63,23 +62,19 @@ get_connected(_Domain, {_Proto, Transp, _Ip, _Port}, _Opts)
 
 get_connected(Domain, {_Proto, Transp, _Ip, _Port}=Conn, Opts) 
               when Transp==ws; Transp==wss ->
-    Host = maps:get(host, Opts, all),
     Path = maps:get(path, Opts, <<"/">>),
+    Host = maps:get(host, Opts, all),
     WsProto = maps:get(ws_proto, Opts, all),
     All = [
         NkPort || 
         {NkPort, _} <- nklib_proc:values({nkpacket_connection, Domain, Conn})
     ],
     lists:filter(
-        fun(#nkport{meta=Meta}) ->
+        fun(#nkport{meta=#{path:=ConnPath}=Meta}) ->
+            ConnPath==Path andalso
             case maps:get(host, Meta, all) of
                 all -> true;
                 Host -> true;
-                _ -> false
-            end andalso
-            case maps:get(path, Meta, all) of
-                all -> true;
-                Path -> true;
                 _ -> false
             end andalso
             case maps:get(ws_proto, Meta, all) of
@@ -114,7 +109,6 @@ send(Domain, [#uri{}=Uri|Rest], Msg, Opts) ->
         {ok, RawConns, UriOpts} ->
             ?debug(Domain, "Transport send to ~p (~p)", [RawConns, Rest]),
             Opts1 = maps:merge(UriOpts, Opts),
-            lager:warning("OPTS1: ~p", [Opts1]),
             send(Domain, RawConns++Rest, Msg, Opts1);
         {error, Error} ->
             ?notice(Domain, "Error sending to ~p: ~p", [Uri, Error]),
@@ -260,46 +254,28 @@ encode2(Term, #nkport{domain=Domain, protocol=Protocol}=NkPort) ->
 connect(_Domain, [], _Opts) ->
     {error, no_transports};
 
+connect(Domain, [{Protocol, Transp, Ip, 0}|Rest], Opts) ->
+    case get_defport(Protocol, Transp) of
+        {ok, Port} -> 
+            connect(Domain, [{Protocol, Transp, Ip, Port}|Rest], Opts);
+        error ->
+            {error, invalid_default_port}
+    end;
+
 connect(Domain, [Conn|Rest], Opts) ->
-    case try_connect(Domain, Conn, Opts, ?CONN_TRIES) of
+    Fun = fun() -> raw_connect(Domain, Conn, Opts) end,
+    try nklib_proc:try_call(Fun, Conn, 100, ?CONN_TRIES) of
         {ok, NkPort} ->
             {ok, NkPort};
         {error, Error} when Rest==[] ->
             {error, Error};
         {error, _} ->
             connect(Domain, Rest, Opts)
+    catch
+        error:max_tries ->
+            connect(Domain, Rest, Opts)
     end.
 
-
-%% @private
-try_connect(_Domain, _Conn, _Opts, 0) ->
-    {error, connection_max_tries};
-
-try_connect(Domain, {Protocol, Transp, Ip, 0}, Opts, Tries) ->
-    case get_defport(Protocol, Transp) of
-        {ok, Port} -> 
-            try_connect(Domain, {Protocol, Transp, Ip, Port}, Opts, Tries);
-        error ->
-            {error, invalid_default_port}
-    end;
-
-try_connect(Domain, {Protocol, udp, Ip, Port}, Opts, _Tries) ->
-    raw_connect(Domain, {Protocol, udp, Ip, Port}, Opts);
-
-try_connect(Domain, {_Protocol, Transp, Ip, Port}=Conn, Opts, Tries) ->
-    ConnId = {Transp, Ip, Port},
-    case nklib_proc:reg({nkpacket_connect_block, ConnId}) of
-        true ->
-            try 
-                raw_connect(Domain, Conn, Opts)
-            after
-                catch nklib_proc:del({nkpacket_connect_block, ConnId})
-            end;
-        {false, _} ->
-            timer:sleep(100),
-            try_connect(Domain, Conn, Opts, Tries-1)
-    end.
-                
 
 %% @private Starts a new connection to a remote server
 %% Tries to find an associated listening transport, 

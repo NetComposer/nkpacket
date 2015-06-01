@@ -30,6 +30,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([start/2, get_all/0, get_servers/3]).
+-export([reply/2, reply/3, reply/4]).
 -export([init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
 -export([start_link/4, execute/2]).
@@ -67,6 +68,20 @@
     {ok, pid()} | {error, term()}.
 
 start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
+    Fun = fun() -> do_start(NkPort, Filter) end,
+    #nkport{local_ip=Ip, local_port=Port} = NkPort,
+    try 
+        nklib_proc:try_call(Fun, {?MODULE, Ip, Port}, 100, 50)
+    catch
+        error:max_tries -> {error, max_tries}
+    end.
+
+
+%% @private
+-spec do_start(nkpacket:nkport(), filter()) ->
+    {ok, pid()} | {error, term()}.
+
+do_start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
     #nkport{transp=Transp, local_ip=Ip, local_port=Port} = NkPort,
     case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
         [{_Servers, Listen}|_] ->
@@ -81,7 +96,7 @@ start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
 
 %% @private
 -spec get_all() ->
-    [{{nkpacket:transport(), inet:ip_address(), inet:port()}, pid()}].
+    [{nkpacket:transport(), inet:ip_address(), inet:port(), pid(), [filter()]}].
 
 get_all() ->
     [
@@ -92,13 +107,38 @@ get_all() ->
 
 %% @private
 -spec get_servers(nkpacket:transport(), inet:address(), inet:port_number()) ->
-    [{pid(), module()}].
+    [filter()].
 
 get_servers(Transp, Ip, Port) -> 
     case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
         [{L, _}|_] -> L;
         [] -> []
     end.
+
+
+%% @doc Sends a cowboy reply 
+-spec reply(cowboy:http_status(), cowboy_req:req()) -> 
+    cowboy_req:req().
+
+reply(Code, Req) ->
+    reply(Code, [], Req).
+
+
+%% @doc Sends a cowboy reply 
+-spec reply(cowboy:http_status(), cowboy:http_headers(), cowboy_req:req()) -> 
+    cowboy_req:req().
+
+reply(Code, Hds, Req) ->
+    cowboy_req:reply(Code, [{<<"server">>, <<"NkPACKET">>}|Hds], Req).
+
+
+%% @doc Sends a cowboy reply 
+-spec reply(cowboy:http_status(), cowboy:http_headers(),
+            iodata(), cowboy_req:req()) -> 
+    cowboy_req:req().
+
+reply(Code, Hds, Body, Req) ->
+    cowboy_req:reply(Code, [{<<"server">>, <<"NkPACKET">>}|Hds], Body, Req).
 
 
 
@@ -296,11 +336,11 @@ execute(Req, Env) ->
 
 
 %% @private 
--spec execute([{filter(), module()}], cowboy_req:req(), cowboy_middleware:env()) ->
+-spec execute([filter()], cowboy_req:req(), cowboy_middleware:env()) ->
     term().
 
 execute([], Req, _Env) ->
-    {stop, cowboy_req:reply(404, [{<<"server">>, <<"NkPACKET">>}], Req)};
+    {stop, reply(404, Req)};
 
 execute([Filter|Rest], Req, Env) ->
     Host = maps:get(host, Filter, all),
@@ -308,20 +348,25 @@ execute([Filter|Rest], Req, Env) ->
     WsProto = maps:get(ws_proto, Filter, all),
     ReqHost = cowboy_req:host(Req),
     ReqPath = cowboy_req:path(Req),
-    ReqWsProto = cowboy_req:parse_header(?WS_PROTO_HD, Req, []),
+    ReqWsProto = case cowboy_req:parse_header(?WS_PROTO_HD, Req, []) of
+        [ReqWsProto0] -> ReqWsProto0;
+        _ -> none
+    end,
     case
         (Host==all orelse ReqHost==Host) andalso
         (Path==all orelse nkpacket_util:check_paths(ReqPath, Path)) andalso
         (WsProto==all orelse ReqWsProto==WsProto)
     of
         true ->
-            #{id:=Id, module:=Module} = Filter,
+            lager:debug("TRUE: ~p (~p), ~p (~p), ~p (~p)", 
+                [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
             Req1 = case WsProto of
                 all -> 
                     Req;
                 _ -> 
                     cowboy_req:set_resp_header(?WS_PROTO_HD, WsProto, Req)
             end,
+            #{id:=Id, module:=Module} = Filter,
             case Module:cowboy_init(Id, Req1, Env) of
                 next -> 
                     execute(Rest, Req, Env);
@@ -329,6 +374,8 @@ execute([Filter|Rest], Req, Env) ->
                     Result
             end;
         false ->
+            lager:debug("FALSE: ~p (~p), ~p (~p), ~p (~p)", 
+                [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
             execute(Rest, Req, Env)
     end.
 
@@ -377,7 +424,6 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
 register(#state{nkport=Shared, servers=Servers}=State) ->
     #nkport{transp=Transp, local_ip=Ip, local_port=Port} = Shared,
     Filters = [Filter || {Filter, _Ref} <- Servers],
-    lager:warning("NEW ~p: ~p", [{Transp, Ip, Port}, Filters]),
     nklib_proc:put({?MODULE, Transp, Ip, Port}, Filters),
     State.
 

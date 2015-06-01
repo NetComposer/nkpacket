@@ -31,7 +31,7 @@
 		 conn_handle_cast/2, conn_handle_info/2, conn_stop/2]).
 -export([listen_init/1, listen_parse/4, listen_handle_call/3,
 		 listen_handle_cast/2, listen_handle_info/2, listen_stop/2]).
--export([http_init/3]).
+-export([http_init/4]).
 -export([behavior_info/1]).
 
 
@@ -228,10 +228,11 @@ listen_stop(_Reason, _State) ->
 %% @doc This callback is called for the http/https "pseudo" transports.
 %% It is used by the built-in http protocol, nkpacket_protocol_http.erl
 
--spec http_init(nkpacket:nkport(), cowboy_req:req(), cowboy_middleware:env()) ->
+-spec http_init(nkpacket:http_proto(), pid(), 
+			    cowboy_req:req(), cowboy_middleware:env()) ->
     {ok, Req::cowboy_req:req(), Env::cowboy_middleware:env(), Middlewares::[module()]} |
     {stop, cowboy_req:req()}.
     
-http_init(_NkPort, _Req, _Env) ->
+http_init(_HttpProto, _ConnPid, _Req, _Env) ->
 	error(not_defined).
 

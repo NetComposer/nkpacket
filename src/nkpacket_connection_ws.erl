@@ -51,7 +51,7 @@
 %% ===================================================================
 
 -spec start_handshake(#nkport{}) ->
-    {ok, binary(), binary()} | {error, term()}.
+    {ok, binary()|undefined, binary()} | {error, term()}.
 
 start_handshake(NkPort) ->
     #nkport{
@@ -85,8 +85,12 @@ start_handshake(NkPort) ->
 
 
 %% @private
-get_handshake_req(#nkport{remote_port=Port, meta=Meta}) ->
-    #{host:=Host, path:=Path} = Meta,
+get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
+    Host = case maps:get(host, Meta, undefined) of
+        undefined -> nklib_util:to_host(Ip);
+        Host0 -> Host0
+    end,
+    Path = maps:get(path, Meta),
     Key = cow_ws:key(),
     Headers2 = [
         {<<"connection">>, <<"upgrade">>},
@@ -113,7 +117,7 @@ get_handshake_resp(Data, Key) ->
     {_Version, _Status, _, Rest} = cow_http:parse_status_line(Data),
     {Headers, Rest2} = cow_http:parse_headers(Rest),
     WsProto = case lists:keyfind(<<"sec-websocket-protocol">>, 1, Headers) of
-        false -> <<"all">>;
+        false -> undefined;
         {_, WsProto0} -> WsProto0
     end,
     case lists:keyfind(<<"sec-websocket-accept">>, 1, Headers) of

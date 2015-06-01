@@ -207,8 +207,8 @@ check_paths(_, <<"/">>) ->
     true;
 
  check_paths(ReqPath, BasePath) ->
-    [<<>>|ReqParts] = binary:split(ReqPath, <<"/">>, [global]),
-    [<<>>|BaseParts] = binary:split(BasePath, <<"/">>, [global]),
+    ReqParts = binary:split(ReqPath, <<"/">>, [global]),
+    BaseParts = binary:split(BasePath, <<"/">>, [global]),
     check_paths_iter(ReqParts, BaseParts).
     
 
@@ -353,8 +353,8 @@ parse_opts([{Key, Val}|Rest], Acc) ->
     case Res of
         {ok, Val1} -> 
             parse_opts(Rest, maps:put(Key1, Val1, Acc));
-        {ok, NewKey, Val1} -> 
-            parse_opts(Rest, maps:put(NewKey, Val1, Acc));
+        % {ok, NewKey, Val1} -> 
+        %     parse_opts(Rest, maps:put(NewKey, Val1, Acc));
         ignore ->
             parse_opts(Rest, Acc);
         error ->
@@ -435,7 +435,7 @@ path_test() ->
 
 
 test_path(Req, Path) ->
-    check_paths(parse_path(Req), parse_path(Path)).
+    check_paths(element(2, parse_path(Req)), element(2, parse_path(Path))).
 
 -endif.
 

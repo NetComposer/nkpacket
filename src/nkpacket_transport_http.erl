@@ -61,7 +61,8 @@ get_listener(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
     protocol :: nkpacket:protocol(),
     proto_state :: term(),
     shared :: pid(),
-    monitor_ref :: reference()
+    monitor_ref :: reference(),
+    http_proto :: nkpacket:http_proto()
 }).
 
 
@@ -85,43 +86,47 @@ init([NkPort]) ->
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
-        Base = #{host => <<"all">>, path => <<"/">>},
-        InstanceMeta  = maps:merge(Base, Meta),
-        % This is the port for tcp/tls and also what will be sent to cowboy_init
-        Instance = NkPort#nkport{
+        NkPort1 = NkPort#nkport{
             listen_ip = Ip,
-            pid = self(),
-            meta = InstanceMeta
+            listen_port = Port,
+            pid = self()
         },
-        case nkpacket_cowboy:start(Instance) of
+        Filter1 = maps:with([host, path], Meta),
+        Filter2 = Filter1#{id=>self(), module=>?MODULE},
+        case nkpacket_cowboy:start(NkPort1, Filter2) of
             {ok, SharedPid} -> ok;
             {error, Error} -> SharedPid = throw(Error)
         end,
         erlang:monitor(process, SharedPid),
         case Port of
-            0 -> {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
-            _ -> Port1 = Port
+            0 -> 
+                {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
+            _ -> 
+                Port1 = Port
         end,
-        NkPort1 = Instance#nkport{
+        NkPort2 = NkPort1#nkport{
             local_port = Port1,
             listen_port = Port1,
-            socket = SharedPid
+            socket = SharedPid,
+            meta = maps:with(?CONN_LISTEN_OPTS, Meta)        
         },   
-        StoredMeta = maps:with([host, path], InstanceMeta),
-        StoredNkPort = NkPort1#nkport{meta=StoredMeta},
+        StoredNkPort = NkPort2#nkport{meta=Filter1},
         nklib_proc:put(nkpacket_transports, StoredNkPort),
         nklib_proc:put({nkpacket_listen, Domain, Protocol, Transp}, StoredNkPort),
-        {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
+        {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort2),
         MonRef = case Meta of
-            #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
-            _ -> undefined
+            #{monitor:=UserRef} -> 
+                erlang:monitor(process, UserRef);
+            _ -> 
+                undefined
         end,
         State = #state{
-            nkport = NkPort1#nkport{meta=maps:with([user], Meta)},
+            nkport = NkPort2,
             protocol = Protocol,
             proto_state = ProtoState,
             shared = SharedPid,
-            monitor_ref = MonRef
+            monitor_ref = MonRef,
+            http_proto = maps:get(http_proto, Meta)
         },
         {ok, State}
     catch
@@ -144,6 +149,34 @@ handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
 
 handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
     {reply, nkpacket:get_user(NkPort), State};
+
+handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
+    #state{nkport=NkPort, http_proto=HttpProto} = State,
+    #nkport{domain=Domain, protocol=Protocol, meta=Meta} = NkPort,
+    NkPort1 = NkPort#nkport{
+        remote_ip = Ip,
+        remote_port = Port,
+        socket = Pid,
+        meta = Meta#{path=>Path}
+    },
+    case erlang:function_exported(Protocol, http_init, 4) of
+        true ->
+            % Connection will monitor listen process (unsing 'pid' and 
+            % the cowboy process (using 'socket')
+            case nkpacket_connection:start(NkPort1) of
+                {ok, #nkport{pid=ConnPid}=NkPort2} ->
+                    ?debug(Domain, "HTTP listener accepted connection: ~p", 
+                          [NkPort2]),
+                    {reply, {ok, Protocol, HttpProto, ConnPid}, State};
+                {error, Error} ->
+                    ?notice(Domain, "HTTP listener did not accepted connection:"
+                            " ~p", [Error]),
+                    {reply, next, State}
+            end;
+        false ->
+            ?notice(Domain, "HTTP protocol ~p missing", [Protocol]),
+            {reply, next, State}
+    end;
 
 handle_call(Msg, From, State) ->
     case call_protocol(listen_handle_call, [Msg, From], State) of
@@ -210,57 +243,26 @@ terminate(Reason, State) ->
 % %% ===================================================================
 
 
-%% @private Called from nkpacket_transport_tcp:execute/2, inside
+%% @private Called from nkpacket_cowboy:execute/2, inside
 %% cowboy's connection process
-%% NkPort is related to this server's NkPort, Env is the common cowboy environment
 -spec cowboy_init(#nkport{}, cowboy_req:req(), list()) ->
     term().
 
-cowboy_init(#nkport{domain=Domain, meta=Meta, protocol=Protocol}=NkPort, Req, Env) ->
-    #{host:=Host, path:=Path} = Meta,
-    ReqHost = cowboy_req:host(Req),
-    ReqPath = cowboy_req:path(Req),
-    % lager:warning("HTTP START: ~p ~p, ~p, ~p", [ReqHost, HostList, ReqPath, PathList]),
-    case 
-        (Host == <<"all">> orelse ReqHost==Host) andalso
-        nkpacket_util:check_paths(ReqPath, Path)
-    of
-        false ->
+cowboy_init(Pid, Req, Env) ->
+    {Ip, Port} = cowboy_req:peer(Req),
+    Path = cowboy_req:path(Req),
+    case catch gen_server:call(Pid, {start, Ip, Port, Path, self()}, infinity) of
+        {ok, Protocol, HttpProto, ConnPid} ->
+            case Protocol:http_init(HttpProto, ConnPid, Req, Env) of
+                {ok, Req1, Env1, Middlewares1} ->
+                    execute(Req1, Env1, Middlewares1);
+                {stop, Req1} ->
+                    {ok, Req1, Env}
+            end;
+        next ->
             next;
-        true ->
-            {RemoteIp, RemotePort} = cowboy_req:peer(Req),
-            Meta1 = maps:with(?CONN_LISTEN_OPTS, Meta#{host=>ReqHost, path=>ReqPath}),
-            NkPort1 = NkPort#nkport{
-                remote_ip = RemoteIp,
-                remote_port = RemotePort,
-                socket = self(),
-                meta = Meta1
-            },
-            % Connection will monitor listen process (unsing pid()) and 
-            % this cowboy process (using socket)
-            case nkpacket_connection:start(NkPort1) of
-                {ok, NkPort2} ->
-                    ?debug(Domain, "HTTP listener accepted connection: ~p", [NkPort2]),
-                    case erlang:function_exported(Protocol, http_init, 3) of
-                        true ->
-                            UserMeta = maps:with([user, http_proto], Meta),
-                            UserPort = NkPort2#nkport{meta=UserMeta},
-                            case Protocol:http_init(UserPort, Req, Env) of
-                                {ok, Req1, Env1, Middlewares1} ->
-                                    execute(Req1, Env1, Middlewares1);
-                                {stop, Req1} ->
-                                    {ok, Req1, Env}
-                            end;
-                        false ->
-                            Req1 = cowboy_req:reply(404, 
-                                                [{<<"server">>, <<"NkPACKET">>}], Req),
-                            {ok, Req1, Env}
-                    end;
-                {error, Error} ->
-                    ?notice(Domain, "HTTP listener did not accepted connection: ~p", 
-                           [Error]),
-                    next
-            end
+        {'EXIT', _} ->
+            next
     end.
 
 

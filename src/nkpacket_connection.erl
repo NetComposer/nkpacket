@@ -271,9 +271,9 @@ init([NkPort]) ->
     NkPort1 = NkPort#nkport{pid=self()},
     Conn = {Protocol, Transp, Ip, Port},
     StoredMeta = if
-        Proto==http; Proto==https ->
-            maps:with([host, path, ws_proto], Meta);
-        Proto==ws; Proto==wss ->
+        Transp==http; Transp==https ->
+            maps:with([host, path], Meta);
+        Transp==ws; Transp==wss ->
             maps:with([host, path, ws_proto], Meta);
         true ->
             #{}

@@ -21,9 +21,7 @@
 %% @private Websocket (WS/WSS) Transport.
 %%
 %% For listening, we start this server and also a 'shared' nkpacket_cowboy transport.
-%% When a new connection arrives, ranch creates a new process, and 
-%% cowboy_init/3 is called. It it is for us, we start a new connection linked to it.
-%% When a new packet arrives, we send it to the connection.
+%% cowboy_init/3 will be called is the connection is for us
 %%
 %% For outbound connections, we start a normal tcp/ssl connection and let it be
 %% managed by a fresh nkpacket_connection process
@@ -83,14 +81,19 @@ connect(NkPort) ->
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} -> 
             {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
+            Meta1 = maps:merge(#{path => <<"/">>}, Meta),
             NkPort1 = NkPort#nkport{
                 local_ip = LocalIp,
                 local_port = LocalPort,
-                socket = Socket
+                socket = Socket,
+                meta = Meta1
             },
             case nkpacket_connection_ws:start_handshake(NkPort1) of
                 {ok, WsProto, Rest} -> 
-                    NkPort2 = NkPort#nkport{meta=Meta#{ws_proto=>WsProto}},
+                    NkPort2 = case WsProto of
+                        undefined -> NkPort1;
+                        _ -> NkPort1#nkport{meta=Meta#{ws_proto=>WsProto}}
+                    end,
                     TranspMod:setopts(Socket, [{active, once}]),
                     {ok, NkPort2, Rest};
                 {error, Error} ->
@@ -135,9 +138,9 @@ init([NkPort]) ->
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
-        % This is the port for tcp/tls and also what will be sent to cowboy_init
         NkPort1 = NkPort#nkport{
             listen_ip = Ip,
+            listen_port = Port,
             pid = self()
         },
         Filter1 = maps:with([host, path, ws_proto], Meta),
@@ -148,8 +151,10 @@ init([NkPort]) ->
         end,
         erlang:monitor(process, SharedPid),
         case Port of
-            0 -> {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
-            _ -> Port1 = Port
+            0 -> 
+                {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
+            _ -> 
+                Port1 = Port
         end,
         NkPort2 = NkPort1#nkport{
             local_port = Port1,
@@ -157,17 +162,19 @@ init([NkPort]) ->
             socket = SharedPid,
             meta = maps:with(?CONN_LISTEN_OPTS, Meta)        
         },   
-        % We need this to locate conections
+        % We need this to reuse correct conections
         StoredNkPort = NkPort2#nkport{meta=Filter1},
         nklib_proc:put(nkpacket_transports, StoredNkPort),
         nklib_proc:put({nkpacket_listen, Domain, Protocol, Transp}, StoredNkPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort2),
         MonRef = case Meta of
-            #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
-            _ -> undefined
+            #{monitor:=UserRef} -> 
+                erlang:monitor(process, UserRef);
+            _ -> 
+                undefined
         end,
         State = #state{
-            nkport = NkPort2#nkport{},
+            nkport = NkPort2,
             protocol = Protocol,
             proto_state = ProtoState,
             shared = SharedPid,
@@ -195,16 +202,14 @@ handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
 handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
     {reply, nkpacket:get_user(NkPort), State};
 
-handle_call({start, Ip, Port, Pid}, _From, State) ->
+handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
     #state{nkport=NkPort} = State,
-    % lager:warning("WS INIT: ~p, ~p, ~p, ~p, ~p, ~p: ~p", 
-    %               [ReqHost, ReqPath, ReqProto, Host, Path, Proto,
-    %               nkpacket_util:check_paths(ReqPath, Path)]),
-    #nkport{domain=Domain} = NkPort,
+    #nkport{domain=Domain, meta=Meta} = NkPort,
     NkPort1 = NkPort#nkport{
         remote_ip = Ip,
         remote_port = Port,
-        socket = Pid
+        socket = Pid,
+        meta = Meta#{path=>Path}
     },
     % Connection will monitor listen process (unsing 'pid' and 
     % the cowboy process (using 'socket')
@@ -284,17 +289,17 @@ terminate(Reason, State) ->
 % %% ===================================================================
 
 
-%% @private Called from nkpacket_transport_tcp:execute/2, inside
+%% @private Called from nkpacket_cowboy:execute/2, inside
 %% cowboy's connection process
 -spec cowboy_init(#nkport{}, cowboy_req:req(), list()) ->
     term().
 
 cowboy_init(Pid, Req, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    case catch gen_server:call(Pid, {check, Ip, Port, Pid}, infinity) of
+    Path = cowboy_req:path(Req),
+    case catch gen_server:call(Pid, {start, Ip, Port, Path, self()}, infinity) of
         {ok, ConnPid} ->
-            cowboy_websocket:upgrade(Req, Env, nkpacket_transport_ws, 
-                                     ConnPid, infinity, run);
+            cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, infinity, run);
         next ->
             next;
         {'EXIT', _} ->

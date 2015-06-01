@@ -37,7 +37,7 @@
 -export_type([domain/0, transport/0, protocol/0, nkport/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
--export_type([incoming/0, outcoming/0]).
+-export_type([http_proto/0, incoming/0, outcoming/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -507,7 +507,11 @@ is_local_ip(Ip) ->
 
 resolve(Domain, #uri{}=Uri) ->
     #uri{domain=Host, path=Path, ext_opts=Opts, ext_headers=Headers} = Uri,
-    Opts1 = [{host, Host}|Opts],
+    Opts1 = case Host of
+        <<"0.0.0.0">> -> Opts;
+        <<"all">> -> Opts;
+        _ -> [{host, Host}|Opts]
+    end,
     Opts2 = case Path of
         <<>> -> Opts1;
         _ -> [{path, Path}|Opts1]
@@ -537,19 +541,14 @@ resolve(Domain, Uri) ->
 -spec make_web_proto(listener_opts()) ->
     http_proto().
 
-make_web_proto(#{http_proto:={static, #{path:=_}=Static}}=Opts) ->
-    PathList = maps:get(path, Opts, [<<>>]),
-    Routes1 = [
-        [
-            {<<Path/binary, "/[...]">>, nkpacket_cowboy_static, Static}
-        ]
-        || Path <- PathList
-    ],
-    Routes2 = lists:flatten(Routes1),
-    % lager:warning("Routes2: ~p", [Routes2]),
+make_web_proto(#{http_proto:={static, #{path:=DirPath}=Static}}=Opts) ->
+    DirPath1 = nklib_parse:fullpath(filename:absname(DirPath)),
+    Static1 = Static#{path:=DirPath1},
+    UrlPath = maps:get(path, Opts, <<>>),
+    Route = {<<UrlPath/binary, "/[...]">>, nkpacket_cowboy_static, Static1},
     {custom, 
         #{
-            env => [{dispatch, cowboy_router:compile([{'_', Routes2}])}],
+            env => [{dispatch, cowboy_router:compile([{'_', [Route]}])}],
             middlewares => [cowboy_router, cowboy_handler]
         }};
 
@@ -562,4 +561,7 @@ make_web_proto(#{http_proto:={dispatch, #{routes:=Routes}}}) ->
 
 make_web_proto(#{http_proto:={custom, #{env:=Env, middlewares:=Mods}}=Proto})
     when is_list(Env), is_list(Mods) ->
-    Proto.
+    Proto;
+
+make_web_proto(O) ->
+    error(O).
