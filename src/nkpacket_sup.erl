@@ -23,14 +23,13 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(supervisor).
 
--export([add_listener/1, del_transport/1, get_transports/0]).
--export([add_ranch/1, del_ranch/1]).
--export([init/1, start_link/0, start_listen_sup/0, start_ranch_sup/0]).
+-export([add_listener/1, del_listener/1, get_listeners/0]).
+-export([init/1, start_link/0, start_listen_sup/0]).
 
 -include("nkpacket.hrl").
 
 
-%% @private Adds a supervised transport
+%% @private Adds a supervised listener
 -spec add_listener(supervisor:child_spec()) ->
     {ok, pid()} | {ok, pid(), term()} | {error, term()}.
 
@@ -43,49 +42,23 @@ add_listener(Spec) ->
     end.
 
 
-%% @private Removes a supervised transport
--spec del_transport(term()) ->
+%% @private Removes a supervised listener
+-spec del_listener(term()) ->
     ok | {error, term()}.
 
-del_transport(Id) ->
+del_listener(Id) ->
     case catch supervisor:terminate_child(nkpacket_listen_sup, Id) of
         ok -> supervisor:delete_child(nkpacket_listen_sup, Id);
         {error, Reason} -> {error, Reason}
     end.
 
 
-%% @private Gets supervised transports
--spec get_transports() ->
+%% @private Gets supervised listeners
+-spec get_listeners() ->
     [{term(), pid()}].
 
-get_transports() ->
+get_listeners() ->
     [{Id, Pid} || {Id, Pid, _, _} <- supervisor:which_children(nkpacket_listen_sup)].
-
-
-%% @private
--spec add_ranch(supervisor:child_spec()) ->
-    {ok, pid()} | {error, term()}.
-
-add_ranch(Spec) ->
-    case supervisor:start_child(nkpacket_ranch_sup, Spec) of
-        {ok, Pid} -> {ok, Pid};
-        {error, {Error, _}} -> {error, Error};
-        {error, Error} -> {error, Error}
-    end.
-
-
-%% @private Removes a supervised ranch
--spec del_ranch(term()) ->
-    ok | {error, term()}.
-
-del_ranch(Id) ->
-    case catch supervisor:terminate_child(nkpacket_ranch_sup, Id) of
-        ok -> 
-            supervisor:delete_child(nkpacket_ranch_sup, Id),
-            ok;
-        {error, Reason} -> 
-            {error, Reason}
-    end.
 
 
 %% @private
@@ -108,12 +81,6 @@ start_link() ->
             permanent,
             infinity,
             supervisor,
-            [?MODULE]},
-        {nkpacket_ranch_sup,
-            {?MODULE, start_ranch_sup, []},
-            permanent,
-            infinity,
-            supervisor,
             [?MODULE]}
      ], 
     supervisor:start_link({local, ?MODULE}, ?MODULE, {{one_for_one, 10, 60}, ChildsSpec}).
@@ -121,11 +88,6 @@ start_link() ->
 %% @private
 start_listen_sup() ->
     supervisor:start_link({local, nkpacket_listen_sup}, 
-                          ?MODULE, {{one_for_one, 10, 60}, []}).
-
-%% @private
-start_ranch_sup() ->
-    supervisor:start_link({local, nkpacket_ranch_sup}, 
                           ?MODULE, {{one_for_one, 10, 60}, []}).
 
 

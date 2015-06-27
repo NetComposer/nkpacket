@@ -251,9 +251,9 @@ get_listener(Domain, Uri, Opts) when is_map(Opts) ->
     ok | {error, term()}.
 
 stop_listener(Pid) when is_pid(Pid) ->
-    case [Id || {Id, P} <- nkpacket_sup:get_transports(), P==Pid] of
+    case [Id || {Id, P} <- nkpacket_sup:get_listeners(), P==Pid] of
         [Id] ->
-            nkpacket_sup:del_transport(Id);
+            nkpacket_sup:del_listener(Id);
         _ ->
             {error, unknown_listener}
     end;

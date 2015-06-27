@@ -146,21 +146,6 @@ init([NkPort]) ->
                 ],
                 ?MODULE,
                 [NkPort2]),
-
-
-            % RanchSpec = ranch:child_spec(
-            %     RanchId, 
-            %     Listeners,
-            %     RanchMod, 
-            %     [{socket, Socket}, {max_connections, Max}],
-            %     ?MODULE, 
-            %     [NkPort2]),
-            % % we don't want a fail in ranch to switch everything off
-            % RanchSpec1 = setelement(3, RanchSpec, temporary),
-            % {ok, RanchPid} = nkpacket_sup:add_ranch(RanchSpec1),
-            % link(RanchPid),
-
-
             Meta1 = maps:with([user, idle_timeout, certfile, keyfile, 
                                tcp_packet], Meta),
             StoredNkPort = NkPort1#nkport{meta=Meta1},
@@ -262,7 +247,6 @@ terminate(Reason, #state{nkport=#nkport{domain=Domain}}=State) ->
     catch call_protocol(listen_stop, [Reason], State),
     exit(RanchPid, shutdown),
     timer:sleep(100),   %% Give time to ranch to close acceptors
-    % catch nkpacket_sup:del_ranch({ranch_listener_sup, RanchId}),
     catch ranch_server:cleanup_listener_opts(RanchId),
     {_, TranspMod, _} = get_modules(Transp),
     TranspMod:close(Socket),
