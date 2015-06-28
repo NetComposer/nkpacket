@@ -34,8 +34,6 @@
 
 global_max_connections() -> ?GLOBAL_GET(global_max_connections).
 
-local_ips() -> ?GLOBAL_GET(local_ips).
-
 get_prococol(Scheme) -> nkpacket_config:get_protocol(Scheme).
 
 

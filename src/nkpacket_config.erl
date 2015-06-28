@@ -24,6 +24,7 @@
 -behaviour(gen_server).
 
 -export([register_protocol/2, register_protocol/3, load_domain/2]).
+-export([get_local_ips/0]).
 -export([get/1, get/2, get_domain/2, get_protocol/1, get_protocol/2]).
 -export([put/2, del/1, increment/2]).
 
@@ -86,6 +87,13 @@ load_domain(Domain, Opts) when is_list(Opts) ->
             {error, Error}
     end.
 
+
+%% @doc Get the list of local IPs
+-spec get_local_ips() ->
+    [inet:ip_addr()].
+
+get_local_ips() ->
+    get(local_ips).
 
 
 %% ===================================================================

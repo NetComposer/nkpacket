@@ -432,7 +432,7 @@ is_local(Domain, #uri{}=Uri) ->
                 {#nkport{local_ip=Ip, local_port=Port}, _Pid} 
                 <- nklib_proc:values({nkpacket_listen, Domain, Protocol, Transp})
             ],
-            LocalIps = nkpacket_config_cache:local_ips(),
+            LocalIps = nkpacket_config:get_local_ips(),
             is_local(Listen, Conns, LocalIps);
         _ ->
             false
@@ -489,7 +489,7 @@ is_local_ip({0,0,0,0}) ->
 is_local_ip({0,0,0,0,0,0,0,0}) ->
     true;
 is_local_ip(Ip) ->
-    lists:member(Ip, nkpacket_config_cache:local_ips()).
+    lists:member(Ip, nkpacket_config:get_local_ips()).
 
 
 
