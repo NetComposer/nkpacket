@@ -117,17 +117,18 @@ init([NkPort]) ->
                 socket = {Socket, 0}
             },
             ok = gen_sctp:listen(Socket, true),
-            Meta1 = maps:with([user, idle_timeout], Meta),
-            StoredNkPort = NkPort1#nkport{meta=Meta1},
-            nklib_proc:put(nkpacket_transports, StoredNkPort),
-            nklib_proc:put({nkpacket_listen, Domain, Protocol, sctp}, StoredNkPort),
+            nklib_proc:put(nkpacket_transports),
+            Group = maps:get(group, Meta, none),
+            ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
+            ConnPort = NkPort1#nkport{meta=ConnMeta},
+            nklib_proc:put({nkpacket_listen, Group, Protocol, sctp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserPid} -> erlang:monitor(process, UserPid);
                 _ -> undefined
             end,
             State = #state{ 
-                nkport = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)}, 
+                nkport = ConnPort, 
                 socket = Socket,
                 pending_froms = [],
                 pending_conns = [],

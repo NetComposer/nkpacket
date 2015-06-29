@@ -103,16 +103,18 @@ init([NkPort]) ->
             _ -> 
                 Port1 = Port
         end,
-        NkPort2 = NkPort1#nkport{
+        nklib_proc:put(nkpacket_transports),
+        Group = maps:get(group, Meta, none),
+        ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
+        ConnPort = NkPort1#nkport{
             local_port = Port1,
             listen_port = Port1,
             socket = SharedPid,
-            meta = maps:with(?CONN_LISTEN_OPTS, Meta)        
+            meta = ConnMeta
         },   
-        StoredNkPort = NkPort2#nkport{meta=Filter1},
-        nklib_proc:put(nkpacket_transports, StoredNkPort),
-        nklib_proc:put({nkpacket_listen, Domain, Protocol, Transp}, StoredNkPort),
-        {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort2),
+        % We don't yet support HTTP outgoing connections, but for the future...
+        nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
+        {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
         MonRef = case Meta of
             #{monitor:=UserRef} -> 
                 erlang:monitor(process, UserRef);
@@ -120,7 +122,7 @@ init([NkPort]) ->
                 undefined
         end,
         State = #state{
-            nkport = NkPort2,
+            nkport = ConnPort,
             protocol = Protocol,
             proto_state = ProtoState,
             shared = SharedPid,

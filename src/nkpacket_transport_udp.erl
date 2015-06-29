@@ -185,17 +185,18 @@ init([NkPort]) ->
             pid = self(),
             socket = Socket
         },
-        Meta1 = maps:with([user, idle_timeout], Meta),
-        StoredNkPort = NkPort1#nkport{meta=Meta1},
-        nklib_proc:put(nkpacket_transports, StoredNkPort),
-        nklib_proc:put({nkpacket_listen, Domain, Protocol, udp}, StoredNkPort),
+        nklib_proc:put(nkpacket_transports),
+        ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
+        Group = maps:get(group, Meta, none),
+        ConnPort = NkPort1#nkport{meta=ConnMeta},
+        nklib_proc:put({nkpacket_listen, Group, Protocol, udp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
         MonRef = case Meta of
             #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
             _ -> undefined
         end,        
         State = #state{
-            nkport = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)},
+            nkport = ConnPort,
             socket = Socket,
             tcp_pid = TcpPid,
             no_connections = maps:get(udp_no_connections, Meta, false),

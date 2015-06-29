@@ -49,9 +49,13 @@
 %% ===================================================================
 
 %% Connection Group
-%% Listeners and connections can have an associated group
-%% When starting a connection, if a previous connection to the same remote
-%% and group exists, it will be reused
+%% Listeners and connections can have an associated group.
+%% When sending a message, if a previous connection to the same remote
+%% and group exists, it will be reused.
+%% When starting an outgoing connection, if a suitable listening transport 
+%% is found with the same group, some values from listener's metadata will 
+%% be copied to the new connection: user, idle_timeout, host, path, ws_proto, 
+%% refresh_fun, certfile, keyfile, tcp_packet
 -type group() :: term().
 
 %% Recognized transport schemes
@@ -423,7 +427,7 @@ get_all(Group) ->
 
 %% @private Finds a listening transport of Proto.
 -spec get_listening(protocol(), transport()) -> 
-    [{inet:ip_address(), inet:port_number(), pid()}].
+    [nkport()].
 
 get_listening(Protocol, Transp) ->
     get_listening(Protocol, Transp, #{}).
@@ -431,13 +435,13 @@ get_listening(Protocol, Transp) ->
 
 %% @private Finds a listening transport of Proto.
 -spec get_listening(protocol(), transport(), #{group=>group()}) -> 
-    [{inet:ip_address(), inet:port(), pid()}].
+    [nkport()].
 
 get_listening(Protocol, Transp, Opts) ->
     Group = maps:get(group, Opts, none),
     [
-        {Ip, Port, Pid} || 
-        {{Ip, Port}, Pid} 
+        NkPort || 
+        {NkPort, _Pid} 
             <- nklib_proc:values({nkpacket_listen, Group, Protocol, Transp})
     ].
 

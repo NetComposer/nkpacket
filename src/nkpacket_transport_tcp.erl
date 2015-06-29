@@ -130,10 +130,7 @@ init([NkPort]) ->
                 socket = Socket
             },
             RanchId = {Transp, Ip, Port1},
-            % Listeners = maps:get(tcp_listeners, Meta, 100),
-            % Max = maps:get(tcp_max_connections, Meta, 1024),
-            % Options pased to new connections
-            NkPort2 = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)},
+            RanchPort = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)},
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
                 maps:get(tcp_listeners, Meta, 100),
@@ -143,19 +140,19 @@ init([NkPort]) ->
                     {max_connections,  maps:get(tcp_max_connections, Meta, 1024)}
                 ],
                 ?MODULE,
-                [NkPort2]),
-            Meta1 = maps:with([user, idle_timeout, certfile, keyfile, 
-                               tcp_packet], Meta),
-            StoredNkPort = NkPort1#nkport{meta=Meta1},
-            nklib_proc:put(nkpacket_transports, StoredNkPort),
-            nklib_proc:put({nkpacket_listen, Domain, Protocol, Transp}, StoredNkPort),
+                [RanchPort]),
+            nklib_proc:put(nkpacket_transports),
+            Group = maps:get(group, Meta, none),
+            ConnMeta = maps:with([certfile, keyfile, tcp_packet|?CONN_LISTEN_OPTS], Meta),
+            ConnPort = NkPort1#nkport{meta=ConnMeta},
+            nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
                 _ -> undefined
             end,
             State = #state{
-                nkport = NkPort2,
+                nkport = ConnPort,
                 ranch_id = RanchId,
                 ranch_pid = RanchPid,
                 protocol = Protocol,
