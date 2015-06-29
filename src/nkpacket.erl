@@ -294,8 +294,8 @@ get_nkport(Pid) when is_pid(Pid) ->
 get_local(#nkport{transp=Transp, local_ip=Ip, local_port=Port}) ->
     {ok, {Transp, Ip, Port}};
 get_local(Pid) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_local, ?CALL_TIMEOUT) of
-        {ok, Info} -> {ok, Info};
+    case get_nkport(Pid) of
+        {ok, NkPort} -> get_local(NkPort);
         _ -> error
     end.
 
@@ -307,8 +307,8 @@ get_local(Pid) when is_pid(Pid) ->
 get_remote(#nkport{transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Transp, Ip, Port}};
 get_remote(Pid) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_remote, ?CALL_TIMEOUT) of
-        {ok, Info} -> {ok, Info};
+    case get_nkport(Pid) of
+        {ok, NkPort} -> get_remote(NkPort);
         _ -> error
     end.
 
@@ -330,56 +330,55 @@ get_user(#nkport{meta=#{user:=User}}) ->
 get_user(#nkport{}) ->
     {ok, undefined};
 get_user(Pid) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_user, ?CALL_TIMEOUT) of
-        {ok, User} -> {ok, User};
+    case get_nkport(Pid) of
+        {ok, NkPort} -> get_user(NkPort);
         _ -> error
     end.
 
 
 %% @doc Sends a message to a connection
--spec send(domain(), send_spec() | [send_spec()], term()) ->
+-spec send(send_spec() | [send_spec()], term()) ->
     {ok, nkport()} | {error, term()}.
 
-send(Domain, SendSpec, Msg) ->
-    send(Domain, SendSpec, Msg, #{}).
+send(SendSpec, Msg) ->
+    send(SendSpec, Msg, #{}).
 
 
 %% @doc Sends a message to a connection
--spec send(domain(), send_spec() | [send_spec()], term(), send_opts()) ->
+-spec send(send_spec() | [send_spec()], term(), send_opts()) ->
     {ok, nkport()} | {error, term()}.
 
-send(Domain, SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
+send(SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
-            nkpacket_transport:send(Domain, SendSpec, Msg, Opts1);
+            nkpacket_transport:send(SendSpec, Msg, Opts1);
         {error, Error} ->
             {error, Error}
     end;
 
-send(Domain, SendSpec, Msg, Opts) ->
-    send(Domain, [SendSpec], Msg, Opts).
+send(SendSpec, Msg, Opts) ->
+    send([SendSpec], Msg, Opts).
 
 
 %% @doc Forces a new outbound connection.
--spec connect(domain(), user_connection() | [connection()], connect_opts()) ->
+-spec connect(user_connection() | [connection()], connect_opts()) ->
     {ok, nkport()} | {error, term()}.
 
-connect(Domain, {_, _, _, _}=Conn, Opts) when is_map(Opts) ->
-    connect(Domain, [Conn], Opts);
+connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
+    connect([Conn], Opts);
 
-connect(Domain, Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), 
-                                  is_map(Opts) ->
+connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
-            nkpacket_transport:connect(Domain, Conns, Opts1);
+            nkpacket_transport:connect(Conns, Opts1);
         {error, Error} ->
             {error, Error}
     end;
 
-connect(Domain, Uri, Opts) when is_map(Opts) ->
-    case resolve(Domain, Uri) of
+connect(Uri, Opts) when is_map(Opts) ->
+    case resolve(Uri, Opts) of
         {ok, Conns, UriOpts} ->
-            connect(Domain, Conns, maps:merge(UriOpts, Opts));
+            connect(Conns, maps:merge(UriOpts, Opts));
         {error, Error} ->
             {error, Error}
     end.
@@ -394,18 +393,26 @@ get_all() ->
 
 
 %% @doc Gets all registered transports for a Domain.
--spec get_all(domain()) -> 
+-spec get_all(group()) -> 
     [nkport()].
 
-get_all(Domain) ->
-    [NkPort || #nkport{domain=D}=NkPort <- get_all(), D==Domain].
+get_all(Group) ->
+    [NkPort || #nkport{meta=#{group:=G}}=NkPort <- get_all(), G==Group].
 
 
 %% @private Finds a listening transport of Proto.
--spec get_listening(domain(), protocol(), transport(), ipv4|ipv6) -> 
+-spec get_listening(protocol(), transport(), ipv4|ipv6) -> 
     [nkport()].
 
-get_listening(Domain, Protocol, Transp, Class) ->
+get_listening(Protocol, Transp, Class) ->
+    get_listening(none, Protocol, Transp, Class).
+
+
+%% @private Finds a listening transport of Proto.
+-spec get_listening(group(), protocol(), transport(), ipv4|ipv6) -> 
+    [nkport()].
+
+get_listening(Group, Protocol, Transp, Class) ->
     Fun = fun({#nkport{listen_ip=LIp}=T, _}) -> 
         case Class of
             ipv4 when size(LIp)==4 -> {true, T};
@@ -415,22 +422,31 @@ get_listening(Domain, Protocol, Transp, Class) ->
     end,
     nklib_util:filtermap(
         Fun, 
-        nklib_proc:values({nkpacket_listen, Domain, Protocol, Transp})).
-
+        nklib_proc:values({nkpacket_listen, Group, Protocol, Transp})).
 
 
 %% @doc Checks if an `uri()' refers to a local started transport.
 %% For ws/wss, it does not check the path
--spec is_local(domain(), nklib:uri()) -> 
+-spec is_local(nklib:uri()) -> 
     boolean().
 
-is_local(Domain, #uri{}=Uri) ->
-    case nkpacket_dns:resolve(Domain, Uri) of
+is_local(Uri) ->
+    is_local(Uri, #{}).
+
+
+%% @doc Checks if an `uri()' refers to a local started transport.
+%% For ws/wss, it does not check the path
+-spec is_local(nklib:uri(), #{group=>group(), no_dns_cache=>boolean()}) -> 
+    boolean().
+
+is_local(#uri{}=Uri, Opts) ->
+    Group = maps:get(group, Opts, none),
+    case resolve(Uri, Opts) of
         {ok, [{Protocol, Transp, _Ip, _Port}|_]=Conns} ->
             Listen = [
                 {Transp, Ip, Port} ||
                 {#nkport{local_ip=Ip, local_port=Port}, _Pid} 
-                <- nklib_proc:values({nkpacket_listen, Domain, Protocol, Transp})
+                <- nklib_proc:values({nkpacket_listen, Group, Protocol, Transp})
             ],
             LocalIps = nkpacket_config:get_local_ips(),
             is_local(Listen, Conns, LocalIps);

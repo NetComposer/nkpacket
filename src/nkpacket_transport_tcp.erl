@@ -179,12 +179,6 @@ init([NkPort]) ->
 handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
     {reply, {ok, NkPort}, State};
 
-handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
-    {reply, nkpacket:get_local(NkPort), State};
-
-handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
-    {reply, nkpacket:get_user(NkPort), State};
-
 handle_call(get_state, _From, State) ->
     {reply, State, State};
 
