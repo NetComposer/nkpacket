@@ -188,9 +188,9 @@ init([NkPort, Filter]) ->
                 #{idle_timeout:=Timeout0} -> 
                     Timeout0;
                 _ when Transp==ws; Transp==wss -> 
-                    nkpacket_config_cache:ws_timeout(Domain);
+                    nkpacket_config:ws_timeout(Domain);
                 _ when Transp==http; Transp==https -> 
-                    nkpacket_config_cache:http_timeout(Domain)
+                    nkpacket_config:http_timeout(Domain)
             end,
             CowboyOpts1 = maps:get(cowboy_opts, Meta, []),
             CowboyOpts2 = nklib_util:store_values(

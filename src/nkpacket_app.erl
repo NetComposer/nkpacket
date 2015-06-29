@@ -48,6 +48,7 @@ start() ->
 %% @private OTP standard start callback
 start(_Type, _Args) ->
     {ok, Pid} = nkpacket_sup:start_link(),
+    nkpacket_config:init(),
     {ok, Vsn} = application:get_key(nkpacket, vsn),
     lager:notice("NkPACKET v~s has started.", [Vsn]),
     {ok, Pid}.

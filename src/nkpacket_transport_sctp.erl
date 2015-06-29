@@ -161,7 +161,7 @@ handle_call({connect, ConnPort}, From, State) ->
         pending_conns = Conns
     } = State,
     Timeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config_cache:connect_timeout(Domain);
+        undefined -> nkpacket_config:connect_timeout(Domain);
         Timeout0 -> Timeout0
     end,
     Self = self(),
@@ -326,7 +326,7 @@ terminate(Reason, State) ->
 
 listen_opts(#nkport{domain=Domain, local_ip=Ip, meta=Meta}) ->
     Timeout = case maps:get(idle_timeout, Meta, undefined) of
-        undefined -> nkpacket_config_cache:sctp_timeout(Domain);
+        undefined -> nkpacket_config:sctp_timeout(Domain);
         Timeout0 -> Timeout0
     end,
     OutStreams = maps:get(sctp_out_streams, Meta, ?OUT_STREAMS),

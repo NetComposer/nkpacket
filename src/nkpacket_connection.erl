@@ -287,14 +287,14 @@ init([NkPort]) ->
             Timeout0;
         undefined ->
             case Transp of
-                udp -> nkpacket_config_cache:udp_timeout(Domain);
-                tcp -> nkpacket_config_cache:tcp_timeout(Domain);
-                tls -> nkpacket_config_cache:tcp_timeout(Domain);
-                sctp -> nkpacket_config_cache:sctp_timeout(Domain);
-                ws -> nkpacket_config_cache:ws_timeout(Domain);
-                wss -> nkpacket_config_cache:ws_timeout(Domain);
-                http -> nkpacket_config_cache:http_timeout(Domain);
-                https -> nkpacket_config_cache:http_timeout(Domain)
+                udp -> nkpacket_config:udp_timeout(Domain);
+                tcp -> nkpacket_config:tcp_timeout(Domain);
+                tls -> nkpacket_config:tcp_timeout(Domain);
+                sctp -> nkpacket_config:sctp_timeout(Domain);
+                ws -> nkpacket_config:ws_timeout(Domain);
+                wss -> nkpacket_config:ws_timeout(Domain);
+                http -> nkpacket_config:http_timeout(Domain);
+                https -> nkpacket_config:http_timeout(Domain)
             end
     end,
     ?debug(Domain, "created ~p connection ~p to/from (~p, ~p) ~p", 

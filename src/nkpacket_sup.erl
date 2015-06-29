@@ -64,12 +64,6 @@ get_listeners() ->
 %% @private
 start_link() ->
     ChildsSpec = [
-        {nkpacket_config,
-            {nkpacket_config, start_link, []},
-            permanent,
-            5000,
-            worker,
-            [nkpacket_config]},
         {nkpacket_dns,
             {nkpacket_dns, start_link, []},
             permanent,

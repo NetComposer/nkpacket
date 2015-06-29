@@ -40,12 +40,12 @@
     boolean().
 
 is_max(Domain) ->
-    Max = nkpacket_config_cache:global_max_connections(),
+    Max = nkpacket_config:global_max_connections(),
     case nklib_counters:value(nkpacket_connections) of
         Current when Current > Max -> 
             true;
         _ -> 
-            AppMax = nkpacket_config_cache:max_connections(Domain),
+            AppMax = nkpacket_config:max_connections(Domain),
             case nklib_counters:value({nkpacket_connections, Domain}) of
                 AppCurrent when AppCurrent > AppMax -> 
                     true;

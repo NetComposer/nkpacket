@@ -122,7 +122,7 @@ resolve_uri(Domain, #uri{}=Uri) ->
                     Atom -> Atom
                 end
         end,
-        Protocol = nkpacket_config_cache:get_protocol(Domain, Scheme),
+        Protocol = nkpacket_config:get_protocol(Domain, Scheme),
         ValidTransp = case erlang:function_exported(Protocol, transports, 1) of
             true ->
                 Protocol:transports(Scheme);
@@ -381,7 +381,7 @@ get_cache(Domain, Key) ->
     ok.
 
 save_cache(Domain, Key, Value) ->
-    case nkpacket_config_cache:dns_cache_ttl(Domain) of
+    case nkpacket_config:dns_cache_ttl(Domain) of
         TTL when is_integer(TTL), TTL > 0 ->
             Now = nklib_util:timestamp(),
             Secs = TTL div 1000,
