@@ -160,7 +160,6 @@ reply(Code, Hds, Body, Req) ->
 
 init([NkPort, Filter]) ->
     #nkport{
-        domain = Domain,
         transp = Transp, 
         local_ip = Ip, 
         local_port = Port,
@@ -174,7 +173,6 @@ init([NkPort, Filter]) ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {_, Port1}} = InetMod:sockname(Socket),
             Shared = NkPort#nkport{
-                domain = '$nkcowboy',
                 local_port = Port1, 
                 listen_ip = Ip,
                 listen_port = Port1,
@@ -188,9 +186,9 @@ init([NkPort, Filter]) ->
                 #{idle_timeout:=Timeout0} -> 
                     Timeout0;
                 _ when Transp==ws; Transp==wss -> 
-                    nkpacket_config:ws_timeout(Domain);
+                    nkpacket_config:ws_timeout();
                 _ when Transp==http; Transp==https -> 
-                    nkpacket_config:http_timeout(Domain)
+                    nkpacket_config:http_timeout()
             end,
             CowboyOpts1 = maps:get(cowboy_opts, Meta, []),
             CowboyOpts2 = nklib_util:store_values(
@@ -221,7 +219,7 @@ init([NkPort, Filter]) ->
             },
             {ok, register(State)};
         {error, Error} ->
-            ?error(Domain, "could not start ~p transport on ~p:~p (~p)", 
+            lager:error("could not start ~p transport on ~p:~p (~p)", 
                    [Transp, Ip, Port, Error]),
             {stop, Error}
     end.

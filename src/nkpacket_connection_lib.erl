@@ -22,7 +22,7 @@
 -module(nkpacket_connection_lib).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([is_max/1, raw_send/2, raw_stop/1]).
+-export([is_max/0, raw_send/2, raw_stop/1]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
@@ -36,22 +36,16 @@
 %% ===================================================================
 
 %% @doc Checks if we already have the maximum number of connections
--spec is_max(nkpacket:domain()) ->
+-spec is_max() ->
     boolean().
 
-is_max(Domain) ->
+is_max() ->
     Max = nkpacket_config:global_max_connections(),
     case nklib_counters:value(nkpacket_connections) of
         Current when Current > Max -> 
             true;
         _ -> 
-            AppMax = nkpacket_config:max_connections(Domain),
-            case nklib_counters:value({nkpacket_connections, Domain}) of
-                AppCurrent when AppCurrent > AppMax -> 
-                    true;
-                _ ->
-                    false
-            end
+            false
     end.
 
 

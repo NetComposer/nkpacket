@@ -44,8 +44,8 @@
 -spec start(nkpacket:nkport()) ->
     {ok, nkpacket:nkport()} | {error, term()}.
 
-start(#nkport{domain=Domain}=NkPort) ->
-    case nkpacket_connection_lib:is_max(Domain) of
+start(#nkport{}=NkPort) ->
+    case nkpacket_connection_lib:is_max() of
         false -> 
             % Connection will monitor pid() in NkPort and option 'monitor'
             case gen_server:start(?MODULE, [NkPort], []) of
@@ -78,8 +78,8 @@ connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
 connect(#nkport{transp=Transp}) when Transp==http; Transp==https ->
     {error, not_supported};
 
-connect(#nkport{domain=Domain}=NkPort) ->
-    case nkpacket_connection_lib:is_max(Domain) of
+connect(#nkport{}=NkPort) ->
+    case nkpacket_connection_lib:is_max() of
         false -> 
             case proc_lib:start(?MODULE, conn_init, [NkPort]) of
                 {ok, _Pid, NkPort1} -> {ok, NkPort1};
@@ -215,8 +215,16 @@ get_all() ->
 
 
 %% @private
-get_all(Domain) ->
-    [NkPort || #nkport{domain=D}=NkPort <- get_all(), D==Domain].
+get_all(Group) ->
+    lists:filter(
+        fun(#nkport{meta=Meta}) ->
+            case Meta of
+                #{group:=Group} -> true;
+                #{group:=_} -> false;
+                _ -> true
+            end
+        end,
+        get_all()).
 
 
 %% @private
@@ -258,7 +266,6 @@ stop_all() ->
 
 init([NkPort]) ->
     #nkport{
-        domain = Domain,
         transp = Transp, 
         remote_ip = Ip, 
         remote_port = Port, 
@@ -279,25 +286,26 @@ init([NkPort]) ->
             #{}
     end,
     StoredNkPort = NkPort1#nkport{meta=StoredMeta},
-    nklib_proc:put({nkpacket_connection, Domain, Conn}, StoredNkPort), 
-    nklib_proc:put(nkpacket_transports, StoredNkPort),
-    nklib_counters:async([nkpacket_connections, {nkpacket_connections, Domain}]),
+    Group = maps:get(group, Meta, none),
+    nklib_proc:put({nkpacket_connection, Group, Conn}, StoredNkPort), 
+    nklib_proc:put(nkpacket_transports),
+    nklib_counters:async([nkpacket_connections, {nkpacket_connections, Group}]),
     Timeout = case maps:get(idle_timeout, Meta, undefined) of
         Timeout0 when is_integer(Timeout0) -> 
             Timeout0;
         undefined ->
             case Transp of
-                udp -> nkpacket_config:udp_timeout(Domain);
-                tcp -> nkpacket_config:tcp_timeout(Domain);
-                tls -> nkpacket_config:tcp_timeout(Domain);
-                sctp -> nkpacket_config:sctp_timeout(Domain);
-                ws -> nkpacket_config:ws_timeout(Domain);
-                wss -> nkpacket_config:ws_timeout(Domain);
-                http -> nkpacket_config:http_timeout(Domain);
-                https -> nkpacket_config:http_timeout(Domain)
+                udp -> nkpacket_config:udp_timeout();
+                tcp -> nkpacket_config:tcp_timeout();
+                tls -> nkpacket_config:tcp_timeout();
+                sctp -> nkpacket_config:sctp_timeout();
+                ws -> nkpacket_config:ws_timeout();
+                wss -> nkpacket_config:ws_timeout();
+                http -> nkpacket_config:http_timeout();
+                https -> nkpacket_config:http_timeout()
             end
     end,
-    ?debug(Domain, "created ~p connection ~p to/from (~p, ~p) ~p", 
+    lager:debug("created ~p connection ~p to/from (~p, ~p) ~p", 
            [Transp, {Ip, Port}, Protocol, self(), Meta]),
     ListenMonitor = case is_pid(ListenPid) of
         true -> erlang:monitor(process, ListenPid);
@@ -383,15 +391,6 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
 
 handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
     {reply, {ok, NkPort}, State};
-
-handle_call(get_local, _From, #state{nkport=NkPort}=State) ->
-    {reply, nkpacket:get_local(NkPort), State};
-
-handle_call(get_remote, _From, #state{nkport=NkPort}=State) ->
-    {reply, nkpacket:get_remote(NkPort), State};
-
-handle_call(get_user, _From, #state{nkport=NkPort}=State) ->
-    {reply, nkpacket:get_user(NkPort), State};
 
 handle_call({encode, Msg}, _From, State) ->
     case call_protocol(conn_encode, [Msg], State) of
@@ -506,7 +505,7 @@ handle_info({ssl_error, _Socket}, State) ->
     {stop, normal, State};
 
 handle_info({timeout, _, idle_timer}, State) ->
-    #state{nkport=#nkport{domain=Domain}=NkPort, refresh_fun=Fun} = State,
+    #state{nkport=NkPort, refresh_fun=Fun} = State,
     case is_function(Fun, 1) of
         true ->
             case Fun(NkPort) of
@@ -514,7 +513,7 @@ handle_info({timeout, _, idle_timer}, State) ->
                 false -> {stop, normal, State}
             end;
         false ->
-            ?debug(Domain, "Connection timeout", []),
+            lager:debug("Connection timeout", []),
             {stop, normal, State}
     end;
 
@@ -525,18 +524,15 @@ handle_info({'DOWN', MRef, process, _Pid, Reason}, #state{bridge_monitor=MRef}=S
     end;
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{listen_monitor=MRef}=State) ->
-    #state{nkport=#nkport{domain=Domain}} = State,
-    ?debug(Domain, "Connection stop (listener stop)", []),
+    lager:debug("Connection stop (listener stop)", []),
     {stop, normal, State};
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{srv_monitor=MRef}=State) ->
-    #state{nkport=#nkport{domain=Domain}} = State,
-    ?debug(Domain, "Connection stop (server stop)", []),
+    lager:debug("Connection stop (server stop)", []),
     {stop, normal, State};
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_monitor=MRef}=State) ->
-    #state{nkport=#nkport{domain=Domain}} = State,
-    ?debug(Domain, "Connection stop (user stop)", []),
+    lager:debug("Connection stop (user stop)", []),
     {stop, normal, State};
 
 handle_info(Msg, State) ->
@@ -562,10 +558,10 @@ code_change(_OldVsn, State, _Extra) ->
 terminate(Reason, State) ->
     #state{
         transp = Transp, 
-        nkport = #nkport{domain=Domain} = NkPort
+        nkport = NkPort
     } = State,
     catch call_protocol(conn_stop, [Reason], State),
-    ?debug(Domain, "Connection ~p process stopped (~p, ~p)", 
+    lager:debug("Connection ~p process stopped (~p, ~p)", 
            [Transp, Reason, self()]),
     % Sometimes ssl sockets are slow to close here
     spawn(fun() -> nkpacket_connection_lib:raw_stop(NkPort) end),
@@ -626,7 +622,7 @@ parse(Data, State) ->
 do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
     #state{
         bridge_type = Type, 
-        nkport = #nkport{domain=Domain} = From
+        nkport = From
     } = State,
     case Type of
         up ->
@@ -640,22 +636,22 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
         undefined ->
             case nkpacket_connection:send(To, Data) of
                 ok ->
-                    ?debug(Domain, "Packet ~p bridged from ~p:~p to ~p:~p", 
+                    lager:debug("Packet ~p bridged from ~p:~p to ~p:~p", 
                           [Data, FromIp, FromPort, ToIp, ToPort]),
                     {ok, State};
                 {error, Error} ->
-                    ?notice(Domain, "Packet ~p could not be bridged from ~p:~p to ~p:~p", 
+                    lager:notice("Packet ~p could not be bridged from ~p:~p to ~p:~p", 
                            [Data, FromIp, FromPort, ToIp, ToPort]),
                     {stop, Error, State}
             end;
         {ok, Data1, State1} ->
             case nkpacket_connection:send(To, Data1) of
                 ok ->
-                    ?debug(Domain, "Packet ~p bridged from ~p:~p to ~p:~p", 
+                    lager:debug("Packet ~p bridged from ~p:~p to ~p:~p", 
                           [Data1, FromIp, FromPort, ToIp, ToPort]),
                     {ok, State1};
                 {error, Error} ->
-                    ?notice(Domain, "Packet ~p could not be bridged from ~p:~p to ~p:~p", 
+                    lager:notice("Packet ~p could not be bridged from ~p:~p to ~p:~p", 
                           [Data1, FromIp, FromPort, ToIp, ToPort]),
                     {stop, Error, State1}
             end;
@@ -665,10 +661,10 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
             {stop, Reason, State1}
     end;
 
-do_parse(Data, #state{nkport=#nkport{domain=Domain, protocol=Protocol}}=State) ->
+do_parse(Data, #state{nkport=#nkport{protocol=Protocol}}=State) ->
     case call_protocol(conn_parse, [Data], State) of
         undefined ->
-            ?warning(Domain, "Received data for undefined protocol ~p", [Protocol]),
+            lager:warning("Received data for undefined protocol ~p", [Protocol]),
             {ok, State};
         {ok, State1} ->
             {ok, State1};
@@ -687,7 +683,6 @@ do_parse(Data, #state{nkport=#nkport{domain=Domain, protocol=Protocol}}=State) -
 start_bridge(Bridge, Type, State) ->
     #nkport{pid=BridgePid} = Bridge,
     #state{bridge_monitor=OldMon, bridge=OldBridge, nkport=NkPort} = State,
-    #nkport{domain=Domain} = NkPort,
     case Type of 
         up ->
             #nkport{local_ip=FromIp, local_port=FromPort} = NkPort,
@@ -698,7 +693,7 @@ start_bridge(Bridge, Type, State) ->
     end,
     case OldBridge of
         undefined ->
-            ?info(Domain, "Connection ~p started bridge ~p from ~p:~p to ~p:~p",
+            lager:info("Connection ~p started bridge ~p from ~p:~p to ~p:~p",
                   [self(), Type, FromIp, FromPort, ToIp, ToPort]),
             Mon = erlang:monitor(process, BridgePid),
             case Type of

@@ -42,9 +42,9 @@
     supervisor:child_spec().
 
 get_listener(NkPort) ->
-    #nkport{domain=Domain, transp=sctp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{transp=sctp, local_ip=Ip, local_port=Port} = NkPort,
     {
-        {Domain, sctp, Ip, Port, make_ref()}, 
+        {sctp, Ip, Port, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -96,7 +96,6 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        domain = Domain,
         transp = sctp,
         local_ip = Ip, 
         local_port = Port,
@@ -138,7 +137,7 @@ init([NkPort]) ->
             },
             {ok, State};
         {error, Error} ->
-            ?error(Domain, "could not start SCTP transport on ~p:~p (~p)", 
+            lager:error("could not start SCTP transport on ~p:~p (~p)", 
                    [Ip, Port, Error]),
             {stop, Error}
     end.
@@ -150,7 +149,6 @@ init([NkPort]) ->
 
 handle_call({connect, ConnPort}, From, State) ->
     #nkport{
-        domain = Domain, 
         remote_ip = Ip, 
         remote_port = Port, 
         meta = Meta
@@ -161,7 +159,7 @@ handle_call({connect, ConnPort}, From, State) ->
         pending_conns = Conns
     } = State,
     Timeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config:connect_timeout(Domain);
+        undefined -> nkpacket_config:connect_timeout();
         Timeout0 -> Timeout0
     end,
     Self = self(),
@@ -220,10 +218,10 @@ handle_cast(Msg, State) ->
     nklib_util:gen_server_info(#state{}).
 
 handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
-    #state{socket=Socket, nkport=#nkport{domain=Domain, protocol=Proto}} = State,
+    #state{socket=Socket, nkport=#nkport{protocol=Proto, meta=ListenMeta}} = State,
     State1 = case SAC of
         #sctp_assoc_change{state=comm_up, assoc_id=AssocId} ->
-            % lager:error("COMM_UP: ~p, ~p", [Domain, AssocId]),
+            % lager:error("COMM_UP: ~p", [AssocId]),
             #state{pending_froms=Froms} = State,
             case lists:keytake({Ip, Port}, 1, Froms) of
                 {value, {_, From, Meta}, Froms1} -> 
@@ -234,8 +232,8 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
                     State
             end;
         #sctp_assoc_change{state=shutdown_comp, assoc_id=AssocId} ->
-            % lager:error("COMM_DOWN: ~p, ~p", [Domain, AssocId]),
-            case nkpacket_transport:get_connected(Domain, {Proto, sctp, Ip, Port}) of
+            % lager:error("COMM_DOWN: ~p", [AssocId]),
+            case nkpacket_transport:get_connected({Proto, sctp, Ip, Port}, ListenMeta) of
                 [#nkport{socket={_, AssocId}, pid=Pid}|_] ->
                     nkpacket_connection:stop(Pid, normal);
                 _ ->
@@ -254,11 +252,11 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
                 {ok, #nkport{pid=Pid}} ->
                     nkpacket_connection:incoming(Pid, Data);
                 {error, Error} ->
-                    ?notice(Domain, "Error ~p on SCTP connection up", [Error])
+                    lager:notice("Error ~p on SCTP connection up", [Error])
             end,
             State;
         Other ->
-            ?notice(Domain, "SCTP unknown data from ~p, ~p: ~p", [Ip, Port, Other]),
+            lager:notice("SCTP unknown data from ~p, ~p: ~p", [Ip, Port, Other]),
             State
     end,
     ok = inet:setopts(Socket, [{active, once}]),
@@ -299,12 +297,8 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     nklib_util:gen_server_terminate().
 
-terminate(Reason, State) ->  
-    #state{
-        nkport = #nkport{domain=Domain},
-        socket = Socket
-    } = State,
-    ?debug(Domain, "SCTP server process stopped", []),
+terminate(Reason, #state{socket=Socket}=State) ->  
+    lager:debug("SCTP server process stopped", []),
     catch call_protocol(listen_stop, [Reason], State),
     gen_sctp:close(Socket).
 
@@ -318,9 +312,9 @@ terminate(Reason, State) ->
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{domain=Domain, local_ip=Ip, meta=Meta}) ->
+listen_opts(#nkport{local_ip=Ip, meta=Meta}) ->
     Timeout = case maps:get(idle_timeout, Meta, undefined) of
-        undefined -> nkpacket_config:sctp_timeout(Domain);
+        undefined -> nkpacket_config:sctp_timeout();
         Timeout0 -> Timeout0
     end,
     OutStreams = maps:get(sctp_out_streams, Meta, ?OUT_STREAMS),
@@ -341,8 +335,8 @@ do_connect(Ip, Port, AssocId, State) ->
 %% @private
 do_connect(Ip, Port, AssocId, Meta, State) ->
     #state{nkport=NkPort, socket=Socket} = State,
-    #nkport{domain=Domain, protocol=Proto, meta=ListenMeta} = NkPort,
-    case nkpacket_transport:get_connected(Domain, {Proto, sctp, Ip, Port}) of
+    #nkport{protocol=Proto, meta=ListenMeta} = NkPort,
+    case nkpacket_transport:get_connected({Proto, sctp, Ip, Port}, ListenMeta) of
         [NkPort1|_] -> 
             {ok, NkPort1};
         [] -> 

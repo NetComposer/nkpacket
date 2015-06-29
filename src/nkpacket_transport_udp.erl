@@ -64,9 +64,9 @@ send_stun_async(Pid, Ip, Port) ->
     supervisor:child_spec().
 
 get_listener(NkPort) ->
-    #nkport{domain=Domain, transp=udp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{transp=udp, local_ip=Ip, local_port=Port} = NkPort,
     {
-        {Domain, udp, Ip, Port, make_ref()}, 
+        {udp, Ip, Port, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -100,8 +100,10 @@ send(#nkport{transp=udp, socket=Socket}, Ip, Port, Data) ->
 
 send(Pid, Ip, Port, Data) when is_pid(Pid) ->
     case catch gen_server:call(Pid, get_socket, ?CALL_TIMEOUT) of
-        {ok, Socket} -> send(Socket, Ip, Port, Data);
-        _ -> {error, unknown_process}
+        {ok, Socket} -> 
+            send(Socket, Ip, Port, Data);
+        _ -> 
+            {error, unknown_process}
     end.
 
 
@@ -146,7 +148,6 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        domain = Domain, 
         transp = udp,
         local_ip = Ip, 
         local_port = Port,
@@ -170,9 +171,8 @@ init([NkPort]) ->
                     {ok, TcpPid0} -> 
                         TcpPid0;
                     {error, TcpError} -> 
-                        ?warning(Domain, 
-                                 "UDP transport could not open TCP port ~p: ~p",
-                                 [Port1, TcpError]),
+                        lager:warning("UDP transport could not open TCP port ~p: ~p",
+                                      [Port1, TcpError]),
                         throw(could_not_open_tcp)
                 end;
             _ ->
@@ -209,8 +209,8 @@ init([NkPort]) ->
         {ok, State}
     catch
         throw:Throw ->
-            ?error(Domain, "could not start UDP transport on ~p:~p (~p)", 
-                   [Ip, Port, Throw]),
+            lager:error("could not start UDP transport on ~p:~p (~p)", 
+                        [Ip, Port, Throw]),
             {stop, Throw}
     end.
 
@@ -227,9 +227,8 @@ handle_call({connect, ConnPort}, _From, State) ->
     } = ConnPort,
     {reply, do_connect(Ip, Port, Meta, State), State};
 
-handle_call({send_stun, Ip, Port}, From, #state{nkport=NkPort}=State) ->
-    #nkport{domain=Domain} = NkPort,
-    {noreply, do_send_stun(Domain, Ip, Port, {call, From}, State)};
+handle_call({send_stun, Ip, Port}, From, State) ->
+    {noreply, do_send_stun(Ip, Port, {call, From}, State)};
 
 handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
     {reply, {ok, NkPort}, State};
@@ -249,9 +248,8 @@ handle_call(Msg, From, State) ->
 -spec handle_cast(term(), #state{}) ->
     nklib_util:gen_server_cast(#state{}).
 
-handle_cast({send_stun, Ip, Port, Pid}, #state{nkport=NkPort}=State) ->
-    #nkport{domain=Domain} = NkPort,
-    {noreply, do_send_stun(Domain, Ip, Port, {cast, Pid}, State)};
+handle_cast({send_stun, Ip, Port, Pid}, State) ->
+    {noreply, do_send_stun(Ip, Port, {cast, Pid}, State)};
 
 handle_cast(Msg, State) ->
     case call_protocol(listen_handle_cast, [Msg], State) of
@@ -266,13 +264,12 @@ handle_cast(Msg, State) ->
     nklib_util:gen_server_info(#state{}).
 
 handle_info({udp, Socket, Ip, Port, <<0:2, _Header:158, _Msg/binary>>=Packet}, State) ->
-    #state{nkport=NkPort, stuns=Stuns, reply_stun=StunReply, socket=Socket} = State,
-    #nkport{domain=Domain} = NkPort,
+    #state{stuns=Stuns, reply_stun=StunReply, socket=Socket} = State,
     case nkpacket_stun:decode(Packet) of
         {request, binding, TransId, _} when StunReply ->
             Response = nkpacket_stun:binding_response(TransId, Ip, Port),
             gen_udp:send(Socket, Ip, Port, Response),
-            ?debug(Domain, "sent STUN bind response to ~p:~p", [Ip, Port]),
+            lager:debug("sent STUN bind response to ~p:~p", [Ip, Port]),
             ok = inet:setopts(Socket, [{active, once}]),
             {noreply, State};
         {response, binding, TransId, Attrs} when Stuns/=[] ->
@@ -349,12 +346,12 @@ terminate(Reason, State) ->
 %% ========= STUN processing ================================================
 
 %% @private
-do_send_stun(Domain, Ip, Port, From, State) ->
+do_send_stun(Ip, Port, From, State) ->
     #state{timer_t1=T1, stuns=Stuns, socket=Socket} = State,
     {Id, Packet} = nkpacket_stun:binding_request(),
     case gen_udp:send(Socket, Ip, Port, Packet) of
         ok -> 
-            ?debug(Domain, "sent STUN request to ~p", [{Ip, Port}]),
+            lager:debug("sent STUN request to ~p", [{Ip, Port}]),
             Stun = #stun{
                 id = Id,
                 dest = {Ip, Port},
@@ -365,7 +362,7 @@ do_send_stun(Domain, Ip, Port, From, State) ->
             },
             State#state{stuns=[Stun|Stuns]};
         {error, Error} ->
-            ?notice(Domain, "could not send UDP STUN request to ~p:~p: ~p", 
+            lager:notice("could not send UDP STUN request to ~p:~p: ~p", 
                          [Ip, Port, Error]),
             case From of
                 {call, CallFrom} -> gen_server:reply(CallFrom, error);
@@ -378,20 +375,19 @@ do_send_stun(Domain, Ip, Port, From, State) ->
 %% @private
 do_stun_retrans(Stun, State) ->
     #stun{dest={Ip, Port}, packet=Packet, next_retrans=Next} = Stun,
-    #state{nkport=NkPort, stuns=Stuns, timer_t1=T1, socket=Socket} = State,
-    #nkport{domain=Domain} = NkPort,
+    #state{stuns=Stuns, timer_t1=T1, socket=Socket} = State,
     case Next =< (16*T1) of
         true ->
             case gen_udp:send(Socket, Ip, Port, Packet) of
                 ok -> 
-                    ?warning(Domain, "sent STUN refresh", []),
+                    lager:warning("sent STUN refresh", []),
                     Stun1 = Stun#stun{
                         retrans_timer = erlang:start_timer(Next, self(), stun_retrans),
                         next_retrans = 2*Next
                     },
                     State#state{stuns=[Stun1|Stuns]};
                 {error, Error} ->
-                    ?notice(Domain, "could not send UDP STUN request to ~p:~p: ~p", 
+                    lager:notice("could not send UDP STUN request to ~p:~p: ~p", 
                                  [Ip, Port, Error]),
                     do_stun_timeout(Stun, State)
             end;
@@ -403,8 +399,7 @@ do_stun_retrans(Stun, State) ->
 %% @private
 do_stun_timeout(Stun, State) ->
     #stun{dest={Ip, Port}, from=From} = Stun,
-    #state{nkport=#nkport{domain=Domain}} = State,
-    ?notice(Domain, "STUN request to ~p timeout", [{Ip, Port}]),
+    lager:notice("STUN request to ~p timeout", [{Ip, Port}]),
     case From of
         {call, CallFrom} -> gen_server:reply(CallFrom, error);
         {cast, CastPid} -> gen_server:cast(CastPid, {stun, error})
@@ -414,7 +409,7 @@ do_stun_timeout(Stun, State) ->
 
 %% @private
 do_stun_response(TransId, Attrs, State) ->
-    #state{nkport=#nkport{domain=Domain}, stuns=Stuns} = State,
+    #state{stuns=Stuns} = State,
     case lists:keytake(TransId, #stun.id, Stuns) of
         {value, #stun{retrans_timer=Retrans, from=From}, Stuns1} ->
             nklib_util:cancel_timer(Retrans),
@@ -434,7 +429,7 @@ do_stun_response(TransId, Attrs, State) ->
             end,
             State#state{stuns=Stuns1};
         false ->
-            ?notice(Domain, "received unexpected STUN response", []),
+            lager:notice("received unexpected STUN response", []),
             State
     end.
 
@@ -447,10 +442,10 @@ do_stun_response(TransId, Attrs, State) ->
 
 %% @private 
 read_packets(Ip, Port, Packet, #state{no_connections=true}=State, N) ->
-    #state{nkport=#nkport{domain=Domain}, socket=Socket} = State,
+    #state{socket=Socket} = State,
     case call_protocol(listen_parse, [Ip, Port, Packet], State) of
         undefined -> 
-            ?warning(Domain, "Received data for uknown protocol", []),
+            lager:warning("Received data for uknown protocol", []),
             {ok, State};
         {ok, State1} ->
             case N>0 andalso gen_udp:recv(Socket, 0, 0) of
@@ -485,8 +480,8 @@ do_connect(Ip, Port, State) ->
 
 %% @private
 do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
-    #nkport{domain=Domain, protocol=Proto, meta=ListenMeta} = NkPort,
-    case nkpacket_transport:get_connected(Domain, {Proto, udp, Ip, Port}) of
+    #nkport{protocol=Proto, meta=ListenMeta} = NkPort,
+    case nkpacket_transport:get_connected({Proto, udp, Ip, Port}, ListenMeta) of
         [NkPort1|_] -> 
             {ok, NkPort1};
         [] ->

@@ -41,9 +41,9 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
-    #nkport{domain=Domain, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{local_ip=Ip, local_port=Port} = NkPort,
     {
-        {Domain, Transp, Ip, Port, make_ref()},
+        {Transp, Ip, Port, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -77,7 +77,6 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        domain = Domain,
         transp = Transp, 
         local_ip = Ip, 
         local_port = Port,
@@ -131,7 +130,7 @@ init([NkPort]) ->
         {ok, State}
     catch
         throw:TError -> 
-            ?error(Domain, "could not start ~p transport on ~p:~p (~p)", 
+            lager:error("could not start ~p transport on ~p:~p (~p)", 
                    [Transp, Ip, Port, TError]),
         {stop, TError}
     end.
@@ -146,7 +145,7 @@ handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
 
 handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
     #state{nkport=NkPort, http_proto=HttpProto} = State,
-    #nkport{domain=Domain, protocol=Protocol, meta=Meta} = NkPort,
+    #nkport{protocol=Protocol, meta=Meta} = NkPort,
     NkPort1 = NkPort#nkport{
         remote_ip = Ip,
         remote_port = Port,
@@ -159,16 +158,16 @@ handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
             % the cowboy process (using 'socket')
             case nkpacket_connection:start(NkPort1) of
                 {ok, #nkport{pid=ConnPid}=NkPort2} ->
-                    ?debug(Domain, "HTTP listener accepted connection: ~p", 
+                    lager:debug("HTTP listener accepted connection: ~p", 
                           [NkPort2]),
                     {reply, {ok, Protocol, HttpProto, ConnPid}, State};
                 {error, Error} ->
-                    ?notice(Domain, "HTTP listener did not accepted connection:"
+                    lager:notice("HTTP listener did not accepted connection:"
                             " ~p", [Error]),
                     {reply, next, State}
             end;
         false ->
-            ?notice(Domain, "HTTP protocol ~p missing", [Protocol]),
+            lager:notice("HTTP protocol ~p missing", [Protocol]),
             {reply, next, State}
     end;
 

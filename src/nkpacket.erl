@@ -27,14 +27,15 @@
 -module(nkpacket).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([start_listener/3, stop_listener/1, stop_all/0, stop_all/1]).
--export([get_listener/3]).
--export([send/3, send/4, connect/3]).
--export([get_all/0, get_all/1, get_listening/4, is_local/2, is_local_ip/1]).
+-export([start_listener/2, stop_listener/1, stop_all/0, stop_all/1]).
+-export([get_listener/2]).
+-export([send/2, send/3, connect/2]).
+-export([get_all/0, get_all/1, get_listening/2, get_listening/3]).
+-export([is_local/1, is_local/2, is_local_ip/1]).
 -export([get_nkport/1, get_local/1, get_remote/1, get_pid/1, get_user/1]).
 -export([resolve/2]).
 
--export_type([domain/0, transport/0, protocol/0, nkport/0]).
+-export_type([group/0, transport/0, protocol/0, nkport/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0]).
@@ -47,8 +48,11 @@
 %% Types
 %% ===================================================================
 
-%% Internal name of each started Domain
--type domain() :: term().
+%% Connection Group
+%% Listeners and connections can have an associated group
+%% When starting a connection, if a previous connection to the same remote
+%% and group exists, it will be reused
+-type group() :: term().
 
 %% Recognized transport schemes
 -type transport() :: udp | tcp | tls | sctp | ws | wss | http | https.
@@ -89,6 +93,7 @@
 -type listener_opts() ::
     #{
         % Common options
+        group => group(),                       % Connection group
         user => term(),                         % User metadata
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
@@ -129,9 +134,11 @@
 -type connect_opts() ::
     #{
         % Common options
+        group => group(),                   % Connection group
         user => term(),                     % User metadata
         monitor => atom() | pid(),          % Connection will monitor this
         connect_timeout => integer(),       % MSecs, default in config
+        no_dns_cache => boolean(),          % Avoid DNS cache
         idle_timeout => integer(),          % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         listen_ip => inet:ip_address(),     % Used to populate nkport, forcing it instead
@@ -195,11 +202,11 @@
 %% ===================================================================
 
 %% @doc Starts a new listening transport.
--spec start_listener(domain(), user_connection(), listener_opts()) ->
+-spec start_listener(user_connection(), listener_opts()) ->
     {ok, pid()} | {error, term()}.
 
-start_listener(Domain, UserConn, Opts) ->
-    case get_listener(Domain, UserConn, Opts) of
+start_listener(UserConn, Opts) ->
+    case get_listener(UserConn, Opts) of
         {ok, Spec} ->
             nkpacket_sup:add_listener(Spec);
         {error, Error} ->
@@ -208,21 +215,20 @@ start_listener(Domain, UserConn, Opts) ->
 
 
 %% @doc Gets a listening supervisor specification
--spec get_listener(domain(), user_connection(), listener_opts()) ->
+-spec get_listener(user_connection(), listener_opts()) ->
     {ok, supervisor:child_spec()} | {error, term()}.
 
-get_listener(Domain, {Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
+get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
             Opts2 = case Transp==http orelse Transp==https of
                 true ->
-                    WebProto = make_web_proto(Opts1),
+                    WebProto = nkpacket_util:make_web_proto(Opts1),
                     Opts1#{http_proto=>WebProto};
                 _ ->
                     Opts1
             end,
             NkPort = #nkport{
-                domain = Domain,
                 transp = Transp,
                 local_ip = Ip,
                 local_port = Port,
@@ -234,10 +240,10 @@ get_listener(Domain, {Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
             {error, Error}
     end;
 
-get_listener(Domain, Uri, Opts) when is_map(Opts) ->
-    case resolve(Domain, Uri) of
-        {ok, [Conn], UriOpts} ->
-            get_listener(Domain, Conn, maps:merge(UriOpts, Opts));
+get_listener(Uri, Opts) when is_map(Opts) ->
+    case resolve(Uri, Opts) of
+        {ok, [Conn], Opts1} ->
+            get_listener(Conn, Opts1);
         {ok, _, _} ->
             {error, invalid_uri};
         {error, Error} ->
@@ -269,11 +275,11 @@ stop_all() ->
         get_all()).
 
 
-%% @doc Stops all locally started listeners for a Domain (only for standard supervisor)
-stop_all(Domain) ->
+%% @doc Stops all locally started listeners for a Group (only for standard supervisor)
+stop_all(Group) ->
     lists:foreach(
         fun(#nkport{pid=Pid}) -> stop_listener(Pid) end,
-        get_all(Domain)).
+        get_all(Group)).
 
 
 %% @doc Gets the current pid() of a listener or connection
@@ -377,52 +383,63 @@ connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts
 
 connect(Uri, Opts) when is_map(Opts) ->
     case resolve(Uri, Opts) of
-        {ok, Conns, UriOpts} ->
-            connect(Conns, maps:merge(UriOpts, Opts));
+        {ok, Conns, Opts1} ->
+            connect(Conns, Opts1);
         {error, Error} ->
             {error, Error}
     end.
 
 
-%% @doc Gets all registered transports in all Domains.
+%% @doc Gets all registered transports in all Groups.
 -spec get_all() -> 
     [nkport()].
 
 get_all() ->
-    lists:sort([NkPort || {NkPort, _Pid} <- nklib_proc:values(nkpacket_transports)]).
+    lists:sort(
+        lists:map(
+            fun(_, Pid) ->
+                {ok, NkPort} = get_nkport(Pid),
+                NkPort
+            end,
+            nklib_proc:values(nkpacket_transports))).
 
 
-%% @doc Gets all registered transports for a Domain.
+
+%% @doc Gets all registered transports for a Group.
 -spec get_all(group()) -> 
     [nkport()].
 
 get_all(Group) ->
-    [NkPort || #nkport{meta=#{group:=G}}=NkPort <- get_all(), G==Group].
+    lists:filter(
+        fun(#nkport{meta=Meta}) ->
+            case Meta of
+                #{group:=Group} -> true;
+                #{group:=_} -> false;
+                _ -> true
+            end
+        end,
+        get_all()).
 
 
 %% @private Finds a listening transport of Proto.
--spec get_listening(protocol(), transport(), ipv4|ipv6) -> 
-    [nkport()].
+-spec get_listening(protocol(), transport()) -> 
+    [{inet:ip_address(), inet:port_number(), pid()}].
 
-get_listening(Protocol, Transp, Class) ->
-    get_listening(none, Protocol, Transp, Class).
+get_listening(Protocol, Transp) ->
+    get_listening(Protocol, Transp, #{}).
 
 
 %% @private Finds a listening transport of Proto.
--spec get_listening(group(), protocol(), transport(), ipv4|ipv6) -> 
-    [nkport()].
+-spec get_listening(protocol(), transport(), #{group=>group()}) -> 
+    [{inet:ip_address(), inet:port(), pid()}].
 
-get_listening(Group, Protocol, Transp, Class) ->
-    Fun = fun({#nkport{listen_ip=LIp}=T, _}) -> 
-        case Class of
-            ipv4 when size(LIp)==4 -> {true, T};
-            ipv6 when size(LIp)==8 -> {true, T};
-            _ -> false
-        end
-    end,
-    nklib_util:filtermap(
-        Fun, 
-        nklib_proc:values({nkpacket_listen, Group, Protocol, Transp})).
+get_listening(Protocol, Transp, Opts) ->
+    Group = maps:get(group, Opts, none),
+    [
+        {Ip, Port, Pid} || 
+        {{Ip, Port}, Pid} 
+            <- nklib_proc:values({nkpacket_listen, Group, Protocol, Transp})
+    ].
 
 
 %% @doc Checks if an `uri()' refers to a local started transport.
@@ -440,13 +457,12 @@ is_local(Uri) ->
     boolean().
 
 is_local(#uri{}=Uri, Opts) ->
-    Group = maps:get(group, Opts, none),
     case resolve(Uri, Opts) of
-        {ok, [{Protocol, Transp, _Ip, _Port}|_]=Conns} ->
+        {ok, [{Protocol, Transp, _Ip, _Port}|_]=Conns, _Opts1} ->
+            Group = maps:get(group, Opts, none),
             Listen = [
                 {Transp, Ip, Port} ||
-                {#nkport{local_ip=Ip, local_port=Port}, _Pid} 
-                <- nklib_proc:values({nkpacket_listen, Group, Protocol, Transp})
+                {Ip, Port, _Pid} <- get_listening(Group, Protocol, Transp)
             ],
             LocalIps = nkpacket_config:get_local_ips(),
             is_local(Listen, Conns, LocalIps);
@@ -516,68 +532,71 @@ is_local_ip(Ip) ->
 
 
 %% @private
--spec resolve(domain(), nklib:user_uri()) -> 
+-spec resolve(nklib:user_uri(), map()) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
 
-resolve(Domain, #uri{}=Uri) ->
-    #uri{domain=Host, path=Path, ext_opts=Opts, ext_headers=Headers} = Uri,
-    Opts1 = case Host of
-        <<"0.0.0.0">> -> Opts;
-        <<"all">> -> Opts;
-        _ -> [{host, Host}|Opts]
+resolve(#uri{scheme=Scheme}=Uri, Opts) ->
+    #uri{domain=Host, path=Path, ext_opts=UriOpts, ext_headers=Headers} = Uri,
+    UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquoute(V)} || {K, V} <- UriOpts],
+    UriOpts2 = case Host of
+        <<"0.0.0.0">> -> UriOpts1;
+        <<"all">> -> UriOpts1;
+        _ -> [{host, Host}|UriOpts1]
     end,
-    Opts2 = case Path of
-        <<>> -> Opts1;
-        _ -> [{path, Path}|Opts1]
+    UriOpts3 = case Path of
+        <<>> -> UriOpts2;
+        _ -> [{path, Path}|UriOpts2]
     end,
-    Opts3 = case Headers of 
-        [] -> Opts2;
-        _ -> [{user, Headers}|Opts2]
+    UriOpts4 = case Headers of 
+        [] -> UriOpts3;
+        _ -> [{user, Headers}|UriOpts3]
     end,
-    case nkpacket_util:parse_opts(Opts3) of
-        {ok, Opts4} -> 
-            case nkpacket_dns:resolve(Domain, Uri) of
-                {ok, Conns} -> {ok, Conns, Opts4};
-                {error, Error} -> {error, Error}
-            end;
-        {error, Error} -> 
-            {error, Error}
+    try
+        case nkpacket_util:parse_opts(UriOpts4 ++ maps:to_list(Opts)) of
+            {ok, Opts1} -> 
+                Addrs = nkpacket_dns:resolve(Uri, Opts1),
+                Protocol = case Opts1 of
+                    #{group:=Group} -> 
+                        nkpacket_config:get_protocol(Group, Scheme);
+                    _ -> 
+                        nkpacket_config:get_protocol(Scheme)
+                end,
+                ValidTransp = case erlang:function_exported(Protocol, transports, 1) of
+                    true ->
+                        Protocol:transports(Scheme);
+                    false ->
+                        [tcp, tls, udp, sctp, ws, wss]
+                end,
+                Conns = [ 
+                    case Transp of
+                        undefined ->
+                            {Protocol, hd(ValidTransp), Addr, Port};
+                        _ ->
+                            case lists:member(Transp, ValidTransp) of
+                                true -> {Protocol, Transp, Addr, Port};
+                                false -> throw({error, {invalid_transport, Transp}})
+                            end
+                    end
+                    ||
+                    {Transp, Addr, Port} <- Addrs
+                ],
+                {ok, Conns, Opts1};
+            {error, Error} -> 
+                {error, Error}
+        end
+    catch
+        throw:Throw -> {error, Throw}
     end;
 
-resolve(Domain, Uri) ->
+resolve(Uri, Opts) ->
     case nklib_parse:uris(Uri) of
-        [PUri] -> resolve(Domain, PUri);
-        _ -> {error, invalid_uri}
+        [PUri] -> 
+            resolve(PUri, Opts);
+        _ -> 
+            {error, invalid_uri}
     end.
 
 
-%% @private
--spec make_web_proto(listener_opts()) ->
-    http_proto().
 
-make_web_proto(#{http_proto:={static, #{path:=DirPath}=Static}}=Opts) ->
-    DirPath1 = nklib_parse:fullpath(filename:absname(DirPath)),
-    Static1 = Static#{path:=DirPath1},
-    UrlPath = maps:get(path, Opts, <<>>),
-    Route = {<<UrlPath/binary, "/[...]">>, nkpacket_cowboy_static, Static1},
-    {custom, 
-        #{
-            env => [{dispatch, cowboy_router:compile([{'_', [Route]}])}],
-            middlewares => [cowboy_router, cowboy_handler]
-        }};
-
-make_web_proto(#{http_proto:={dispatch, #{routes:=Routes}}}) ->
-    {custom, 
-        #{
-            env => [{dispatch, cowboy_router:compile(Routes)}],
-            middlewares => [cowboy_router, cowboy_handler]
-        }};
-
-make_web_proto(#{http_proto:={custom, #{env:=Env, middlewares:=Mods}}=Proto})
-    when is_list(Env), is_list(Mods) ->
-    Proto;
-
-make_web_proto(O) ->
-    error(O).

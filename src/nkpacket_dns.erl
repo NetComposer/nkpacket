@@ -23,8 +23,8 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([resolve/2, resolve_uri/2]).
--export([get_ips/2, get_srvs/2, get_naptr/2, clear/2, clear/0]).
+-export([resolve/1, resolve/2, resolve_uri/2]).
+-export([get_ips/2, get_srvs/2, get_naptr/2, clear/1, clear/0]).
 -export([start_link/0, init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
 
@@ -33,6 +33,11 @@
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
+-type opts() :: 
+    #{
+        no_dns_cache => boolean()
+    }.
+
 
 %% ===================================================================
 %% Public
@@ -40,119 +45,100 @@
 
 
 %% @doc Finds the ips, transports and ports to try for `Uri', following RFC3263
--spec resolve(nkpacket:domain(), nklib:user_uri()) -> 
-    {ok, [nkpacket:raw_connection()]} | {error, term()}.
+-spec resolve(nklib:user_uri()) -> 
+    [{atom()|binary(), inet:ip_address(), inet:port_number()}].
 
-resolve(Domain, #uri{scheme=Scheme}=Uri) ->
-    case resolve_uri(Domain, Uri) of
+resolve(Uri) ->
+    resolve(Uri, #{}).
+
+
+%% @doc Finds the ips, transports and ports to try for `Uri', following RFC3263
+-spec resolve(nklib:user_uri(), opts()) -> 
+    [{atom()|binary(), inet:ip_address(), inet:port_number()}].
+
+resolve(#uri{scheme=Scheme}=Uri, Opts) ->
+    case resolve_uri(Uri, Opts) of
         {ok, Conns} ->
-            {ok, Conns};
-        {naptr, Protocol, Scheme, DNSDomain} ->
-            Naptr = case get_naptr(Domain, DNSDomain) of
+            Conns;
+        {naptr, Scheme, Domain} ->
+            Naptr = case get_naptr(Domain, Opts) of
                 [] when Scheme==sip; Scheme==sips ->
                     [
-                        {sip, tls, "_sips._tcp." ++ DNSDomain},
-                        {sip, tcp, "_sip._tcp." ++ DNSDomain},
-                        {sip, udp, "_sip._udp." ++ DNSDomain}
+                        {sip, tls, "_sips._tcp." ++ Domain},
+                        {sip, tcp, "_sip._tcp." ++ Domain},
+                        {sip, udp, "_sip._udp." ++ Domain}
                     ];
                 [] ->
                     [];
                 Other ->
                     Other
             end,
-            List = case resolve_srvs(Domain, Scheme, Naptr, []) of
+            case resolve_srvs(Domain, Scheme, Naptr, []) of
                 [] when Scheme==sips -> 
-                    [{Protocol, tls, Addr, 5061} 
-                        || Addr <- get_ips(Domain, DNSDomain)];
+                    [{tls, Addr, 5061} || Addr <- get_ips(Domain, Domain)];
                 [] when Scheme==sip ->
-                    [{Protocol, udp, Addr, 5060} 
-                        || Addr <- get_ips(Domain, DNSDomain)];
+                    [{udp, Addr, 5060} || Addr <- get_ips(Domain, Domain)];
                 [] ->
                     [];
                 Srvs ->
-                    [{Protocol, Transp, Addr, Port} 
-                        || {Transp, Addr, Port} <- Srvs]
-            end,
-            {ok, List};
-        {error, Error} ->
-            {error, Error}
+                    Srvs
+            end
     end;
 
-resolve(Domain, Uri) ->
+resolve(Uri, Opts) ->
     case nklib_parse:uris(Uri) of
-        [PUri] -> resolve(Domain, PUri);
+        [PUri] -> resolve(PUri, Opts);
         _ -> {error, invalid_uri}
     end.
 
 
 %% @private
--spec resolve_uri(nkpacket:domain(), nklib:uri()) -> 
-    {ok, [nkpacket:raw_connection()]} |
-    {naptr, nkpacket:protocol(), nklib:scheme(), string()} |
-    {error, term()}.
+-spec resolve_uri(nklib:uri(), opts()) -> 
+    {ok, [{atom()|binary(), inet:ip_address(), inet:port_number()}]} |
+    {naptr, nklib:scheme(), string()}.
 
-resolve_uri(Domain, #uri{}=Uri) ->
-    #uri{scheme=Scheme, domain=Host, opts=Opts, ext_opts=ExtOpts, port=Port} = Uri,
-    try
-        Host1 = case Host of
-            <<"all">> -> <<"0.0.0.0">>;
-            <<"all6">> -> <<"0:0:0:0:0:0:0:0">>;
-            _ -> Host
-        end,
-        Target = nklib_util:get_list(<<"maddr">>, Opts, Host1),
-        case nklib_util:to_ip(Target) of 
-            {ok, TargetIp} -> 
-                IsNumeric = true;
-            _ -> 
-                TargetIp = IsNumeric = false
-        end,
-        RawTransp =  case nklib_util:get_value(<<"transport">>, Opts) of
-            undefined -> 
-                nklib_util:get_value(<<"transport">>, ExtOpts);
-            RawTransp0 ->
-                RawTransp0
-        end,
-        UriTransp = case RawTransp of
-            Atom when is_atom(Atom) -> 
-                Atom;
-            Other -> 
-                LcTransp = string:to_lower(nklib_util:to_list(Other)),
-                case catch list_to_existing_atom(LcTransp) of
-                    {'EXIT', _} -> nklib_util:to_binary(Other);
-                    Atom -> Atom
-                end
-        end,
-        Protocol = nkpacket_config:get_protocol(Domain, Scheme),
-        ValidTransp = case erlang:function_exported(Protocol, transports, 1) of
-            true ->
-                Protocol:transports(Scheme);
-            false ->
-                [tcp, tls, udp, sctp, ws, wss]
-        end,
-        Transp = case UriTransp of
-            undefined -> 
-                hd(ValidTransp);
-            _ -> 
-                case lists:member(UriTransp, ValidTransp) of
-                    true -> UriTransp;
-                    false -> throw({error, {invalid_transport, UriTransp}})
-                end
-        end,
-        case 
-            Port==0 andalso (Scheme==sip orelse Scheme==sips) andalso 
-            not IsNumeric andalso UriTransp==undefined 
-        of
-            true ->
-                {naptr, Protocol, Scheme, Target};
-            false ->
-                Addrs = case IsNumeric of
-                    true -> [TargetIp];
-                    false -> get_ips(Domain, Target)
-                end,
-                {ok, [{Protocol, Transp, Addr, Port} || Addr <- Addrs]}
-        end
-    catch
-        throw:Reply -> Reply
+resolve_uri(#uri{}=Uri, Opts) ->
+    #uri{scheme=Scheme, domain=Host, opts=UriOpts, ext_opts=ExtOpts, port=Port} = Uri,
+    Host1 = case Host of
+        <<"all">> -> <<"0.0.0.0">>;
+        <<"all6">> -> <<"0:0:0:0:0:0:0:0">>;
+        _ -> Host
+    end,
+    Target = nklib_util:get_list(<<"maddr">>, Opts, Host1),
+    case nklib_util:to_ip(Target) of 
+        {ok, TargetIp} -> 
+            IsNumeric = true;
+        _ -> 
+            TargetIp = IsNumeric = false
+    end,
+    RawTransp =  case nklib_util:get_value(<<"transport">>, UriOpts) of
+        undefined -> 
+            nklib_util:get_value(<<"transport">>, ExtOpts);
+        RawTransp0 ->
+            RawTransp0
+    end,
+    Transp = case RawTransp of
+        Atom when is_atom(Atom) -> 
+            Atom;
+        Other -> 
+            LcTransp = string:to_lower(nklib_util:to_list(Other)),
+            case catch list_to_existing_atom(LcTransp) of
+                {'EXIT', _} -> nklib_util:to_binary(Other);
+                Atom -> Atom
+            end
+    end,
+    case 
+        Port==0 andalso (Scheme==sip orelse Scheme==sips) andalso 
+        not IsNumeric andalso Transp==undefined 
+    of
+        true ->
+            {naptr, Scheme, Target};
+        false ->
+            Addrs = case IsNumeric of
+                true -> [TargetIp];
+                false -> get_ips(Target, Opts)
+            end,
+            {ok, [{Transp, Addr, Port} || Addr <- Addrs]}
     end.
 
 
@@ -160,8 +146,8 @@ resolve_uri(Domain, #uri{}=Uri) ->
 resolve_srvs(Domain, sips, [{Scheme, _, _}|Rest], Acc) when Scheme/=sips -> 
     resolve_srvs(Domain, sips, Rest, Acc);
 
-resolve_srvs(Domain, Scheme, [{_, NTransp, DNSDomain}|Rest], Acc) -> 
-    case get_srvs(Domain, DNSDomain) of
+resolve_srvs(Domain, Scheme, [{_, NTransp, Domain}|Rest], Acc) -> 
+    case get_srvs(Domain, Domain) of
         [] -> 
             resolve_srvs(Domain, Scheme, Rest, Acc);
         Srvs -> 
@@ -179,12 +165,12 @@ resolve_srvs(_, _, [], Acc) ->
 %% @doc Gets all IPs for this host, or `[]' if not found.
 %% It will first try to get it form the cache.
 %% Each new invocation rotates the list of IPs.
--spec get_ips(nkpacket:domain(), string()|binary()) ->
+-spec get_ips(string()|binary(), opts()) ->
     [inet:ip_address()].
 
-get_ips(Domain, Host) ->
+get_ips(Host, Opts) ->
     Host1 = nklib_util:to_list(Host),
-    case get_cache(Domain, {ips, Host1}) of
+    case get_cache({ips, Host1}, Opts) of
         undefined ->
             case inet:getaddrs(Host1, inet) of
                 {ok, Ips} -> 
@@ -197,7 +183,7 @@ get_ips(Domain, Host) ->
                             Ips = []
                     end
             end,
-            save_cache(Domain, {ips, Host1}, Ips),
+            save_cache({ips, Host1}, Ips),
             random(Ips);
         Ips ->
             random(Ips)
@@ -206,18 +192,18 @@ get_ips(Domain, Host) ->
 
 %% @doc Gets all hosts for a SRV domain, sorting the result
 %% according to RFC2782
--spec get_srvs(nkpacket:domain(), string()|binary()) ->
+-spec get_srvs(string()|binary(), opts()) ->
     [{string(), inet:port_number()}].
 
-get_srvs(Domain, DNSDomain) ->
-    DNSDomain1 = nklib_util:to_list(DNSDomain),
-    case get_cache(Domain, {srvs, DNSDomain1}) of
+get_srvs(Domain, Opts) ->
+    Domain1 = nklib_util:to_list(Domain),
+    case get_cache({srvs, Domain1}, Opts) of
         undefined ->
-            Srvs = case inet_res:lookup(DNSDomain1, in, srv) of
+            Srvs = case inet_res:lookup(Domain1, in, srv) of
                 [] -> [];
                 Res -> [{O, W, {D, P}} || {O, W, P, D} <- Res]
             end,
-            save_cache(Domain, {srvs, DNSDomain1}, Srvs),
+            save_cache({srvs, Domain1}, Srvs),
             rfc2782_sort(Srvs);
         Srvs ->
             rfc2782_sort(Srvs)
@@ -225,22 +211,22 @@ get_srvs(Domain, DNSDomain) ->
 
 
 %% @doc Finds published services using DNS NAPTR search.
--spec get_naptr(nkpacket:domain(), string()|binary()) -> 
+-spec get_naptr(string()|binary(), map()) -> 
     [{sip|sips, nkpacket:transport(), string()}].
 
 %% TODO: Check site certificates in case of tls
-get_naptr(Domain, DNSDomain) ->
-    DNSDomain1 = nklib_util:to_list(DNSDomain),
-    case get_cache(Domain, {naptr, DNSDomain1}) of
+get_naptr(Domain, Opts) ->
+    Domain1 = nklib_util:to_list(Domain),
+    case get_cache({naptr, Domain1}, Opts) of
         undefined ->
-            Naptr = case inet_res:lookup(DNSDomain1, in, naptr) of
+            Naptr = case inet_res:lookup(Domain1, in, naptr) of
                 [] ->
                     [];
                 Res ->
                     [Value || Term <- lists:sort(Res), 
                               (Value = naptr_filter(Term)) /= false]
             end,
-            save_cache(Domain, {naptr, DNSDomain1}, Naptr),
+            save_cache({naptr, Domain1}, Naptr),
             Naptr;
         Naptr ->
             Naptr
@@ -248,24 +234,24 @@ get_naptr(Domain, DNSDomain) ->
 
 
 %% @private TODO: add support for other protocols?
-naptr_filter({_, _, "s", "sips+d2t", "", DNSDomain}) -> {sips, tls, DNSDomain};
-naptr_filter({_, _, "s", "sip+d2u", "", DNSDomain}) -> {sip, udp, DNSDomain};
-naptr_filter({_, _, "s", "sip+d2t", "", DNSDomain}) -> {sip, tcp, DNSDomain};
-naptr_filter({_, _, "s", "sip+d2s", "", DNSDomain}) -> {sip, sctp, DNSDomain};
-naptr_filter({_, _, "s", "sips+d2w", "", DNSDomain}) -> {sips, wss, DNSDomain};
-naptr_filter({_, _, "s", "sip+d2w", "", DNSDomain}) -> {sips, ws, DNSDomain};
+naptr_filter({_, _, "s", "sips+d2t", "", Domain}) -> {sips, tls, Domain};
+naptr_filter({_, _, "s", "sip+d2u", "", Domain}) -> {sip, udp, Domain};
+naptr_filter({_, _, "s", "sip+d2t", "", Domain}) -> {sip, tcp, Domain};
+naptr_filter({_, _, "s", "sip+d2s", "", Domain}) -> {sip, sctp, Domain};
+naptr_filter({_, _, "s", "sips+d2w", "", Domain}) -> {sips, wss, Domain};
+naptr_filter({_, _, "s", "sip+d2w", "", Domain}) -> {sips, ws, Domain};
 naptr_filter(_) -> false.
 
 
 %% @doc Clear all info about `Domain' in the cache.
--spec clear(nkpacket:domain(), string()|binary()) ->
+-spec clear(string()|binary()) ->
     ok.
 
-clear(Domain, DNSDomain) ->
-    DNSDomain1 = nklib_util:to_list(DNSDomain),
-    del_cache(Domain, {ips, DNSDomain1}),
-    del_cache(Domain, {srvs, DNSDomain1}),
-    del_cache(Domain, {naptr, DNSDomain1}),
+clear(Domain) ->
+    Domain1 = nklib_util:to_list(Domain),
+    del_cache({ips, Domain1}),
+    del_cache({srvs, Domain1}),
+    del_cache({naptr, Domain1}),
     ok.
 
 
@@ -358,34 +344,37 @@ terminate(_Reason, _State) ->
 
 
 %% @private
--spec get_cache(nkpacket:domain(), term()) ->
+-spec get_cache(term(), map()) ->
     undefined | term().
 
-get_cache(Domain, Key) ->
-    case ets:lookup(?MODULE, {Domain, Key}) of
+get_cache(_Key, #{no_dns_cache:=true}) ->
+    undefined;
+
+get_cache(Key, _Opts) ->
+    case ets:lookup(?MODULE, Key) of
         [] ->
             undefined;
         [{_, Value, Expire}] ->
-        case nklib_util:timestamp() > Expire of
-            true ->
-                del_cache(Domain, Key),
-                undefined;
-            false ->
-                Value
-        end
+            case nklib_util:timestamp() > Expire of
+                true ->
+                    del_cache(Key),
+                    undefined;
+                false ->
+                    Value
+            end
     end.
 
 
 %% @private
--spec save_cache(nkpacket:domain(), term(), term()) ->
+-spec save_cache(term(), term()) ->
     ok.
 
-save_cache(Domain, Key, Value) ->
-    case nkpacket_config:dns_cache_ttl(Domain) of
+save_cache(Key, Value) ->
+    case nkpacket_config:dns_cache_ttl() of
         TTL when is_integer(TTL), TTL > 0 ->
             Now = nklib_util:timestamp(),
             Secs = TTL div 1000,
-            true = ets:insert(?MODULE, {{Domain, Key}, Value, Now+Secs}),
+            true = ets:insert(?MODULE, {Key, Value, Now+Secs}),
             ok;
         _ ->
             ok
@@ -393,11 +382,11 @@ save_cache(Domain, Key, Value) ->
 
 
 %% @private
--spec del_cache(nkpacket:domain(), term()) ->
+-spec del_cache(term()) ->
     ok.
 
-del_cache(Domain, Key) ->
-    true = ets:delete(?MODULE, {Domain, Key}),
+del_cache(Key) ->
+    true = ets:delete(?MODULE, Key),
     ok.
 
 

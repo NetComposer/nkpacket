@@ -22,7 +22,8 @@
 -module(nkpacket_util).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([log_level/1, get_local_ips/0, find_main_ip/0, find_main_ip/2]).
+-export([log_level/1, make_web_proto/1]).
+-export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2]).
 -export([init_protocol/3, call_protocol/4]).
 -export([check_paths/2]).
@@ -43,6 +44,49 @@
 
 log_level(Level) -> 
     lager:set_loglevel(lager_console_backend, Level).
+
+
+%% @private
+-spec make_web_proto(nkpacket:listener_opts()) ->
+    nkpacket:http_proto().
+
+make_web_proto(#{http_proto:={static, #{path:=DirPath}=Static}}=Opts) ->
+    DirPath1 = nklib_parse:fullpath(filename:absname(DirPath)),
+    Static1 = Static#{path:=DirPath1},
+    UrlPath = maps:get(path, Opts, <<>>),
+    Route = {<<UrlPath/binary, "/[...]">>, nkpacket_cowboy_static, Static1},
+    {custom, 
+        #{
+            env => [{dispatch, cowboy_router:compile([{'_', [Route]}])}],
+            middlewares => [cowboy_router, cowboy_handler]
+        }};
+
+make_web_proto(#{http_proto:={dispatch, #{routes:=Routes}}}) ->
+    {custom, 
+        #{
+            env => [{dispatch, cowboy_router:compile(Routes)}],
+            middlewares => [cowboy_router, cowboy_handler]
+        }};
+
+make_web_proto(#{http_proto:={custom, #{env:=Env, middlewares:=Mods}}=Proto})
+    when is_list(Env), is_list(Mods) ->
+    Proto;
+
+make_web_proto(O) ->
+    error(O).
+
+
+%% @private
+-spec parse_opts(map()|list()) ->
+    {ok, map()} | {error, term()}.
+
+parse_opts(Opts) ->
+    case nklib_config:parse_opts(Opts, spec()) of
+        {ok, List1, _} ->
+            {ok, maps:from_list(List1)};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 
 %% @doc Get all local network ips.
@@ -242,187 +286,45 @@ check_paths_iter(_A, _B) ->
 %% Options Parser
 %% =================================================================
 
-%% @private
--spec parse_opts(map()|list()) ->
-    {ok, map()} | {error, term()}.
-
-parse_opts(Map) when is_map(Map) ->
-    case maps:size(Map) of
-        0 -> {ok, #{}};
-        _ -> parse_opts(maps:to_list(Map), #{})
-    end;
-
-parse_opts([]) ->
-    {ok, #{}};
-
-parse_opts(List) when is_list(List) ->
-    parse_opts(List, #{}).
-
 
 %% @private
-parse_opts([], Acc) -> 
-    {ok, Acc};
-
-parse_opts([{Key, Val}|Rest], Acc) -> 
-    Key1 = if
-        is_atom(Key) -> 
-            Key;
-        is_list(Key) ->
-            case catch list_to_existing_atom(Key) of
-                Atom when is_atom(Atom) -> Atom;
-                _ -> Key
-            end;
-        is_binary(Key) ->
-            case catch binary_to_existing_atom(Key, latin1) of
-                Atom when is_atom(Atom) -> Atom;
-                _ -> Key
-            end;
-        true ->
-            error
-    end,
-    Res = case Key1 of
-        transport ->
-            ignore;
-        error ->
-            error;
-
-        user ->
-            {ok, Val};
-        monitor ->
-            parse_pid(Val);
-        idle_timeout ->
-            parse_integer(Val);
-        refresh_fun ->
-            case is_function(Val, 1) of
-                true -> {ok, Val};
-                false -> error
-            end;
-        udp_starts_tcp ->
-            parse_boolean(Val);
-        udp_no_connections ->
-            parse_boolean(Val);
-        udp_stun_reply ->
-            parse_boolean(Val);
-        udp_stun_t1 ->
-            parse_integer(Val);
-        sctp_out_streams ->
-            parse_integer(Val);
-        sctp_in_streams ->
-            parse_integer(Val);
-        certfile ->
-            {ok, nklib_util:to_list(Val)};
-        keyfile ->
-            {ok, nklib_util:to_list(Val)};
-        tcp_packet ->
-            case nklib_util:to_integer(Val) of
-                Int when Int==1; Int==2; Int==4 -> 
-                    {ok, Int};
-                _ -> 
-                    case nklib_util:to_lower(Val) of 
-                        <<"raw">> -> {ok, raw}; 
-                        _-> error 
-                    end
-            end;        
-        tcp_max_connections ->
-            parse_integer(Val);
-        tcp_listeners ->
-            parse_integer(Val);
-        host ->
-            case parse_text(Val) of
-                {ok, Host} -> {ok, Host};
-                error -> error
-            end;
-        path ->
-            case parse_path(Val) of
-                {ok, Path} -> {ok, Path};
-                error -> error
-            end;
-        cowboy_opts ->
-            parse_list(Val);
-        ws_proto ->
-            {ok, nklib_util:to_lower(Val)};
-        http_proto ->
-            case Val of
-                {static, #{path:=_}} -> {ok, Val};
-                {dispatch, #{routes:=_}} -> {ok, Val};
-                {custom, #{env:=_, middlewares:=_}} -> {ok, Val};
-                _ -> error
-            end;
-        connect_timeout ->
-            parse_integer(Val);
-        listen_ip ->
-            case nklib_util:to_ip(Val) of
-                {ok, Ip} -> {ok, Ip};
-                _ -> error
-            end;
-        listen_port ->
-            parse_integer(Val);
-        force_new ->
-            parse_boolean(Val);
-        udp_to_tcp ->
-            parse_boolean(Val);
-        _ ->
-            error
-    end,
-    case Res of
-        {ok, Val1} -> 
-            parse_opts(Rest, maps:put(Key1, Val1, Acc));
-        % {ok, NewKey, Val1} -> 
-        %     parse_opts(Rest, maps:put(NewKey, Val1, Acc));
-        ignore ->
-            parse_opts(Rest, Acc);
-        error ->
-            {error, {invalid_option, Key}}
-    end;
-
-parse_opts([Term|Rest], Acc) -> 
-    parse_opts([{Term, true}|Rest], Acc).
+spec() ->
+    #{
+        group => any,
+        user => any,
+        monitor => proc,
+        no_dns_cache => boolean,
+        idle_timeout => pos_integer,
+        refresh_fun => {function, 1},
+        udp_starts_tcp => boolean,
+        udp_no_connections => boolean,
+        udp_stun_reply => boolean,
+        udp_stun_t1 => nat_integer,
+        sctp_out_streams => nat_integer,
+        sctp_in_streams => nat_integer,
+        certfile => string,
+        keyfile => string,
+        tcp_packet => [{enum, [raw]}, {integer, [1, 2, 4]}],
+        tcp_max_connections => nat_integer,
+        tcp_listeners => nat_integer,
+        host => host,
+        path => path,
+        cowboy_opts => list,
+        ws_proto => upper,
+        http_proto => fun spec_http_proto/3,
+        connect_timeout => nat_integer,
+        listen_ip => ip,
+        listen_port => nat_integer,
+        force_new => boolean,
+        udp_to_tcp => boolean
+    }.
 
 
 %% @private
-parse_pid(Value) when is_atom(Value); is_pid(Value) -> 
-    {ok, Value};
-parse_pid(_) ->
-    error.
-
-
-%% @private
-parse_integer(Value) ->
-    case nklib_util:to_integer(Value) of
-        Int when is_integer(Int), Int >= 0 -> {ok, Int};
-        _ -> error
-    end.
-
-
-%% @private
-parse_boolean(Value) ->
-    case nklib_util:to_boolean(Value) of
-        Bool when is_boolean(Bool) -> {ok, Bool};
-        _ -> error
-    end.
-
-
-%% @private
-parse_list(Value) when is_list(Value) -> 
-    {ok, Value};
-parse_list(_) ->
-    error.
-
-%% @private
-parse_text(Value) ->
-    case nklib_parse:unquote(Value) of
-        error -> error;
-        Bin -> {ok, Bin}
-    end.
-
-  
-%% @private
-parse_path(Value) ->
-    case nklib_parse:unquote(Value) of
-        error -> error;
-        Bin -> {ok, nklib_parse:path(Bin)}
-    end.
-
+spec_http_proto(_, {static, #{path:=_}}, _) -> ok;
+spec_http_proto(_, {dispatch, #{routes:=_}}, _) -> ok;
+spec_http_proto(_, {custom, #{env:=_, middlewares:=_}}, _) -> ok;
+spec_http_proto(_, _, _) -> error.
 
 
 %% ===================================================================

@@ -24,9 +24,9 @@
 
 -export([register_protocol/2, register_protocol/3]).
 -export([get_protocol/1, get_protocol/2]).
--export([get_local_ips/0, global_max_connections/0, max_connections/1]).
--export([dns_cache_ttl/1, udp_timeout/1, tcp_timeout/1, sctp_timeout/1, 
-         ws_timeout/1, http_timeout/1, connect_timeout/1]).
+-export([get_local_ips/0, max_connections/0, dns_cache_ttl/0]).
+-export([udp_timeout/0, tcp_timeout/0, sctp_timeout/0, 
+         ws_timeout/0, http_timeout/0, connect_timeout/0]).
 -export([init/0]).
 
 -compile({no_auto_import, [get/1, put/2]}).
@@ -52,31 +52,26 @@ register_protocol(Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
     nklib_config:put(?MODULE, {protocol, Scheme}, Protocol).
 
 
-%% doc Registers a new protocol for an specific domain
--spec register_protocol(nkpacket:domain(), nklib:scheme(), nkpacket:protocol()) ->
+%% doc Registers a new protocol for an specific group
+-spec register_protocol(nkpacket:group(), nklib:scheme(), nkpacket:protocol()) ->
     ok.
 
-register_protocol(Domain, Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
+register_protocol(Group, Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
     {module, _} = code:ensure_loaded(Protocol),
-    nklib_config:put_domain(?MODULE, Domain, {protocol, Scheme}, Protocol).
+    nklib_config:put_domain(?MODULE, Group, {protocol, Scheme}, Protocol).
 
 
-% Global config
-get_protocol(Scheme) -> ?GLOBAL_GET({protocol, Scheme}).
-get_protocol(Domain, Scheme) -> ?DOMAIN_GET(Domain, {protocol, Scheme}).
-get_local_ips() -> ?GLOBAL_GET(local_ips).
-global_max_connections() -> ?GLOBAL_GET(global_max_connections).
-
-
-% Domain config
-max_connections(Domain) -> ?DOMAIN_GET(Domain, max_connections).
-dns_cache_ttl(Domain) -> ?DOMAIN_GET(Domain, dns_cache_ttl).
-udp_timeout(Domain) -> ?DOMAIN_GET(Domain, udp_timeout).
-tcp_timeout(Domain) -> ?DOMAIN_GET(Domain, tcp_timeout).
-sctp_timeout(Domain) -> ?DOMAIN_GET(Domain, sctp_timeout).
-ws_timeout(Domain) -> ?DOMAIN_GET(Domain, ws_timeout).
-http_timeout(Domain) -> ?DOMAIN_GET(Domain, http_timeout).
-connect_timeout(Domain) -> ?DOMAIN_GET(Domain, connect_timeout).
+get_protocol(Scheme) -> get({protocol, Scheme}).
+get_protocol(Group, Scheme) -> get_group(Group, {protocol, Scheme}).
+get_local_ips() -> get(local_ips).
+dns_cache_ttl() -> get(dns_cache_ttl).
+max_connections() -> get(max_connections).
+udp_timeout() -> get(udp_timeout).
+tcp_timeout() -> get(tcp_timeout).
+sctp_timeout() -> get(sctp_timeout).
+ws_timeout() -> get(ws_timeout).
+http_timeout() -> get(http_timeout).
+connect_timeout() -> get(connect_timeout).
 
 
 
@@ -84,17 +79,24 @@ connect_timeout(Domain) -> ?DOMAIN_GET(Domain, connect_timeout).
 %% Internal
 %% ===================================================================
 
+get(Key) ->
+    nklib_config:get(?MODULE, Key).
+
+get_group(Group, Key) ->
+    nklib_config:get(?MODULE, Group, Key).
+
+
+
 spec() ->
     #{
-        global_max_connections => {integer, 1, 1000000},
         max_connections => {integer, 1, 1000000},
         dns_cache_ttl => {integer, 0, none},
-        udp_timeout => {integer, 1, none},
-        tcp_timeout => {integer, 1, none},
-        sctp_timeout => {integer, 1, none},
-        ws_timeout => {integer, 1, none},
-        http_timeout => {integer, 1, none},
-        connect_timeout => {integer, 1, none},
+        udp_timeout => nat_integer,
+        tcp_timeout => nat_integer,
+        sctp_timeout => nat_integer,
+        ws_timeout => nat_integer,
+        http_timeout => nat_integer,
+        connect_timeout => nat_integer,
         certfile => string,
         keyfile => string,
         local_host => [{enum, [auto]}, host],
@@ -109,8 +111,7 @@ spec() ->
 
 default_config() ->
     [
-        {global_max_connections, 1024},
-        {max_connections, 1024},                % Per transport and Domain
+        {max_connections, 1024},
         {dns_cache_ttl, 30000},                 % msecs
         {udp_timeout, 30000},                   % 
         {tcp_timeout, 180000},                  % 

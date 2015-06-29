@@ -55,7 +55,6 @@
 
 start_handshake(NkPort) ->
     #nkport{
-        domain = Domain, 
         transp = Transp, 
         socket = Socket
     } = NkPort,
@@ -64,12 +63,12 @@ start_handshake(NkPort) ->
         ws -> ranch_tcp;
         wss -> ranch_ssl
     end,
-    ?debug(Domain, "sending ws request: ~s", [print_headers(list_to_binary(Req))]),
+    lager:debug("sending ws request: ~s", [print_headers(list_to_binary(Req))]),
     case TranspMod:send(Socket, Req) of
         ok ->
             case recv(TranspMod, Socket, <<>>) of
                 {ok, Data} ->
-                    ?debug(Domain, "received ws reply: ~s", [print_headers(Data)]),
+                    lager:debug("received ws reply: ~s", [print_headers(Data)]),
                     case get_handshake_resp(Data, Key) of
                         {ok, WsProto, Rest} ->
                             {ok, WsProto, Rest};

@@ -41,9 +41,9 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
-    #nkport{domain=Domain, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{local_ip=Ip, local_port=Port} = NkPort,
     {
-        {Domain, Transp, Ip, Port, make_ref()}, 
+        {Transp, Ip, Port, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -58,7 +58,6 @@ get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
          
 connect(NkPort) ->
     #nkport{
-        domain = Domain,
         transp = Transp, 
         remote_ip = Ip, 
         remote_port = Port,
@@ -67,7 +66,7 @@ connect(NkPort) ->
     SocketOpts = outbound_opts(NkPort),
     {InetMod, TranspMod, _} = get_modules(Transp),
     ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config:connect_timeout(Domain);
+        undefined -> nkpacket_config:connect_timeout();
         Timeout0 -> Timeout0
     end,
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
@@ -111,7 +110,6 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        domain = Domain,
         transp = Transp, 
         local_ip = Ip, 
         local_port = Port,
@@ -166,7 +164,7 @@ init([NkPort]) ->
             },
             {ok, State};
         {error, Error} ->
-            ?error(Domain, "could not start ~p transport on ~p:~p (~p)", 
+            lager:error("could not start ~p transport on ~p:~p (~p)", 
                    [Transp, Ip, Port, Error]),
             {stop, Error}
     end.
@@ -231,13 +229,13 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     nklib_util:gen_server_terminate().
 
-terminate(Reason, #state{nkport=#nkport{domain=Domain}}=State) ->  
+terminate(Reason, State) ->  
     #state{
         ranch_id = RanchId,
         ranch_pid = RanchPid,
-        nkport = #nkport{domain=Domain, transp=Transp, socket=Socket}
+        nkport = #nkport{transp=Transp, socket=Socket}
     } = State,
-    ?debug(Domain, "TCP/TLS listener stop: ~p", [Reason]),
+    lager:debug("TCP/TLS listener stop: ~p", [Reason]),
     catch call_protocol(listen_stop, [Reason], State),
     exit(RanchPid, shutdown),
     timer:sleep(100),   %% Give time to ranch to close acceptors

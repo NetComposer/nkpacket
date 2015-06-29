@@ -49,9 +49,9 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
-    #nkport{domain=Domain, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{local_ip=Ip, local_port=Port} = NkPort,
     {
-        {Domain, Transp, Ip, Port, make_ref()},
+        {Transp, Ip, Port, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -66,7 +66,6 @@ get_listener(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
          
 connect(NkPort) ->
     #nkport{
-        domain = Domain,
         transp = Transp, 
         remote_ip = Ip, 
         remote_port = Port, 
@@ -75,7 +74,7 @@ connect(NkPort) ->
     SocketOpts = outbound_opts(NkPort),
     TranspMod = case Transp of ws -> tcp, ranch_tcp; wss -> ranch_ssl end,
     ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config:connect_timeout(Domain);
+        undefined -> nkpacket_config:connect_timeout();
         Timeout0 -> Timeout0
     end,
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
@@ -129,7 +128,6 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        domain = Domain,
         transp = Transp, 
         local_ip = Ip, 
         local_port = Port,
@@ -143,7 +141,7 @@ init([NkPort]) ->
             listen_port = Port,
             pid = self()
         },
-        Filter1 = maps:with([host, path, ws_proto], Meta),
+        Filter1 = maps:with([group, host, path, ws_proto], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
         case nkpacket_cowboy:start(NkPort1, Filter2) of
             {ok, SharedPid} -> ok;
@@ -183,7 +181,7 @@ init([NkPort]) ->
         {ok, State}
     catch
         throw:TError -> 
-            ?error(Domain, "could not start ~p transport on ~p:~p (~p)", 
+            lager:error("could not start ~p transport on ~p:~p (~p)", 
                    [Transp, Ip, Port, TError]),
         {stop, TError}
     end.
@@ -197,8 +195,7 @@ handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
     {reply, {ok, NkPort}, State};
 
 handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
-    #state{nkport=NkPort} = State,
-    #nkport{domain=Domain, meta=Meta} = NkPort,
+    #state{nkport=#nkport{meta=Meta}=NkPort} = State,
     NkPort1 = NkPort#nkport{
         remote_ip = Ip,
         remote_port = Port,
@@ -209,11 +206,11 @@ handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
     % the cowboy process (using 'socket')
     case nkpacket_connection:start(NkPort1) of
         {ok, #nkport{pid=ConnPid}=NkPort2} ->
-            ?debug(Domain, "WS listener accepted connection: ~p", 
+            lager:debug("WS listener accepted connection: ~p", 
                   [NkPort2]),
             {reply, {ok, ConnPid}, State};
         {error, Error} ->
-            ?notice(Domain, "WS listener did not accepted connection:"
+            lager:notice("WS listener did not accepted connection:"
                     " ~p", [Error]),
             {reply, next, State}
     end;
