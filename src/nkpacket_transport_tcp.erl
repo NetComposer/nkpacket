@@ -286,16 +286,8 @@ outbound_opts(#nkport{transp=tcp, meta=Opts}) ->
     ];
 
 outbound_opts(#nkport{transp=tls, meta=Opts}) ->
-    case code:priv_dir(nkpacket) of
-        PrivDir when is_list(PrivDir) ->
-            DefCert = filename:join(PrivDir, "cert.pem"),
-            DefKey = filename:join(PrivDir, "key.pem");
-        _ ->
-            DefCert = "",
-            DefKey = ""
-    end,
-    Cert = maps:get(certfile, Opts, DefCert),
-    Key = maps:get(keyfile, Opts, DefKey),
+    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
+    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
     lists:flatten([
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         binary, {active, false}, {nodelay, true}, {keepalive, true},
@@ -317,16 +309,8 @@ listen_opts(#nkport{transp=tcp, local_ip=Ip, meta=Opts}) ->
     ];
 
 listen_opts(#nkport{transp=tls, local_ip=Ip, meta=Opts}) ->
-    case code:priv_dir(nkpacket) of
-        PrivDir when is_list(PrivDir) ->
-            DefCert = filename:join(PrivDir, "cert.pem"),
-            DefKey = filename:join(PrivDir, "key.pem");
-        _ ->
-            DefCert = "",
-            DefKey = ""
-    end,
-    Cert = maps:get(certfile, Opts, DefCert),
-    Key = maps:get(keyfile, Opts, DefKey),
+    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
+    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
     lists:flatten([
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,

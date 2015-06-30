@@ -25,8 +25,8 @@
 -export([register_protocol/2, register_protocol/3]).
 -export([get_protocol/1, get_protocol/2]).
 -export([get_local_ips/0, max_connections/0, dns_cache_ttl/0]).
--export([udp_timeout/0, tcp_timeout/0, sctp_timeout/0, 
-         ws_timeout/0, http_timeout/0, connect_timeout/0]).
+-export([udp_timeout/0, tcp_timeout/0, sctp_timeout/0, ws_timeout/0, http_timeout/0, 
+         connect_timeout/0, certfile/0, keyfile/0]).
 -export([init/0]).
 
 -compile({no_auto_import, [get/1, put/2]}).
@@ -72,7 +72,8 @@ sctp_timeout() -> get(sctp_timeout).
 ws_timeout() -> get(ws_timeout).
 http_timeout() -> get(http_timeout).
 connect_timeout() -> get(connect_timeout).
-
+certfile() -> get(certfile).
+keyfile() -> get(keyfile).
 
 
 %% ===================================================================
@@ -98,9 +99,7 @@ spec() ->
         http_timeout => nat_integer,
         connect_timeout => nat_integer,
         certfile => string,
-        keyfile => string,
-        local_host => [{enum, [auto]}, host],
-        local_host6 => [{enum, [auto]}, host6]
+        keyfile => string
     }.
 
 
@@ -128,6 +127,16 @@ default_config() ->
 
 init() ->
     nklib_config:put(?MODULE, local_ips, nkpacket_util:get_local_ips()),
+    case code:priv_dir(nkpacket) of
+        PrivDir when is_list(PrivDir) ->
+            DefCert = filename:join(PrivDir, "cert.pem"),
+            DefKey = filename:join(PrivDir, "key.pem");
+        _ ->
+            DefCert = "",
+            DefKey = ""
+    end,
+    nklib_config:put(?MODULE, certfile, DefCert),
+    nklib_config:put(?MODULE, keyfile, DefKey),
     case nklib_config:load_env(?MODULE, nkpacket, default_config(), spec()) of
         ok ->
             register_protocol(http, nkpacket_protocol_http),

@@ -398,16 +398,8 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip})
 
 listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
         when Transp==wss; Transp==https ->
-    case code:priv_dir(nkpacket) of
-        PrivDir when is_list(PrivDir) ->
-            DefCert = filename:join(PrivDir, "cert.pem"),
-            DefKey = filename:join(PrivDir, "key.pem");
-        _ ->
-            DefCert = "",
-            DefKey = ""
-    end,
-    Cert = maps:get(certfile, Opts, DefCert),
-    Key = maps:get(keyfile, Opts, DefKey),
+    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
+    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
     lists:flatten([
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
