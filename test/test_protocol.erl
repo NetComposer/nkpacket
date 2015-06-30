@@ -165,8 +165,8 @@ conn_parse({pong, Payload}, State) ->
 
 conn_parse(Data, State) ->
 	Msg = erlang:binary_to_term(Data),
-	#conn_state{nkport=#nkport{domain=Dom}} = State,
-	lager:debug("Parsing: ~p (~p)", [Msg, Dom]),
+	#conn_state{nkport=#nkport{meta=#{group:=Group}}} = State,
+	lager:debug("Parsing: ~p (~p)", [Msg, Group]),
 	maybe_reply({parse, Msg}, State),
 	{ok, State}.
 

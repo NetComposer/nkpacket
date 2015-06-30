@@ -61,8 +61,9 @@ basic() ->
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	[
 		#nkport{
-			domain=dom1, transp=ws, 
-			local_ip={0,0,0,0}, local_port=LPort1
+			transp=ws, 
+			local_ip={0,0,0,0}, local_port=LPort1,
+	        meta = #{group:=dom1}
 		} = Listen1
 	] = nkpacket:get_all(dom1),
 	
@@ -75,23 +76,24 @@ basic() ->
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
 	#nkport{
-		domain = dom2, transp = ws, 
+		transp = ws, 
 		local_ip = {127,0,0,1}, local_port = Port1,
         remote_ip = {127,0,0,1}, remote_port = LPort1,
         listen_ip = undefined, listen_port = undefined,
         protocol = test_protocol,
-        meta = #{path := <<"/">>}
+        meta = #{path := <<"/">>, group:=dom2}
+
 	} = Conn1,
 
 	[
 		Listen1,
 		#nkport{
-			domain = dom1, transp = ws, 
+			transp = ws, 
 			local_ip = {0,0,0,0}, local_port = LPort1,
 	        remote_ip = {127,0,0,1}, remote_port = Port1,
 	        listen_ip = {0,0,0,0}, listen_port = LPort1,
 	        protocol = test_protocol,
-	        meta = #{path := <<"/">>}
+	        meta = #{path := <<"/">>, group:=dom1}
 	    } = Conn1R
 	] = nkpacket:get_all(dom1),
 
@@ -126,13 +128,13 @@ basic() ->
 	receive {Ref1, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
 
 	#nkport{
-		domain=dom2, transp=ws, 
+		transp=ws, 
 		local_ip={127,0,0,1}, local_port=Port2,
         remote_ip={127,0,0,1}, remote_port=LPort1,
         listen_ip=undefined, listen_port=undefined,
         meta=#{
         	path := <<"/a/b">>,
-        	host := <<"127.0.0.1">>
+        	host := <<"127.0.0.1">>, group:=dom2
         }
 	} = Conn2,
 	true = Port1 /= Port2,
@@ -159,8 +161,9 @@ wss() ->
 	end,
 	[
 		#nkport{
-			domain=dom1, transp=wss, 
-			local_ip={0,0,0,0}, local_port=LPort1
+			transp=wss, 
+			local_ip={0,0,0,0}, local_port=LPort1,
+			meta=#{group:=dom1}
 		} = Listen1
 	] = nkpacket:get_all(dom1),
 	
@@ -172,11 +175,12 @@ wss() ->
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
 	#nkport{
-		domain=dom2, transp=wss, 
+		transp=wss, 
 		local_ip={127,0,0,1}, local_port=_,
         remote_ip={127,0,0,1}, remote_port=LPort1,
         listen_ip=undefined, listen_port=undefined,
-        protocol=test_protocol, socket={sslsocket, _, _}
+        protocol=test_protocol, socket={sslsocket, _, _},
+        meta=#{group:=dom2}
 	} = Conn1,
 
 	% We send some more data. The same connection is used.
@@ -277,31 +281,31 @@ multi() ->
 
 	[
 		#nkport{
-			domain = dom1,transp = ws,
+			transp = ws,
 			local_ip = {0,0,0,0}, local_port = P1,
 			remote_ip = undefined, remote_port = undefined,
 			listen_ip = {0,0,0,0}, listen_port = P1,
 			protocol = test_protocol, pid = Ws1, 
           	socket = Cow1,
 			meta = #{
-				path := <<"/dom1/more">>
+				path := <<"/dom1/more">>, group:=dom1
 			}
 		} = Listen1
 	] = nkpacket:get_all(dom1),
  	[
  		#nkport{
- 			domain = dom2,transp = ws,
+ 			transp = ws,
           	local_ip = {0,0,0,0},local_port = P1,
           	listen_ip = {0,0,0,0},listen_port = P1,
           	protocol = test_protocol, pid = Ws2, 
           	socket = Cow1,
           	meta = #{
-          		path := <<"/dom2">>
+          		path := <<"/dom2">>, group:=dom2
           	}
         } = Listen2
     ] = nkpacket:get_all(dom2),
  	[
- 		#nkport{domain = dom3,transp = ws,
+ 		#nkport{transp = ws,
 			local_ip = {0,0,0,0}, local_port = P1,
 			listen_ip = {0,0,0,0},listen_port = P1,
 			protocol = test_protocol, pid = Ws3, 
@@ -309,7 +313,7 @@ multi() ->
 			meta = #{
 				host := <<"localhost">>,
 				path := <<"/dom3">>,
-				ws_proto := <<"proto1">>
+				ws_proto := <<"proto1">>, group:=dom3
 			}
 		}
 	] = nkpacket:get_all(dom3),
@@ -330,23 +334,23 @@ multi() ->
 	Conn1B = Conn1#nkport{meta=maps:remove(idle_timeout, Conn1#nkport.meta)},
     [Conn1B] = nkpacket:get_all(dom5),
 	#nkport{
-		domain = dom5, transp = ws,
+		transp = ws,
         local_ip = {127,0,0,1}, local_port = Conn1Port,
         remote_ip = {127,0,0,1}, remote_port = P1,
         listen_ip = undefined, listen_port = undefined,
         meta = #{
-        	path := <<"/dom1/more">>
+        	path := <<"/dom1/more">>, group:=dom5
         }
     } = Conn1,
     [
     	Listen1,
     	#nkport{
-			domain = dom1, transp = ws,
+			transp = ws,
          	local_ip = {0,0,0,0}, local_port = P1,
          	remote_ip = {127,0,0,1}, remote_port = Conn1Port,
          	listen_ip = {0,0,0,0}, listen_port = P1,
          	meta = #{
-         		path := <<"/dom1/more">>
+         		path := <<"/dom1/more">>, group:=dom1
          	}
         }
     ] = nkpacket:get_all(dom1),
@@ -372,14 +376,14 @@ multi() ->
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
 	#nkport{
-		domain = dom1, transp = ws,
+		transp = ws,
         local_ip = {127,0,0,1}, local_port = Conn2Port,
         remote_ip = {127,0,0,1}, remote_port = P1,
         listen_ip = {0,0,0,0}, listen_port = P1,
         protocol = test_protocol,
         meta = #{
         	host := <<"127.0.0.1">>,		% We included it in call
-        	path := <<"/dom2">>
+        	path := <<"/dom2">>, group:=dom1
         }
     } = Conn2, 								% Outgoing
 
@@ -388,12 +392,12 @@ multi() ->
     [
     	Listen2,
     	#nkport{
-    		domain = dom2,transp = ws,
+    		transp = ws,
           	local_ip = {0,0,0,0}, local_port = P1,
           	remote_ip = {127,0,0,1}, remote_port = Conn2Port,
           	listen_ip = {0,0,0,0}, listen_port = P1,
         	meta = #{
-    	    	path := <<"/dom2">>			% Server was accepting every host
+    	    	path := <<"/dom2">>, group:=dom2			% Server was accepting every host
     	    }
         }
     ] = nkpacket:get_all(dom2),

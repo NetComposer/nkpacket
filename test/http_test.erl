@@ -74,29 +74,30 @@ basic() ->
 
 	[
 		#nkport{
-			domain = dom1,transp = http,
+			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
 			protocol = nkpacket_protocol_http, pid=Http1, socket = CowPid,
-			meta = #{path := <<"/test1">>}
+			meta = #{group:=dom1, path := <<"/test1">>}
 		}
 	] = nkpacket:get_all(dom1),
 	[
 	 	#nkport{
- 			domain = dom2,transp = http,
+ 			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
 			pid = Http2, socket = CowPid,
-			meta = #{path := <<"/test2">>}
+			meta = #{group:=dom2, path := <<"/test2">>}
 		}
 	] = nkpacket:get_all(dom2),
 	[
 		#nkport{
-			domain = dom3,transp = http,
+			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
 			pid = Http3, socket = CowPid,
 			meta = #{
+				group:=dom3,
 				host := <<"localhost">>,
 				path := <<"/test3/a">>
 			}

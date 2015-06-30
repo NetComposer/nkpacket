@@ -64,19 +64,22 @@ basic() ->
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
 	[Listen1] = nkpacket:get_all(dom1),
 	#nkport{
-		domain=dom1, transp=sctp, 
+		transp=sctp, 
 		local_ip={0,0,0,0}, local_port=Port1, 
 		listen_ip={0,0,0,0}, listen_port=Port1,
 		remote_ip=undefined, remote_port=undefined,
-		pid=Sctp1, socket={_Port1, 0}
+		pid=Sctp1, socket={_Port1, 0},
+        meta = #{group:=dom1}
+
 	} = Listen1,
 	[Listen2] = nkpacket:get_all(dom2),
 	#nkport{
-		domain=dom2, transp=sctp, 
+		transp=sctp, 
 		local_ip={127,0,0,1}, local_port=Port2, 
 		listen_ip={127,0,0,1}, listen_port=Port2,
 		remote_ip=undefined, remote_port=undefined,
-		pid=Sctp2, socket = {_Port2, 0}
+		pid=Sctp2, socket = {_Port2, 0},
+        meta = #{group:=dom2}
 	} = Listen2,
 	{ok, {_, _, Port1}} = nkpacket:get_local(Sctp1),	
 	{ok, {_, _, _}} = nkpacket:get_local(Sctp2),
@@ -92,10 +95,11 @@ basic() ->
 	[
 		Listen2,
 		#nkport{
-			domain=dom2, transp=sctp,
+			transp=sctp,
 			local_ip={127,0,0,1}, local_port=Port2,
 			remote_ip={127,0,0,1}, remote_port=Port1,
-			listen_ip={127,0,0,1}, listen_port=Port2
+			listen_ip={127,0,0,1}, listen_port=Port2,
+        	meta = #{group:=dom2}
 		} = Conn1
 	] = 
 		lists:sort(nkpacket:get_all(dom2)),
@@ -106,10 +110,11 @@ basic() ->
 	[
 		Listen1,
 		#nkport{
-			domain=dom1, transp=sctp,
+			transp=sctp,
 			local_ip={0,0,0,0}, local_port=Port1,
 			remote_ip={127,0,0,1}, remote_port=Port2,
-			listen_ip={0,0,0,0}, listen_port=Port1
+			listen_ip={0,0,0,0}, listen_port=Port1,
+	        meta = #{group:=dom1}
 		} = Conn1R
 	] = 
 		lists:sort(nkpacket:get_all(dom1)),

@@ -56,16 +56,18 @@ basic() ->
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
 	[Listen1] = nkpacket:get_all(dom1),
-	#nkport{domain=dom1, transp=tcp, 
+	#nkport{transp=tcp, 
 			local_ip={0,0,0,0}, local_port=ListenPort1, 
 			listen_ip={0,0,0,0}, listen_port=ListenPort1,
-			remote_ip=undefined, remote_port=undefined, pid=Tcp1
+			remote_ip=undefined, remote_port=undefined, pid=Tcp1,
+		    meta = #{group:=dom1}
 	} = Listen1,
 	[Listen2] = nkpacket:get_all(dom2),
-	#nkport{domain=dom2, transp=tcp, 
+	#nkport{transp=tcp, 
 			local_port=ListenPort2, pid=Tcp2, 
 			listen_ip={0,0,0,0}, listen_port=ListenPort2,
-			remote_ip=undefined, remote_port=undefined
+			remote_ip=undefined, remote_port=undefined,
+	        meta = #{group:=dom2}
 	} = Listen2,
 	{ok, {_, _, ListenPort1}} = nkpacket:get_local(Tcp1),	
 	{ok, {_, _, ListenPort2}} = nkpacket:get_local(Tcp2),	
@@ -83,19 +85,24 @@ basic() ->
 
 	[
 		Listen2,
-		#nkport{domain=dom2, transp=tcp, pid=Conn2,
+		#nkport{transp=tcp, pid=Conn2,
 				local_ip={127,0,0,1}, local_port=LPort2,
 				remote_ip={127,0,0,1}, remote_port=ListenPort1,
-				listen_ip={0,0,0,0}, listen_port=ListenPort2}
+				listen_ip={0,0,0,0}, listen_port=ListenPort2,
+		        meta = #{group:=dom2}
+				}
 	] = 
 		lists:sort(nkpacket:get_all(dom2)),
 
 	[
 		Listen1,
-		#nkport{domain=dom1, transp=tcp, pid=Conn1,
+		#nkport{transp=tcp, pid=Conn1,
 				local_ip={127,0,0,1}, local_port=_LPort1,
 				remote_ip={127,0,0,1}, remote_port=LPort2,
-				listen_ip={0,0,0,0}, listen_port=ListenPort1}
+				listen_ip={0,0,0,0}, listen_port=ListenPort1,
+		        meta = #{group:=dom1}
+
+				}
 	] = 
 		lists:sort(nkpacket:get_all(dom1)),
 
@@ -137,26 +144,30 @@ tls() ->
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
 	[
-		#nkport{domain = dom1, transp = tls, 
+		#nkport{transp = tls, 
 				local_ip = {0,0,0,0}, local_port = ListenPort,
 			    remote_ip = undefined, remote_port = undefined, 
 			    listen_ip={0,0,0,0}, listen_port = ListenPort,
 			    protocol = test_protocol, pid = Tls1,
-			    socket = {sslsocket, _, _}
+			    socket = {sslsocket, _, _},
+		        meta = #{group:=dom1}
+
 	    },
-		#nkport{domain = dom1, transp = tls, 
+		#nkport{transp = tls, 
 				local_ip = {127,0,0,1}, local_port = _Dom1Port,
 			    remote_ip = {127,0,0,1}, remote_port = Dom2Port, 
 			    listen_ip = {0,0,0,0}, listen_port = ListenPort,
 			    protocol = test_protocol, pid = _Dom1Pid,
-			    socket = {sslsocket, _, _}
+			    socket = {sslsocket, _, _},
+		        meta = #{group:=dom1}
 	    },
-		#nkport{domain = dom2, transp = tls, 
+		#nkport{transp = tls, 
 				local_ip = {127,0,0,1}, local_port = Dom2Port,
 			    remote_ip = {127,0,0,1}, remote_port = ListenPort, 
 			    listen_ip = undefined, listen_port = undefined,
 			    protocol = test_protocol, pid = _Dom2Pid,
-			    socket = {sslsocket, _, _}
+			    socket = {sslsocket, _, _},
+		        meta = #{group:=dom2}
 	    }
 	] = 
 		Conns1 = lists:sort(nkpacket:get_all()),

@@ -63,18 +63,20 @@ basic() ->
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
 	[Listen1] = nkpacket:get_all(dom1),
  	#nkport{
- 		domain = dom1, transp = tcp,
-         local_ip = Local6, local_port = LPort1,
-         listen_ip = Local6, listen_port = LPort1,
-         protocol = test_protocol
+ 		transp = tcp,
+        local_ip = Local6, local_port = LPort1,
+        listen_ip = Local6, listen_port = LPort1,
+        protocol = test_protocol,
+        meta = #{group:=dom1}
 	} = Listen1,
 	[Listen2] = nkpacket:get_all(dom2),
 	#nkport{
-		domain = dom2, transp = tcp,
+		transp = tcp,
         local_ip = All6, local_port = LPort2, 
         remote_ip = undefined, remote_port = undefined,
         listen_ip = All6, listen_port = LPort2,
-        protocol = test_protocol
+        protocol = test_protocol,
+        meta = #{group:=dom2}
     } = Listen2,
 
 	{ok, _} = nkpacket:send(dom2, Url, msg1, M2),
@@ -86,10 +88,12 @@ basic() ->
 	[
 		Listen2,
 		#nkport{
-			domain=dom2, transp=tcp,
+			transp=tcp,
 			local_ip=Local6, local_port=ConnPort2,
 			remote_ip=Local6, remote_port=LPort1,
-			listen_ip=All6, listen_port=LPort2
+			listen_ip=All6, listen_port=LPort2,
+	        meta = #{group:=dom2}
+
 		}
 	] = 
 		lists:sort(nkpacket:get_all(dom2)),
@@ -97,10 +101,12 @@ basic() ->
 	[
 		Listen1,
 		#nkport{
-			domain=dom1, transp=tcp,
+			transp=tcp,
 			local_ip=Local6, local_port=_ConnPort1,
 			remote_ip=Local6, remote_port=ConnPort2,
-			listen_ip=Local6, listen_port=LPort1
+			listen_ip=Local6, listen_port=LPort1,
+	        meta = #{group:=dom1}
+
 		}
 	] = 
 		lists:sort(nkpacket:get_all(dom1)),

@@ -56,11 +56,12 @@ basic() ->
 	end,
 	[
 		#nkport{
-			domain = dom1,transp = udp,
+			transp = udp,
     	    local_ip = {0,0,0,0}, local_port = Port1,
     	    remote_ip = undefined, remote_port = undefined,
      		listen_ip = {0,0,0,0}, listen_port = Port1,
-     		protocol = test_protocol, pid = UdpP1
+     		protocol = test_protocol, pid = UdpP1,
+	        meta = #{group:=dom1}
         }
 	] = nkpacket:get_all(dom1),
 
