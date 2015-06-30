@@ -184,7 +184,7 @@
 
 %% Sending remote specification options
 -type send_spec() :: 
-    user_connection() | {current, raw_connection()} | nkport().
+    user_connection() | {current, raw_connection()} | pid() | nkport().
 
 
 %% Incoming data to be parsed
@@ -290,7 +290,7 @@ stop_all(Group) ->
     {ok, nkport()} | error.
 
 get_nkport(Pid) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_nkport, ?CALL_TIMEOUT) of
+    case catch gen_server:call(Pid, get_nkport, 180000) of
         {ok, NkPort} -> {ok, NkPort};
         _ -> error
     end.
@@ -347,7 +347,7 @@ get_user(Pid) when is_pid(Pid) ->
 
 %% @doc Sends a message to a connection
 -spec send(send_spec() | [send_spec()], term()) ->
-    {ok, nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 send(SendSpec, Msg) ->
     send(SendSpec, Msg, #{}).
@@ -355,7 +355,7 @@ send(SendSpec, Msg) ->
 
 %% @doc Sends a message to a connection
 -spec send(send_spec() | [send_spec()], term(), send_opts()) ->
-    {ok, nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 send(SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
     case nkpacket_util:parse_opts(Opts) of
@@ -371,7 +371,7 @@ send(SendSpec, Msg, Opts) ->
 
 %% @doc Forces a new outbound connection.
 -spec connect(user_connection() | [connection()], connect_opts()) ->
-    {ok, nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
     connect([Conn], Opts);

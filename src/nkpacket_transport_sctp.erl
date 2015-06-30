@@ -55,10 +55,10 @@ get_listener(NkPort) ->
 
 %% @private Starts a new connection to a remote server
 -spec connect(nkpacket:nkport()) ->
-    {ok, nkpacket:nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
-    case catch gen_server:call(Pid, {connect, NkPort}, ?CALL_TIMEOUT) of
+    case catch gen_server:call(Pid, {connect, NkPort}, 180000) of
         {ok, ConnPid} -> 
             {ok, ConnPid};
         {error, Error} ->
@@ -232,13 +232,11 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
                 false ->
                     State
             end;
-        #sctp_assoc_change{state=shutdown_comp, assoc_id=AssocId} ->
+        #sctp_assoc_change{state=shutdown_comp, assoc_id=_AssocId} ->
             % lager:error("COMM_DOWN: ~p", [AssocId]),
             case nkpacket_transport:get_connected({Proto, sctp, Ip, Port}, ListenMeta) of
-                [#nkport{socket={_, AssocId}, pid=Pid}|_] ->
-                    nkpacket_connection:stop(Pid, normal);
-                _ ->
-                    ok
+                [Pid|_] -> nkpacket_connection:stop(Pid, normal);
+                _ -> ok
             end,
             State;
         #sctp_paddr_change{} ->
@@ -338,8 +336,8 @@ do_connect(Ip, Port, AssocId, Meta, State) ->
     #state{nkport=NkPort, socket=Socket} = State,
     #nkport{protocol=Proto, meta=ListenMeta} = NkPort,
     case nkpacket_transport:get_connected({Proto, sctp, Ip, Port}, ListenMeta) of
-        [NkPort1|_] -> 
-            {ok, NkPort1};
+        [Pid|_] -> 
+            {ok, Pid};
         [] -> 
             Meta1 = case Meta of
                 undefined -> ListenMeta;

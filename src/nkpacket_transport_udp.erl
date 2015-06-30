@@ -77,10 +77,10 @@ get_listener(NkPort) ->
 
 %% @private Starts a new connection to a remote server
 -spec connect(nkpacket:nkport()) ->
-    {ok, nkpacket:nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
          
 connect(#nkport{transp=udp, pid=Pid}=NkPort) ->
-    case catch gen_server:call(Pid, {connect, NkPort}, ?CALL_TIMEOUT) of
+    case catch gen_server:call(Pid, {connect, NkPort}, 180000) of
         {ok, ConnPid} -> 
             {ok, ConnPid};
         {error, Error} ->
@@ -99,7 +99,7 @@ send(#nkport{transp=udp, socket=Socket}, Ip, Port, Data) ->
     gen_udp:send(Socket, Ip, Port, Data);
 
 send(Pid, Ip, Port, Data) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_socket, ?CALL_TIMEOUT) of
+    case catch gen_server:call(Pid, get_socket, 180000) of
         {ok, Socket} -> 
             send(Socket, Ip, Port, Data);
         _ -> 
@@ -461,7 +461,7 @@ read_packets(Ip, Port, Packet, #state{no_connections=true}=State, N) ->
 
 read_packets(Ip, Port, Packet, #state{socket=Socket}=State, N) ->
     case do_connect(Ip, Port, State) of
-        {ok, #nkport{pid=Pid}} ->
+        {ok, Pid} ->
             nkpacket_connection:incoming(Pid, Packet),
             case N>0 andalso gen_udp:recv(Socket, 0, 0) of
                 {ok, {Ip1, Port1, Packet1}} -> 
@@ -483,8 +483,8 @@ do_connect(Ip, Port, State) ->
 do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
     #nkport{protocol=Proto, meta=ListenMeta} = NkPort,
     case nkpacket_transport:get_connected({Proto, udp, Ip, Port}, ListenMeta) of
-        [NkPort1|_] -> 
-            {ok, NkPort1};
+        [Pid|_] -> 
+            {ok, Pid};
         [] ->
             Meta1 = case Meta of
                 undefined -> ListenMeta;
