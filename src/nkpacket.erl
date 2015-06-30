@@ -33,7 +33,7 @@
 -export([get_all/0, get_all/1, get_listening/2, get_listening/3]).
 -export([is_local/1, is_local/2, is_local_ip/1]).
 -export([get_nkport/1, get_local/1, get_remote/1, get_pid/1, get_user/1]).
--export([resolve/2]).
+-export([resolve/1, resolve/2]).
 
 -export_type([group/0, transport/0, protocol/0, nkport/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0]).
@@ -532,6 +532,16 @@ is_local_ip(Ip) ->
 %% ===================================================================
 %% Internal
 %% ===================================================================
+
+
+%% @private
+-spec resolve(nklib:user_uri()) -> 
+    {ok, [raw_connection()], map()} |
+    {error, term()}.
+
+
+resolve(Uri) ->
+    resolve(Uri, #{}).
 
 
 %% @private

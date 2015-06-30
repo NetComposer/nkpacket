@@ -104,7 +104,7 @@ resolve_uri(#uri{}=Uri, Opts) ->
         <<"all6">> -> <<"0:0:0:0:0:0:0:0">>;
         _ -> Host
     end,
-    Target = nklib_util:get_list(<<"maddr">>, Opts, Host1),
+    Target = nklib_util:get_list(<<"maddr">>, UriOpts, Host1),
     case nklib_util:to_ip(Target) of 
         {ok, TargetIp} -> 
             IsNumeric = true;

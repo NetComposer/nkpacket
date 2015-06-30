@@ -81,7 +81,7 @@ make_web_proto(O) ->
     {ok, map()} | {error, term()}.
 
 parse_opts(Opts) ->
-    case nklib_config:parse_opts(Opts, spec()) of
+    case nklib_config:parse_config(Opts, spec()) of
         {ok, List1, _} ->
             {ok, maps:from_list(List1)};
         {error, Error} ->

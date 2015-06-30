@@ -84,7 +84,7 @@ get(Key) ->
     nklib_config:get(?MODULE, Key).
 
 get_group(Group, Key) ->
-    nklib_config:get(?MODULE, Group, Key).
+    nklib_config:get_domain(?MODULE, Group, Key).
 
 
 
