@@ -145,8 +145,7 @@
         no_dns_cache => boolean(),          % Avoid DNS cache
         idle_timeout => integer(),          % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
-        listen_ip => inet:ip_address(),     % Used to populate nkport, forcing it instead
-        listen_port => inet:port_number(),  % of finding suitable listening transport
+        listen_nkport => none | nkport(),   % Select (or disables auto) base NkPort
 
         % TCP/TLS/WS/WSS options
         certfile => string(),           

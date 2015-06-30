@@ -266,7 +266,7 @@ connect([{Protocol, Transp, Ip, 0}|Rest], Opts) ->
     end;
 
 connect([Conn|Rest], Opts) ->
-    Fun = fun() -> raw_connect(Conn, Opts) end,
+    Fun = fun() -> do_connect(Conn, Opts) end,
     try nklib_proc:try_call(Fun, Conn, 100, ?CONN_TRIES) of
         {ok, NkPort} ->
             {ok, NkPort};
@@ -283,45 +283,34 @@ connect([Conn|Rest], Opts) ->
 %% @private Starts a new connection to a remote server
 %% Tries to find an associated listening transport, 
 %% to use the listening address, port and meta from it
--spec raw_connect(nkpacket:raw_connection(), nkpacket:connect_opts()) ->
+-spec do_connect(nkpacket:raw_connection(), nkpacket:connect_opts()) ->
     {ok, nkpacket:nkport()} | {error, term()}.
          
-raw_connect({Protocol, Transp, Ip, Port}, Opts) ->
-    IpSize = size(Ip),
-    Listening = nkpacket:get_listening(Protocol, Transp, Opts),
-    BasePort = case Opts of
-        #{listen_ip:=ListenIp, listen_port:=ListenPort} ->
-            case 
-                [
-                    NkPort || 
-                    #nkport{listen_ip=LIp, listen_port=LPort}=NkPort
-                        <- Listening,
-                           LIp==ListenIp, size(LIp)==IpSize, LPort==ListenPort
-                ]
-            of
-                [NkPort|_] -> NkPort;
-                [] -> #nkport{transp=Transp, protocol=Protocol}
-            end;
+do_connect({Protocol, Transp, Ip, Port}, Opts) ->
+    BasePort1 = #nkport{transp=Transp, protocol=Protocol, remote_ip=Ip, remote_port=Port},
+    BasePort2 = case Opts of
+        #{listen_nkport:=none} ->
+            BasePort1;
+        #{listen_nkport:=ListenPort} when is_record(ListenPort, nkport) ->
+            ListenPort;
         _ ->
+            Listening = nkpacket:get_listening(Protocol, Transp, Opts),
+            IpSize = size(Ip),
             case
                 [
-                    NkPort || 
-                    #nkport{listen_ip=LIp}=NkPort <- Listening, size(LIp)==IpSize
+                    NkPort || #nkport{listen_ip=LIp}=NkPort <- Listening, 
+                              size(LIp)==IpSize
                 ]
             of
                 [NkPort|_] -> NkPort;
-                [] -> #nkport{transp=Transp, protocol=Protocol}
+                [] -> BasePort1
             end
     end,
-    lager:debug("Base port: ~p", [BasePort]),
-    #nkport{meta=Meta} = BasePort,
-    NkPort = BasePort#nkport{
-        remote_ip = Ip, 
-        remote_port = Port, 
-        meta = maps:merge(Meta, Opts)
-    },
+    lager:debug("Base port: ~p", [BasePort2]),
+    #nkport{meta=Meta} = BasePort2,
+    ConnPort = BasePort2#nkport{meta=maps:merge(Meta, Opts)},
     % If we found a listening transport, connection will monitor it
-    nkpacket_connection:connect(NkPort).
+    nkpacket_connection:connect(ConnPort).
 
 
 -spec get_listener(nkpacket:nkport()) ->

@@ -285,11 +285,11 @@ init([NkPort]) ->
         true ->
             #{}
     end,
-    StoredNkPort = NkPort1#nkport{meta=StoredMeta},
-    Group = maps:get(group, Meta, none),
-    nklib_proc:put({nkpacket_connection, Group, Conn}, StoredNkPort), 
     nklib_proc:put(nkpacket_transports),
+    Group = maps:get(group, Meta, none),
     nklib_counters:async([nkpacket_connections, {nkpacket_connections, Group}]),
+    StoredNkPort = NkPort1#nkport{meta=StoredMeta},
+    nklib_proc:put({nkpacket_connection, Group, Conn}, StoredNkPort), 
     Timeout = case maps:get(idle_timeout, Meta, undefined) of
         Timeout0 when is_integer(Timeout0) -> 
             Timeout0;
