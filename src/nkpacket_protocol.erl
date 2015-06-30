@@ -118,7 +118,7 @@ conn_parse(_Msg, ConnState) ->
 %% @doc This function is called when a new message must be send to the connection
 -spec conn_encode(term(), conn_state()) ->
 	{ok, nkpacket:outcoming(), conn_state()} | {error, term(), conn_state()} |
-	{stop, Reason::term()}.
+	{stop, Reason::term(), conn_state()}.
 
 conn_encode(_Term, ConnState) ->
 	{error, not_defined, ConnState}.
