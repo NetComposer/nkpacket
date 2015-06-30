@@ -184,8 +184,8 @@ handle_call({connect, ConnPort}, From, State) ->
     },
     {noreply, State1};
 
-handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
-    {reply, {ok, NkPort}, State};
+handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+    {reply, Fun(NkPort), State};
 
 handle_call(Msg, From, State) ->
     case call_protocol(listen_handle_call, [Msg, From], State) of

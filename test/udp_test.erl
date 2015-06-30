@@ -48,7 +48,7 @@ basic() ->
 	_ = test_util:reset_2(),
 	Conn1 = {test_protocol, udp, {0,0,0,0}, 0},
 	% First '0' port try to open default transport port (1234)
-	{ok, UdpP1} = nkpacket:start_listener(dom1, Conn1, #{}),
+	{ok, UdpP1} = nkpacket:start_listener(Conn1, #{}),	% No group
 	{ok, {udp, {0,0,0,0}, Port1}} = nkpacket:get_local(UdpP1),
 	case Port1 of
 		1234 -> ok;
@@ -60,17 +60,19 @@ basic() ->
     	    local_ip = {0,0,0,0}, local_port = Port1,
     	    remote_ip = undefined, remote_port = undefined,
      		listen_ip = {0,0,0,0}, listen_port = Port1,
-     		protocol = test_protocol, pid = UdpP1,
-	        meta = #{group:=dom1}
+     		protocol = test_protocol, pid = UdpP1
         }
-	] = nkpacket:get_all(dom1),
+	] = List1 = nkpacket:get_all(),
+	List1 = nkpacket:get_all(none),
+	[] = nkpacket:get_all(dom1),
 
 	% Since '1234' is not available, a random one is used
 	% (Oops, in linux it allows to open it again, the old do not receive any more packets!)
 	Port2 = test_util:get_port(udp),
 	Conn2 = {test_protocol, udp, {0,0,0,0}, Port2},
-	{ok, UdpP2A} = nkpacket:start_listener(dom2, Conn2, 
-									#{udp_starts_tcp=>true, tcp_listeners=>1}),
+	{ok, UdpP2A} = nkpacket:start_listener(Conn2, 
+										  #{group=>dom2, udp_starts_tcp=>true,
+										   tcp_listeners=>1}),
 	timer:sleep(100),
 	[
 		#nkport{transp=tcp, local_port=Port2, pid=TcpP2A},
@@ -103,19 +105,20 @@ basic() ->
 	% true = Port4/=Port3,
 	true = Tcp2C/=TcpP2B,
 	true = UdpP2C/=UdpP2B,
- 	ok = nkpacket:stop_all(dom1),
+ 	ok = nkpacket:stop_all(none),
  	ok = nkpacket:stop_all(dom2),
 	timer:sleep(500),
-	[] = nkpacket:get_all(dom1),
+	[] = nkpacket:get_all(none),
 	[] = nkpacket:get_all(dom2),
+	[] = nkpacket:get_all(),
 	ok.
 
 
 listen() ->
 	Port1 = test_util:get_port(udp),
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	{ok, Udp1} = nkpacket:start_listener(dom1, 
-		"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>", M1),
+	{ok, Udp1} = nkpacket:start_listener( 
+		"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>;group=dom1", M1),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, Socket} = gen_udp:open(0, [binary, {active, false}]),
@@ -128,55 +131,66 @@ listen() ->
 		#nkport{local_ip={0,0,0,0}, local_port=Port1, remote_ip=undefined,
 				 remote_port=undefined, pid=Udp1, socket=UdpS1} = Listen,
 		#nkport{local_ip={0,0,0,0}, local_port=Port1, remote_ip={127,0,0,1},
-				 remote_port=LocalPort, socket=UdpS1} = Conn1
+				 remote_port=LocalPort, socket=UdpS1, pid=Conn1Pid} = Conn1
 	] = 
-		lists:sort(nkpacket:get_all(dom1)),
+		lists:sort(nkpacket:get_all(<<"dom1">>)),
 	
 	% Send a message back, directly through the connection
 	ok = nkpacket_connection:send(Conn1, <<"test2">>),
-	% receive {Ref1, {encode, <<"test2">>}} -> ok after 1000 -> error(?LINE) end,
-	% We use the parse in test_protocol:conn_parse/4
-	{ok, {{127,0,0,1}, Port1, <<"test2">>}} = gen_udp:recv(Socket, 0, 5000),
-	
-	% Send a message directly from the listening process
-	ok = nkpacket_transport_udp:send(Listen, {127,0,0,1}, LocalPort, <<"test3">>),
-	% We use the parse in test_protocol:listen_parse
+	receive {Ref1, {encode, <<"test2">>}} -> ok after 1000 -> error(?LINE) end,
+	{ok, {{127,0,0,1}, Port1, Raw1}} = gen_udp:recv(Socket, 0, 5000),
+	<<"test2">> = binary_to_term(Raw1), 
+
+	% Send a message directly to the raw connection
+	ok = nkpacket_connection_lib:raw_send(Conn1, <<"test3">>),
 	{ok, {{127,0,0,1}, Port1, <<"test3">>}} = gen_udp:recv(Socket, 0, 5000),
 
-	[Conn1] = nkpacket_transport:get_connected(dom1, {test_protocol, udp, {127,0,0,1}, LocalPort}),
-	[Conn1] = nkpacket_connection:get_all(dom1),
-	ok = nkpacket_connection:stop(Conn1#nkport.pid, normal),
+	% Send a message directly from the listening process
+	ok = nkpacket_transport_udp:send(Listen, {127,0,0,1}, LocalPort, <<"test4">>),
+	% We use the parse in test_protocol:listen_parse
+	{ok, {{127,0,0,1}, Port1, <<"test4">>}} = gen_udp:recv(Socket, 0, 5000),
+
+	[Conn1Pid] = 
+		nkpacket_transport:get_connected({test_protocol, udp, {127,0,0,1}, LocalPort},
+										 #{group=><<"dom1">>}),
+	[Conn1] = nkpacket_connection:get_all(<<"dom1">>),
+	ok = nkpacket_connection:stop(Conn1Pid, normal),
 	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),
-	[] = nkpacket_transport:get_connected(dom1, {test_protocol, udp, {127,0,0,1}, LocalPort}),
-	[] = nkpacket_connection:get_all(dom1),
+	[] = nkpacket_transport:get_connected({test_protocol, udp, {127,0,0,1}, LocalPort},
+										 #{group=><<"dom1">>}),
+	[] = nkpacket_connection:get_all(<<"dom1">>),
 
 	ok = nkpacket:stop_listener(Udp1),
 	receive {Ref1, listen_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),
-	[] = nkpacket:get_all(dom1),
+	[] = nkpacket:get_all(<<"dom1">>),
+	[] = nkpacket:get_all(),
 
 	% Now testing UDP without creating connections
-	{ok, Udp2} = nkpacket:start_listener(dom1, "<test://all;transport=udp>",
+	{ok, Udp2} = nkpacket:start_listener("<test://all;transport=udp>;group=dom1",
 										 M2#{udp_no_connections=>true}),
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
-	ok = gen_udp:send(Socket, {127,0,0,1}, 1234, <<"test4">>),
-	receive {Ref2, {listen_parse, <<"test4">>}} -> ok after 1000 -> error(?LINE) end,
+	{ok, {_, _, 1234}} = nkpacket:get_local(Udp2),
+	ok = gen_udp:send(Socket, {127,0,0,1}, 1234, <<"test5">>),
+	receive {Ref2, {listen_parse, <<"test5">>}} -> ok after 1000 -> error(?LINE) end,
 
-	[] = nkpacket_transport:get_connected(dom1, {test_protocol, udp, {127,0,0,1}, LocalPort}),
-	[] = nkpacket_connection:get_all(dom1),
+	[] = nkpacket_transport:get_connected({test_protocol, udp, {127,0,0,1}, LocalPort},
+										  #{group=><<"dom1">>}),
+
+	[] = nkpacket_connection:get_all(<<"dom1">>),
 	ok = nkpacket:stop_listener(Udp2),
 	receive {Ref2, listen_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),
-	[] = nkpacket:get_all(dom1),
+	[] = nkpacket:get_all(<<"dom1">>),
 	test_util:ensure([Ref1, Ref2]).
 
 
 stun() ->
 	Port1 = test_util:get_port(udp),
 	{Ref1, M1} = test_util:reset_1(),
-	ok = nkpacket_config:register_protocol(dom1, test, test_protocol),
-	{ok, Udp1} = nkpacket:start_listener(dom1, 
+	ok = nkpacket_config:register_protocol(test, test_protocol),
+	{ok, Udp1} = nkpacket:start_listener( 
 					"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>",
 					M1#{udp_stun_reply=>true, udp_no_connections=>true}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
@@ -192,7 +206,7 @@ stun() ->
     {{127,0,0,1}, LocalPort} = nklib_util:get_value(xor_mapped_address, Data),
 
     % We start a second listener that does not reply to STUNS
-	{ok, Udp2} = nkpacket:start_listener(dom1, "<test://all:20001;transport=udp>",
+	{ok, Udp2} = nkpacket:start_listener("<test://all:20001;transport=udp>",
 	 									 M1#{udp_no_connections=>true}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
     ok = gen_udp:send(Socket, {127,0,0,1}, 20001, Request),

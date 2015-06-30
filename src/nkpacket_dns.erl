@@ -38,6 +38,8 @@
         no_dns_cache => boolean()
     }.
 
+-type uri_transp() :: nkpacket:transport()|undefined|binary().
+
 
 %% ===================================================================
 %% Public
@@ -46,7 +48,7 @@
 
 %% @doc Finds the ips, transports and ports to try for `Uri', following RFC3263
 -spec resolve(nklib:user_uri()) -> 
-    [{atom()|binary(), inet:ip_address(), inet:port_number()}].
+    [{uri_transp(), inet:ip_address(), inet:port_number()}].
 
 resolve(Uri) ->
     resolve(Uri, #{}).
@@ -54,7 +56,7 @@ resolve(Uri) ->
 
 %% @doc Finds the ips, transports and ports to try for `Uri', following RFC3263
 -spec resolve(nklib:user_uri(), opts()) -> 
-    [{atom()|binary(), inet:ip_address(), inet:port_number()}].
+    [{uri_transp(), inet:ip_address(), inet:port_number()}].
 
 resolve(#uri{scheme=Scheme}=Uri, Opts) ->
     case resolve_uri(Uri, Opts) of
@@ -73,11 +75,11 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
                 Other ->
                     Other
             end,
-            case resolve_srvs(Domain, Scheme, Naptr, []) of
+            case resolve_srvs(Scheme, Naptr, Opts) of
                 [] when Scheme==sips -> 
-                    [{tls, Addr, 5061} || Addr <- get_ips(Domain, Domain)];
+                    [{tls, Addr, 5061} || Addr <- get_ips(Domain, Opts)];
                 [] when Scheme==sip ->
-                    [{udp, Addr, 5060} || Addr <- get_ips(Domain, Domain)];
+                    [{udp, Addr, 5060} || Addr <- get_ips(Domain, Opts)];
                 [] ->
                     [];
                 Srvs ->
@@ -94,14 +96,14 @@ resolve(Uri, Opts) ->
 
 %% @private
 -spec resolve_uri(nklib:uri(), opts()) -> 
-    {ok, [{atom()|binary(), inet:ip_address(), inet:port_number()}]} |
+    {ok, [{uri_transp(), inet:ip_address(), inet:port_number()}]} |
     {naptr, nklib:scheme(), string()}.
 
 resolve_uri(#uri{}=Uri, Opts) ->
     #uri{scheme=Scheme, domain=Host, opts=UriOpts, ext_opts=ExtOpts, port=Port} = Uri,
     Host1 = case Host of
-        <<"all">> -> <<"0.0.0.0">>;
-        <<"all6">> -> <<"0:0:0:0:0:0:0:0">>;
+        <<"all">> -> "0.0.0.0";
+        <<"all6">> -> "0:0:0:0:0:0:0:0";
         _ -> Host
     end,
     Target = nklib_util:get_list(<<"maddr">>, UriOpts, Host1),
@@ -117,16 +119,7 @@ resolve_uri(#uri{}=Uri, Opts) ->
         RawTransp0 ->
             RawTransp0
     end,
-    Transp = case RawTransp of
-        Atom when is_atom(Atom) -> 
-            Atom;
-        Other -> 
-            LcTransp = string:to_lower(nklib_util:to_list(Other)),
-            case catch list_to_existing_atom(LcTransp) of
-                {'EXIT', _} -> nklib_util:to_binary(Other);
-                Atom -> Atom
-            end
-    end,
+    Transp = get_transp(RawTransp),
     case 
         Port==0 andalso (Scheme==sip orelse Scheme==sips) andalso 
         not IsNumeric andalso Transp==undefined 
@@ -142,91 +135,22 @@ resolve_uri(#uri{}=Uri, Opts) ->
     end.
 
 
-%% @private
-resolve_srvs(Domain, sips, [{Scheme, _, _}|Rest], Acc) when Scheme/=sips -> 
-    resolve_srvs(Domain, sips, Rest, Acc);
-
-resolve_srvs(Domain, Scheme, [{_, NTransp, Domain}|Rest], Acc) -> 
-    case get_srvs(Domain, Domain) of
-        [] -> 
-            resolve_srvs(Domain, Scheme, Rest, Acc);
-        Srvs -> 
-            Addrs = [
-                [{NTransp, Addr, SPort} || Addr <- get_ips(Domain, SHost)]
-                || {SHost, SPort} <- Srvs
-            ],
-            resolve_srvs(Domain, Scheme, Rest, [Addrs|Acc])
-    end;
-
-resolve_srvs(_, _, [], Acc) ->
-    lists:flatten(lists:reverse(Acc)).
-
-
-%% @doc Gets all IPs for this host, or `[]' if not found.
-%% It will first try to get it form the cache.
-%% Each new invocation rotates the list of IPs.
--spec get_ips(string()|binary(), opts()) ->
-    [inet:ip_address()].
-
-get_ips(Host, Opts) ->
-    Host1 = nklib_util:to_list(Host),
-    case get_cache({ips, Host1}, Opts) of
-        undefined ->
-            case inet:getaddrs(Host1, inet) of
-                {ok, Ips} -> 
-                    ok;
-                {error, _} -> 
-                    case inet:getaddrs(Host1, inet6) of
-                        {ok, Ips} -> 
-                            ok;
-                        {error, _} -> 
-                            Ips = []
-                    end
-            end,
-            save_cache({ips, Host1}, Ips),
-            random(Ips);
-        Ips ->
-            random(Ips)
-    end.
-
-
-%% @doc Gets all hosts for a SRV domain, sorting the result
-%% according to RFC2782
--spec get_srvs(string()|binary(), opts()) ->
-    [{string(), inet:port_number()}].
-
-get_srvs(Domain, Opts) ->
-    Domain1 = nklib_util:to_list(Domain),
-    case get_cache({srvs, Domain1}, Opts) of
-        undefined ->
-            Srvs = case inet_res:lookup(Domain1, in, srv) of
-                [] -> [];
-                Res -> [{O, W, {D, P}} || {O, W, P, D} <- Res]
-            end,
-            save_cache({srvs, Domain1}, Srvs),
-            rfc2782_sort(Srvs);
-        Srvs ->
-            rfc2782_sort(Srvs)
-    end.
-
-
 %% @doc Finds published services using DNS NAPTR search.
--spec get_naptr(string()|binary(), map()) -> 
+-spec get_naptr(string(), map()) -> 
     [{sip|sips, nkpacket:transport(), string()}].
 
 %% TODO: Check site certificates in case of tls
 get_naptr(Domain, Opts) ->
-    Domain1 = nklib_util:to_list(Domain),
-    case get_cache({naptr, Domain1}, Opts) of
+    case get_cache({naptr, Domain}, Opts) of
         undefined ->
-            Naptr = case inet_res:lookup(Domain1, in, naptr) of
+            Naptr = case inet_res:lookup(Domain, in, naptr) of
                 [] ->
                     [];
                 Res ->
                     [Value || Term <- lists:sort(Res), 
                               (Value = naptr_filter(Term)) /= false]
             end,
-            save_cache({naptr, Domain1}, Naptr),
+            save_cache({naptr, Domain}, Naptr),
             Naptr;
         Naptr ->
             Naptr
@@ -243,15 +167,86 @@ naptr_filter({_, _, "s", "sip+d2w", "", Domain}) -> {sips, ws, Domain};
 naptr_filter(_) -> false.
 
 
+%% @private
+resolve_srvs(Scheme, Domain, Opts) ->
+    resolve_srvs(Scheme, Domain, Opts, []).
+
+
+%% @private
+resolve_srvs(sips, [{Scheme, _, _}|Rest], Opts, Acc) when Scheme/=sips -> 
+    resolve_srvs(sips, Rest, Opts, Acc);
+
+resolve_srvs(Scheme, [{_, Transp, Domain}|Rest], Opts, Acc) -> 
+    case get_srvs(Domain, Opts) of
+        [] -> 
+            resolve_srvs(Scheme, Rest, Opts, Acc);
+        Srvs -> 
+            Addrs = [
+                [{Transp, Addr, SPort} || Addr <- get_ips(SHost, Opts)]
+                || {SHost, SPort} <- Srvs
+            ],
+            resolve_srvs(Scheme, Rest, Opts, [Addrs|Acc])
+    end;
+
+resolve_srvs(_, [], _Opts, Acc) ->
+    lists:flatten(lists:reverse(Acc)).
+
+
+%% @doc Gets all hosts for a SRV domain, sorting the result
+%% according to RFC2782
+-spec get_srvs(string(), opts()) ->
+    [{string(), inet:port_number()}].
+
+get_srvs(Domain, Opts) ->
+    case get_cache({srvs, Domain}, Opts) of
+        undefined ->
+            Srvs = case inet_res:lookup(Domain, in, srv) of
+                [] -> [];
+                Res -> [{O, W, {D, P}} || {O, W, P, D} <- Res]
+            end,
+            save_cache({srvs, Domain}, Srvs),
+            rfc2782_sort(Srvs);
+        Srvs ->
+            rfc2782_sort(Srvs)
+    end.
+
+
+%% @doc Gets all IPs for this host, or `[]' if not found.
+%% It will first try to get it form the cache.
+%% Each new invocation rotates the list of IPs.
+-spec get_ips(string(), opts()) ->
+    [inet:ip_address()].
+
+get_ips(Host, Opts) ->
+    case get_cache({ips, Host}, Opts) of
+        undefined ->
+            case inet:getaddrs(Host, inet) of
+                {ok, Ips} -> 
+                    ok;
+                {error, _} -> 
+                    case inet:getaddrs(Host, inet6) of
+                        {ok, Ips} -> 
+                            ok;
+                        {error, _} -> 
+                            Ips = []
+                    end
+            end,
+            save_cache({ips, Host}, Ips),
+            random(Ips);
+        Ips ->
+            random(Ips)
+    end.
+
+
+
 %% @doc Clear all info about `Domain' in the cache.
--spec clear(string()|binary()) ->
+-spec clear(string()) ->
     ok.
 
 clear(Domain) ->
-    Domain1 = nklib_util:to_list(Domain),
-    del_cache({ips, Domain1}),
-    del_cache({srvs, Domain1}),
-    del_cache({naptr, Domain1}),
+    del_cache({ips, Domain}),
+    del_cache({srvs, Domain}),
+    del_cache({naptr, Domain}),
     ok.
 
 
@@ -341,6 +336,24 @@ terminate(_Reason, _State) ->
 %% ===================================================================
 %% Utils
 %% ===================================================================
+
+%% @private
+get_transp(udp) -> udp;
+get_transp(tcp) -> tcp;
+get_transp(tls) -> tls;
+get_transp(sctp) -> sctp;
+get_transp(ws) -> ws;
+get_transp(wss) -> wss;
+get_transp(http) -> http;
+get_transp(https) -> https;
+get_transp(undefined) -> undefined;
+get_transp(Other) when is_atom(Other) -> atom_to_binary(Other, latin1);
+get_transp(Other) ->
+    Transp = string:to_lower(nklib_util:to_list(Other)),
+    case catch list_to_existing_atom(Transp) of
+        {'EXIT', _} -> nklib_util:to_binary(Other);
+        Atom -> get_transp(Atom)
+    end.
 
 
 %% @private

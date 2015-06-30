@@ -310,11 +310,10 @@ spec() ->
         host => host,
         path => path,
         cowboy_opts => list,
-        ws_proto => upper,
+        ws_proto => lower,
         http_proto => fun spec_http_proto/3,
         connect_timeout => nat_integer,
         listen_port => [{enum, [none]}, {record, nkport}],
-        force_new => boolean,
         udp_to_tcp => boolean
     }.
 

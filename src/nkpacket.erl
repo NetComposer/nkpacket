@@ -164,7 +164,6 @@
     connect_opts() |
     #{
         % Specific options
-        force_new => boolean(),             % Forces new connection
         udp_to_tcp => boolean()             % Change to TCP for large packets
     }.
 
@@ -184,7 +183,8 @@
 
 %% Sending remote specification options
 -type send_spec() :: 
-    user_connection() | {current, raw_connection()} | pid() | nkport().
+    user_connection() | {current, raw_connection()} | {connect, raw_connection()} |
+    pid() | nkport().
 
 
 %% Incoming data to be parsed
@@ -289,11 +289,10 @@ stop_all(Group) ->
 -spec get_nkport(pid()) ->
     {ok, nkport()} | error.
 
+get_nkport(#nkport{}=NkPort) ->
+    {ok, NkPort};
 get_nkport(Pid) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_nkport, 180000) of
-        {ok, NkPort} -> {ok, NkPort};
-        _ -> error
-    end.
+    apply_nkport(Pid, fun get_nkport/1).
 
 
 %% @doc Gets the current port number of a listener or connection
@@ -303,10 +302,7 @@ get_nkport(Pid) when is_pid(Pid) ->
 get_local(#nkport{transp=Transp, local_ip=Ip, local_port=Port}) ->
     {ok, {Transp, Ip, Port}};
 get_local(Pid) when is_pid(Pid) ->
-    case get_nkport(Pid) of
-        {ok, NkPort} -> get_local(NkPort);
-        _ -> error
-    end.
+    apply_nkport(Pid, fun get_local/1).
 
 
 %% @doc Gets the current remote peer address and port
@@ -316,10 +312,7 @@ get_local(Pid) when is_pid(Pid) ->
 get_remote(#nkport{transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Transp, Ip, Port}};
 get_remote(Pid) when is_pid(Pid) ->
-    case get_nkport(Pid) of
-        {ok, NkPort} -> get_remote(NkPort);
-        _ -> error
-    end.
+    apply_nkport(Pid, fun get_remote/1).
 
 
 %% @doc Gets the current pid() of a listener or connection
@@ -334,18 +327,13 @@ get_pid(#nkport{pid=Pid}) ->
 -spec get_user(pid()|nkport()) ->
     {ok, term()} | error.
 
-get_user(#nkport{meta=#{user:=User}}) ->
-    {ok, User};
-get_user(#nkport{}) ->
-    {ok, undefined};
+get_user(#nkport{meta=Meta}) ->
+    {ok, maps:get(user, Meta, undefined)};
 get_user(Pid) when is_pid(Pid) ->
-    case get_nkport(Pid) of
-        {ok, NkPort} -> get_user(NkPort);
-        _ -> error
-    end.
+    apply_nkport(Pid, fun get_user/1).
 
 
-%% @doc Sends a message to a connection
+%% @doc Sends a message to a connection.
 -spec send(send_spec() | [send_spec()], term()) ->
     {ok, pid()} | {error, term()}.
 
@@ -354,6 +342,7 @@ send(SendSpec, Msg) ->
 
 
 %% @doc Sends a message to a connection
+%% If a group is included, it will try to reuse any existing connection of the same group
 -spec send(send_spec() | [send_spec()], term(), send_opts()) ->
     {ok, pid()} | {error, term()}.
 
@@ -399,10 +388,12 @@ connect(Uri, Opts) when is_map(Opts) ->
 
 get_all() ->
     lists:sort(
-        lists:map(
-            fun(_, Pid) ->
-                {ok, NkPort} = get_nkport(Pid),
-                NkPort
+        nklib_util:filtermap(
+            fun({_, Pid}) ->
+                case catch get_nkport(Pid) of
+                    {ok, NkPort} -> {true, NkPort};
+                    _ -> false
+                end
             end,
             nklib_proc:values(nkpacket_transports))).
 
@@ -418,7 +409,8 @@ get_all(Group) ->
             case Meta of
                 #{group:=Group} -> true;
                 #{group:=_} -> false;
-                _ -> true
+                _ when Group==none -> true;
+                _ -> false
             end
         end,
         get_all()).
@@ -462,10 +454,10 @@ is_local(Uri) ->
 is_local(#uri{}=Uri, Opts) ->
     case resolve(Uri, Opts) of
         {ok, [{Protocol, Transp, _Ip, _Port}|_]=Conns, _Opts1} ->
-            Group = maps:get(group, Opts, none),
             Listen = [
                 {Transp, Ip, Port} ||
-                {Ip, Port, _Pid} <- get_listening(Group, Protocol, Transp)
+                #nkport{local_ip=Ip, local_port=Port}
+                    <- get_listening(Protocol, Transp, Opts)
             ],
             LocalIps = nkpacket_config:get_local_ips(),
             is_local(Listen, Conns, LocalIps);
@@ -539,7 +531,6 @@ is_local_ip(Ip) ->
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
-
 resolve(Uri) ->
     resolve(Uri, #{}).
 
@@ -549,18 +540,19 @@ resolve(Uri) ->
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
-
 resolve(#uri{scheme=Scheme}=Uri, Opts) ->
     #uri{domain=Host, path=Path, ext_opts=UriOpts, ext_headers=Headers} = Uri,
-    UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquoute(V)} || {K, V} <- UriOpts],
+    UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquote(V)} || {K, V} <- UriOpts],
     UriOpts2 = case Host of
         <<"0.0.0.0">> -> UriOpts1;
+        <<"0:0:0:0:0:0:0:0">> -> UriOpts1;
+        <<"::0">> -> UriOpts1;
         <<"all">> -> UriOpts1;
-        _ -> [{host, Host}|UriOpts1]
+        _ -> [{host, Host}|UriOpts1]            % Host to listen on for WS/HTTP
     end,
     UriOpts3 = case Path of
         <<>> -> UriOpts2;
-        _ -> [{path, Path}|UriOpts2]
+        _ -> [{path, Path}|UriOpts2]            % Path to listen on for WS/HTTP
     end,
     UriOpts4 = case Headers of 
         [] -> UriOpts3;
@@ -589,7 +581,7 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
                         _ ->
                             case lists:member(Transp, ValidTransp) of
                                 true -> {Protocol, Transp, Addr, Port};
-                                false -> throw({error, {invalid_transport, Transp}})
+                                false -> throw({invalid_transport, Transp})
                             end
                     end
                     ||
@@ -612,4 +604,13 @@ resolve(Uri, Opts) ->
     end.
 
 
+%% @private
+-spec apply_nkport(pid(), fun((nkport()) -> {ok, term()}))  ->
+    term() | error.
+
+apply_nkport(Pid, Fun) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, {apply_nkport, Fun}, 180000) of
+        {'EXIT', _} -> error;
+        Other -> Other
+    end.
 

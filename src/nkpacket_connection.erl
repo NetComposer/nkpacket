@@ -206,7 +206,15 @@ get_all() ->
         fun(Name, Values, Acc) ->
             case Name of
                 {nkpacket_connection, _, _} -> 
-                    [NkPort || {val, NkPort, _Pid} <- Values] ++ Acc;
+                    lists:foldl(
+                        fun({val, _Meta, Pid}, Acc1) ->
+                            case catch nkpacket:get_nkport(Pid) of
+                                {ok, NkPort} -> [NkPort|Acc1];
+                                _ -> Acc1
+                            end
+                        end,
+                        Acc,
+                        Values);
                 _ ->
                     Acc
             end
@@ -221,6 +229,7 @@ get_all(Group) ->
             case Meta of
                 #{group:=Group} -> true;
                 #{group:=_} -> false;
+                _ when Group==none -> true;
                 _ -> true
             end
         end,
@@ -322,9 +331,11 @@ init([NkPort]) ->
         _ -> undefined
     end,
     NkPort1 = NkPort#nkport{pid=self()},
+    % We need to store some meta in case someone calls get_nkport
+    StoredNkPort = NkPort1#nkport{meta=maps:with([group, host, path, ws_proto], Meta)},
     State = #state{
         transp = Transp,
-        nkport = NkPort1#nkport{meta=#{}},
+        nkport = StoredNkPort,
         socket = Socket, 
         listen_monitor = ListenMonitor,
         srv_monitor = SrvMonitor,
@@ -388,8 +399,8 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
-    {reply, {ok, NkPort}, State};
+handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+    {reply, Fun(NkPort), State};
 
 handle_call({reset_timeout, MSecs}, _From, State) ->
     {reply, ok, restart_timer(State#state{timeout=MSecs})};

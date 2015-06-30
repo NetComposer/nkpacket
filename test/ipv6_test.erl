@@ -49,8 +49,8 @@ basic() ->
 	All6 = {0,0,0,0,0,0,0,0},
 	Local6 = {0,0,0,0,0,0,0,1},
 	Url = "<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>",
-	{ok, Tcp1} = nkpacket:start_listener(dom1, Url, M1),
-	{ok, Tcp2} = nkpacket:start_listener(dom2, {test_protocol, tcp, All6, 0}, M2),
+	{ok, Tcp1} = nkpacket:start_listener(Url, M1#{group=>dom1}),
+	{ok, Tcp2} = nkpacket:start_listener({test_protocol, tcp, All6, 0}, M2#{group=>dom2}),
 	{ok, {tcp, _, LPort1}} = nkpacket:get_local(Tcp1),	
 	{ok, {tcp, _, LPort2}} = nkpacket:get_local(Tcp2),
 	case LPort2 of
@@ -79,7 +79,7 @@ basic() ->
         meta = #{group:=dom2}
     } = Listen2,
 
-	{ok, _} = nkpacket:send(dom2, Url, msg1, M2),
+	{ok, _} = nkpacket:send(Url, msg1, M2#{group=>dom2}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -122,33 +122,44 @@ basic() ->
 
 
 is_local() ->
+	LPort0 = test_util:get_port(tcp),
 	LPort1 = test_util:get_port(tcp),
 	LPort2 = test_util:get_port(tcp),
 	_ = test_util:reset_2(),
 
-	{ok, Tcp1} = nkpacket:start_listener(dom1, 
-		"<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>", #{}),
-	{ok, Tcp2} = nkpacket:start_listener(dom2, 
-		"<test://all6:"++integer_to_list(LPort2)++";transport=udp>", #{}),
+	{ok, Tcp0} = nkpacket:start_listener(
+		"<test:[::1]:"++integer_to_list(LPort0)++";transport=tcp>", #{}),
+	{ok, Tcp1} = nkpacket:start_listener( 
+		"<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>", #{group=>dom1}),
+	{ok, Tcp2} = nkpacket:start_listener(
+		"<test://all6:"++integer_to_list(LPort2)++";transport=udp>", #{group=>dom2}),
 
-	%% Default port for tcp is 56789
+	[Uri0] = nklib_parse:uris(
+		"<test:[::1]:"++integer_to_list(LPort0)++";transport=tcp>"),
+	true = nkpacket:is_local(Uri0),
+	false = nkpacket:is_local(Uri0, #{group=>dom1}),
+	false = nkpacket:is_local(Uri0, #{group=>dom2}),
+
 	[Uri1] = nklib_parse:uris(
 		"<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>"),
-	true = nkpacket:is_local(dom1, Uri1),
-	false = nkpacket:is_local(dom2, Uri1),
+	false = nkpacket:is_local(Uri1),
+	true = nkpacket:is_local(Uri1, #{group=>dom1}),
+	false = nkpacket:is_local(Uri1, #{group=>dom2}),
 
 	[Uri2] = nklib_parse:uris(
 		"<test:[::1]:"++integer_to_list(LPort2)++";transport=udp>"),
-	false = nkpacket:is_local(dom1, Uri2),
-	true = nkpacket:is_local(dom2, Uri2),
+	false = nkpacket:is_local(Uri2),
+	false = nkpacket:is_local(Uri2, #{group=>dom1}),
+	true = nkpacket:is_local(Uri2, #{group=>dom2}),
 
 	[Uri3] = nklib_parse:uris(
 		"<test:[::2]:"++integer_to_list(LPort1)++";transport=tcp>"),
-	false = nkpacket:is_local(dom1, Uri3),
-	false = nkpacket:is_local(dom2, Uri3),
+	false = nkpacket:is_local(Uri3),
+	false = nkpacket:is_local(Uri3, #{group=>dom1}),
+	false = nkpacket:is_local(Uri3, #{group=>dom2}),
 
 	case 
-		[Ip || Ip <- nkpacket_config_cache:local_ips(), size(Ip)==8]
+		[Ip || Ip <- nkpacket_config:get_local_ips(), size(Ip)==8]
 		-- [{0,0,0,0,0,0,0,1}]
 	of
 		[] -> 
@@ -158,10 +169,11 @@ is_local() ->
 						"<test:[", nklib_util:to_host(Local6), "]:" ++ 
 						integer_to_list(LPort2)++";transport=udp>"]),
 			[Uri4] = nklib_parse:uris(Url4),
-			false = nkpacket:is_local(dom1, Uri4),
-			true = nkpacket:is_local(dom2, Uri4)
+			false = nkpacket:is_local(Uri4, #{group=>dom1}),
+			true = nkpacket:is_local(Uri4, #{group=>dom2})
 	end,
 
+	ok = nkpacket:stop_listener(Tcp0),
 	ok = nkpacket:stop_listener(Tcp1),
 	ok = nkpacket:stop_listener(Tcp2).
 

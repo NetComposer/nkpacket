@@ -231,8 +231,8 @@ handle_call({connect, ConnPort}, _From, State) ->
 handle_call({send_stun, Ip, Port}, From, State) ->
     {noreply, do_send_stun(Ip, Port, {call, From}, State)};
 
-handle_call(get_nkport, _From, #state{nkport=NkPort}=State) ->
-    {reply, {ok, NkPort}, State};
+handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+    {reply, Fun(NkPort), State};
 
 handle_call(get_socket, _From, #state{socket=Socket}=State) ->
     {reply, {ok, Socket}, State};
@@ -490,6 +490,8 @@ do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
                 undefined -> ListenMeta;
                 _ -> maps:merge(ListenMeta, Meta)
             end,
+            
+
             NkPort1 = NkPort#nkport{
                 remote_ip = Ip, 
                 remote_port = Port,

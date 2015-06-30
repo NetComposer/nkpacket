@@ -28,7 +28,9 @@
 
 reset_1() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
+ 	ok = nkpacket:stop_all(none),
  	ok = nkpacket:stop_all(dom1),
+ 	ok = nkpacket:stop_all(<<"dom1">>),
  	timer:sleep(100),
 	Pid = self(),
 	Ref = make_ref(),
@@ -38,7 +40,9 @@ reset_1() ->
 
 reset_2() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
+ 	ok = nkpacket:stop_all(none),
  	ok = nkpacket:stop_all(dom1),
+ 	ok = nkpacket:stop_all(<<"dom1">>),
  	ok = nkpacket:stop_all(dom2),
  	timer:sleep(100),
 	Pid = self(),
@@ -51,7 +55,9 @@ reset_2() ->
 
 reset_3() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
+ 	ok = nkpacket:stop_all(none),
  	ok = nkpacket:stop_all(dom1),
+ 	ok = nkpacket:stop_all(<<"dom1">>),
  	ok = nkpacket:stop_all(dom2),
  	ok = nkpacket:stop_all(dom3),
  	timer:sleep(100),
@@ -67,7 +73,9 @@ reset_3() ->
 
 reset_4() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
+ 	ok = nkpacket:stop_all(none),
  	ok = nkpacket:stop_all(dom1),
+ 	ok = nkpacket:stop_all(<<"dom1">>),
  	ok = nkpacket:stop_all(dom2),
  	ok = nkpacket:stop_all(dom3),
  	ok = nkpacket:stop_all(dom4),
