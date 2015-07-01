@@ -330,7 +330,7 @@ spec_http_proto(_, _, _) -> error.
 %% =================================================================
 
   
-% -define(TEST, true).
+-define(TEST, true).
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -349,7 +349,8 @@ path_test() ->
 
 
 test_path(Req, Path) ->
-    check_paths(element(2, parse_path(Req)), element(2, parse_path(Path))).
+    check_paths(nklib_parse:path(Req), nklib_parse:path(Path)).
+
 
 -endif.
 

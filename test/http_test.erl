@@ -27,23 +27,23 @@
 -include_lib("kernel/include/file.hrl").
 -include("nkpacket.hrl").
 
-% http_test_() ->
-%   	{setup, spawn, 
-%     	fun() -> 
-%     		ok = nkpacket_app:start(),
-%     		?debugMsg("Starting HTTP test")
-% 		end,
-% 		fun(_) -> 
-% 			ok
-% 		end,
-% 	    fun(_) ->
-% 		    [
-% 				fun() -> basic() end,
-% 				fun() -> https() end,
-% 				fun() -> static() end
-% 			]
-% 		end
-%   	}.
+http_test_() ->
+  	{setup, spawn, 
+    	fun() -> 
+    		ok = nkpacket_app:start(),
+    		?debugMsg("Starting HTTP test")
+		end,
+		fun(_) -> 
+			ok
+		end,
+	    fun(_) ->
+		    [
+				fun() -> basic() end,
+				fun() -> https() end,
+				fun() -> static() end
+			]
+		end
+  	}.
 
 
 basic() ->
