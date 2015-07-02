@@ -294,7 +294,9 @@ get_all(Group) ->
 
 get_groups() ->
     lists:foldl(
-        fun({Group, Pid}, Acc) -> maps:put(Group, [Pid|maps:get(Group, Acc, [])]) end,
+        fun({Group, Pid}, Acc) ->
+            maps:put(Group, [Pid|maps:get(Group, Acc, [])], Acc) 
+        end,
         #{},
         nklib_proc:values(nkpacket_listeners)).
 
