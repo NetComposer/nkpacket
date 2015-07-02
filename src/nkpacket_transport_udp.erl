@@ -185,9 +185,9 @@ init([NkPort]) ->
             pid = self(),
             socket = Socket
         },
-        nklib_proc:put(nkpacket_transports),
-        ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         Group = maps:get(group, Meta, none),
+        nklib_proc:put(nkpacket_listeners, Group),
+        ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},
         nklib_proc:put({nkpacket_listen, Group, Protocol, udp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),

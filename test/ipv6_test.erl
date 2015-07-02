@@ -61,23 +61,25 @@ basic() ->
 	timer:sleep(100),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
+
 	[Listen1] = nkpacket:get_all(dom1),
- 	#nkport{
+ 	{ok, #nkport{
  		transp = tcp,
         local_ip = Local6, local_port = LPort1,
         listen_ip = Local6, listen_port = LPort1,
         protocol = test_protocol,
         meta = #{group:=dom1}
-	} = Listen1,
+	}} = nkpacket:get_nkport(Listen1),
+
 	[Listen2] = nkpacket:get_all(dom2),
-	#nkport{
+	{ok, #nkport{
 		transp = tcp,
         local_ip = All6, local_port = LPort2, 
         remote_ip = undefined, remote_port = undefined,
         listen_ip = All6, listen_port = LPort2,
         protocol = test_protocol,
         meta = #{group:=dom2}
-    } = Listen2,
+	}} = nkpacket:get_nkport(Listen2),
 
 	{ok, _} = nkpacket:send(Url, msg1, M2#{group=>dom2}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -85,31 +87,23 @@ basic() ->
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
-	[
-		Listen2,
-		#nkport{
-			transp=tcp,
-			local_ip=Local6, local_port=ConnPort2,
-			remote_ip=Local6, remote_port=LPort1,
-			listen_ip=All6, listen_port=LPort2,
-	        meta = #{group:=dom2}
-
-		}
-	] = 
-		lists:sort(nkpacket:get_all(dom2)),
-
-	[
-		Listen1,
-		#nkport{
+	[Conn1] = nkpacket_connection:get_all(dom1),
+	{ok, #nkport{
 			transp=tcp,
 			local_ip=Local6, local_port=_ConnPort1,
 			remote_ip=Local6, remote_port=ConnPort2,
 			listen_ip=Local6, listen_port=LPort1,
 	        meta = #{group:=dom1}
+	}} = nkpacket:get_nkport(Conn1),
 
-		}
-	] = 
-		lists:sort(nkpacket:get_all(dom1)),
+	[Conn2] = nkpacket_connection:get_all(dom2),
+	{ok, #nkport{
+			transp=tcp,
+			local_ip=Local6, local_port=ConnPort2,
+			remote_ip=Local6, remote_port=LPort1,
+			listen_ip=All6, listen_port=LPort2,
+	        meta = #{group:=dom2}
+	}} = nkpacket:get_nkport(Conn2),
 
 	ok = nkpacket:stop_listener(Tcp1),
 	ok = nkpacket:stop_listener(Tcp2),

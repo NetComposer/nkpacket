@@ -54,57 +54,58 @@ basic() ->
 		1234 -> ok;
 		_ -> lager:warning("Could not open port 1234")
 	end,
-	[
-		#nkport{
+	[Listen1] = nkpacket:get_all(),
+	[Listen1] = nkpacket:get_all(none),
+	[] = nkpacket:get_all(dom1),
+	{ok, #nkport{
 			transp = udp,
     	    local_ip = {0,0,0,0}, local_port = Port1,
     	    remote_ip = undefined, remote_port = undefined,
      		listen_ip = {0,0,0,0}, listen_port = Port1,
      		protocol = test_protocol, pid = UdpP1
-        }
-	] = List1 = nkpacket:get_all(),
-	List1 = nkpacket:get_all(none),
-	[] = nkpacket:get_all(dom1),
+    }} = nkpacket:get_nkport(Listen1),
 
 	% Since '1234' is not available, a random one is used
 	% (Oops, in linux it allows to open it again, the old do not receive any more packets!)
 	Port2 = test_util:get_port(udp),
-	Conn2 = {test_protocol, udp, {0,0,0,0}, Port2},
-	{ok, UdpP2A} = nkpacket:start_listener(Conn2, 
+	Conn = {test_protocol, udp, {0,0,0,0}, Port2},
+	{ok, LisA} = nkpacket:start_listener(Conn, 
 										  #{group=>dom2, udp_starts_tcp=>true,
 										   tcp_listeners=>1}),
 	timer:sleep(100),
 	[
-		#nkport{transp=tcp, local_port=Port2, pid=TcpP2A},
-		#nkport{transp=udp, local_port=Port2, pid=UdpP2A}
-	] = nkpacket:get_all(dom2),
+		#nkport{transp=tcp, local_port=Port2, pid=ConnA},
+		#nkport{transp=udp, local_port=Port2, pid=LisA}
+	] = test_util:listeners(dom2),
 
 	lager:warning("Some processes will be killed now..."),
 	% Should also work with kill
-	% exit(TcpP2A, kill),
-	exit(TcpP2A, forced_stop),
+	% exit(ConnA, kill),
+	exit(ConnA, forced_stop),
 	timer:sleep(500),
 	[
-		#nkport{transp=tcp, local_port=Port3, pid=TcpP2B},
-		#nkport{transp=udp, local_port=Port3, pid=UdpP2B}
-	] = nkpacket:get_all(dom2),
+		#nkport{transp=tcp, local_port=Port3, pid=LisB},
+		#nkport{transp=udp, local_port=Port3, pid=ConnB}
+	] = test_util:listeners(dom2),
 
 	% In Linux, using {reuseaddr, true} results in the same ports being assigned!
 	% true = Port3/=Port2,
-	true = TcpP2B/=TcpP2A,
-	true = UdpP2B/=UdpP2A,
+	true = LisB/=ConnA,
+	true = ConnB/=LisA,
 
-	% exit(UdpP2B, kill),
-	exit(UdpP2B, forced_stop),
+	% exit(ConnB, kill),
+	exit(ConnB, forced_stop),
 	timer:sleep(2000),		% We need this for Linux, it tries to use the same port, sometimes
-	[						% it has to retry
-		#nkport{transp=tcp, local_port=Port4, pid=Tcp2C},
-		#nkport{transp=udp, local_port=Port4, pid=UdpP2C}
-	] = nkpacket:get_all(dom2),
+							% it has to retry
 	
+	[
+		#nkport{transp=tcp, local_port=Port4, pid=LisC},
+		#nkport{transp=udp, local_port=Port4, pid=ConnC}
+	] = test_util:listeners(dom2),
+
 	% true = Port4/=Port3,
-	true = Tcp2C/=TcpP2B,
-	true = UdpP2C/=UdpP2B,
+	true = LisC/=LisB,
+	true = ConnC/=ConnB,
  	ok = nkpacket:stop_all(none),
  	ok = nkpacket:stop_all(dom2),
 	timer:sleep(500),
@@ -127,13 +128,13 @@ listen() ->
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, <<"test1">>}} -> ok after 1000 -> error(?LINE) end,
 
-	[
-		#nkport{local_ip={0,0,0,0}, local_port=Port1, remote_ip=undefined,
-				 remote_port=undefined, pid=Udp1, socket=UdpS1} = Listen,
-		#nkport{local_ip={0,0,0,0}, local_port=Port1, remote_ip={127,0,0,1},
-				 remote_port=LocalPort, socket=UdpS1, pid=Conn1Pid} = Conn1
-	] = 
-		lists:sort(nkpacket:get_all(<<"dom1">>)),
+	[#nkport{local_ip={0,0,0,0}, local_port=Port1, remote_ip=undefined,
+			 remote_port=undefined, pid=Udp1, socket=UdpS1} = Listen] =
+		test_util:listeners(<<"dom1">>),
+	
+	[#nkport{local_ip={0,0,0,0}, local_port=Port1, remote_ip={127,0,0,1},
+			 remote_port=LocalPort, socket=UdpS1, pid=Conn1Pid} = Conn1] = 
+		test_util:conns(<<"dom1">>),
 	
 	% Send a message back, directly through the connection
 	ok = nkpacket_connection:send(Conn1, <<"test2">>),
@@ -153,7 +154,7 @@ listen() ->
 	[Conn1Pid] = 
 		nkpacket_transport:get_connected({test_protocol, udp, {127,0,0,1}, LocalPort},
 										 #{group=><<"dom1">>}),
-	[Conn1] = nkpacket_connection:get_all(<<"dom1">>),
+	[Conn1Pid] = nkpacket_connection:get_all(<<"dom1">>),
 	ok = nkpacket_connection:stop(Conn1Pid, normal),
 	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),

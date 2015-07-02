@@ -27,12 +27,12 @@
 -module(nkpacket).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([start_listener/2, stop_listener/1, stop_all/0, stop_all/1]).
--export([get_listener/2]).
+-export([start_listener/2, get_listener/2, stop_listener/1]).
+-export([get_all/0, get_all/1, get_groups/0]).
+-export([stop_all/0, stop_all/1]).
 -export([send/2, send/3, connect/2]).
--export([get_all/0, get_all/1, get_listening/2, get_listening/3]).
--export([is_local/1, is_local/2, is_local_ip/1]).
--export([get_nkport/1, get_local/1, get_remote/1, get_pid/1, get_user/1]).
+-export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
+-export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_user/1]).
 -export([resolve/1, resolve/2]).
 
 -export_type([group/0, transport/0, protocol/0, nkport/0]).
@@ -271,18 +271,46 @@ stop_listener(#nkport{pid=Pid}) ->
     stop_listener(Pid).
 
 
+%% @doc Gets all registered transports in all Groups.
+-spec get_all() -> 
+    [pid()].
+
+get_all() ->
+    [Pid || {_Group, Pid} <- nklib_proc:values(nkpacket_listeners)].
+
+
+%% @doc Gets all registered transports for a Group.
+-spec get_all(group()) -> 
+    [pid()].
+
+get_all(Group) ->
+    [Pid || {G, Pid} <- nklib_proc:values(nkpacket_listeners), G==Group].
+
+
+%% @doc Gets all groups having registered listeners
+-spec get_groups() -> 
+    map().
+
+get_groups() ->
+    lists:foldl(
+        fun({Group, Pid}, Acc) -> maps:put(Group, [Pid|maps:get(Group, Acc, [])]) end,
+        #{},
+        nklib_proc:values(nkpacket_listeners)).
+
+
 %% @doc Stops all locally started listeners (only for standard supervisor)
 stop_all() ->
     lists:foreach(
-        fun(#nkport{pid=Pid}) -> stop_listener(Pid) end,
+        fun(Pid) -> stop_listener(Pid) end,
         get_all()).
 
 
 %% @doc Stops all locally started listeners for a Group (only for standard supervisor)
 stop_all(Group) ->
     lists:foreach(
-        fun(#nkport{pid=Pid}) -> stop_listener(Pid) end,
+        fun(Pid) -> stop_listener(Pid) end,
         get_all(Group)).
+
 
 
 %% @doc Gets the current pid() of a listener or connection
@@ -315,14 +343,6 @@ get_remote(Pid) when is_pid(Pid) ->
     apply_nkport(Pid, fun get_remote/1).
 
 
-%% @doc Gets the current pid() of a listener or connection
--spec get_pid(nkport()) ->
-    pid().
-
-get_pid(#nkport{pid=Pid}) ->
-    Pid.
-
-
 %% @doc Gets the user metadata of a listener or connection
 -spec get_user(pid()|nkport()) ->
     {ok, term()} | error.
@@ -331,6 +351,14 @@ get_user(#nkport{meta=Meta}) ->
     {ok, maps:get(user, Meta, undefined)};
 get_user(Pid) when is_pid(Pid) ->
     apply_nkport(Pid, fun get_user/1).
+
+
+%% @doc Gets the current pid() of a listener or connection
+-spec pid(nkport()) ->
+    pid().
+
+pid(#nkport{pid=Pid}) ->
+    Pid.
 
 
 %% @doc Sends a message to a connection.
@@ -380,40 +408,6 @@ connect(Uri, Opts) when is_map(Opts) ->
         {error, Error} ->
             {error, Error}
     end.
-
-
-%% @doc Gets all registered transports in all Groups.
--spec get_all() -> 
-    [nkport()].
-
-get_all() ->
-    lists:sort(
-        nklib_util:filtermap(
-            fun({_, Pid}) ->
-                case catch get_nkport(Pid) of
-                    {ok, NkPort} -> {true, NkPort};
-                    _ -> false
-                end
-            end,
-            nklib_proc:values(nkpacket_transports))).
-
-
-
-%% @doc Gets all registered transports for a Group.
--spec get_all(group()) -> 
-    [nkport()].
-
-get_all(Group) ->
-    lists:filter(
-        fun(#nkport{meta=Meta}) ->
-            case Meta of
-                #{group:=Group} -> true;
-                #{group:=_} -> false;
-                _ when Group==none -> true;
-                _ -> false
-            end
-        end,
-        get_all()).
 
 
 %% @private Finds a listening transport of Proto.

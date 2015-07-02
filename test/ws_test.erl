@@ -64,8 +64,8 @@ basic() ->
 			transp=ws, 
 			local_ip={0,0,0,0}, local_port=LPort1,
 	        meta = #{group:=dom1}
-		} = Listen1
-	] = nkpacket:get_all(dom1),
+		} = _Listen1
+	] = test_util:listeners(dom1),
 	
 	Url1 = "test://localhost:"++integer_to_list(LPort1)++
 			";transport=ws;connect_timeout=2000;idle_timeout=1000",
@@ -85,7 +85,6 @@ basic() ->
 	}} = nkpacket:get_nkport(Conn1),
 
 	[
-		Listen1,
 		#nkport{
 			transp = ws, 
 			local_ip = {0,0,0,0}, local_port = LPort1,
@@ -95,7 +94,7 @@ basic() ->
 	        pid = Conn1R,
 	        meta = #{path := <<"/">>, group:=dom1}
 	    }
-	] = nkpacket:get_all(dom1),
+	] = test_util:conns(dom1),
 
 	% We send some more data. The same connection is used.
 	{ok, Conn1} = nkpacket:send(Conn1, msg1b, #{group=>dom2}),
@@ -168,8 +167,8 @@ wss() ->
 			transp=wss, 
 			local_ip={0,0,0,0}, local_port=LPort1,
 			meta=#{group:=dom1}
-		} = Listen1
-	] = nkpacket:get_all(dom1),
+		} = _Listen1
+	] = test_util:listeners(dom1),
 	
 	Url1 = "<test://localhost:"++integer_to_list(LPort1)++";transport=wss>",
 	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{group=>dom2}),
@@ -194,7 +193,7 @@ wss() ->
 	receive {Ref1, {parse, {binary, msg1b}}} -> ok after 1000 -> error(?LINE) end,
 
 	% And in the opposite direction
-	[Listen1, #nkport{pid=Conn1R}] = nkpacket:get_all(dom1),
+	[#nkport{pid=Conn1R}] = test_util:conns(dom1),
 	{ok, Conn1R} = nkpacket:send(Conn1R, msg1c, #{group=>dom1}),
 	receive {Ref1, {encode, msg1c}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg1c}}} -> ok after 1000 -> error(?LINE) end,
@@ -220,7 +219,7 @@ ping() ->
 	%% WE HAVE AND ADDITIONAL PONG... WHY???
 	receive {Ref2, {pong, <<"ping1">>}} -> ok after 1000 -> error(?LINE) end,
 
-	[_, Conn1R] = nkpacket:get_all(dom1),
+	[Conn1R] = test_util:conns(dom1),
 	nkpacket_connection:send(Conn1R, {nkraw, {ping, <<"ping2">>}}),
 	receive {Ref1, {encode, {ping, <<"ping2">>}}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {pong, <<"ping2">>}} -> ok after 1000 -> error(?LINE) end,
@@ -296,7 +295,7 @@ multi() ->
 				path := <<"/dom1/more">>, group:=dom1
 			}
 		} = Listen1
-	] = nkpacket:get_all(dom1),
+	] = test_util:listeners(dom1),
  	[
  		#nkport{
  			transp = ws,
@@ -308,7 +307,7 @@ multi() ->
           		path := <<"/dom2">>, group:=dom2
           	}
         } = Listen2
-    ] = nkpacket:get_all(dom2),
+    ] = test_util:listeners(dom2),
  	[
  		#nkport{transp = ws,
 			local_ip = {0,0,0,0}, local_port = P1,
@@ -321,7 +320,7 @@ multi() ->
 				ws_proto := <<"proto1">>, group:=dom3
 			}
 		}
-	] = nkpacket:get_all(dom3),
+	] = test_util:listeners(dom3),
 	[
 		{ws, {0,0,0,0}, P1, Cow1, [
      		#{id:=Ws3, host:=<<"localhost">>, path:=<<"/dom3">>, ws_proto:=<<"proto1">>},
@@ -337,7 +336,7 @@ multi() ->
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
 	% Conn1B = Conn1#nkport{meta=maps:remove(idle_timeout, Conn1#nkport.meta)},
-    [#nkport{pid=Conn1}] = nkpacket:get_all(dom5),
+    [#nkport{pid=Conn1}] = test_util:conns(dom5),
 	{ok, #nkport{
 		transp = ws,
         local_ip = {127,0,0,1}, local_port = Conn1Port,
@@ -348,7 +347,6 @@ multi() ->
         }
     }} = nkpacket:get_nkport(Conn1),
     [
-    	Listen1,
     	#nkport{
 			transp = ws,
          	local_ip = {0,0,0,0}, local_port = P1,
@@ -358,11 +356,11 @@ multi() ->
          		path := <<"/dom1/more">>, group:=dom1
          	}
         }
-    ] = nkpacket:get_all(dom1),
+    ] = test_util:conns(dom1),
 	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(100),
-	[Listen1] = nkpacket:get_all(dom1),
-    [] = nkpacket:get_all(dom5),
+	[Listen1] = test_util:listeners(dom1),
+    [] = test_util:listeners(dom5),
 
     % No one is listening here
     {error, closed} = 
@@ -395,9 +393,8 @@ multi() ->
         }
     }} = nkpacket:get_nkport(Conn2),								% Outgoing
 
-    [Listen1, #nkport{pid=Conn2}] = nkpacket:get_all(dom1),
+    [#nkport{pid=Conn2}] = test_util:conns(dom1),
     [
-    	Listen2,
     	#nkport{
     		transp = ws,
           	local_ip = {0,0,0,0}, local_port = P1,
@@ -407,7 +404,7 @@ multi() ->
     	    	path := <<"/dom2">>, group:=dom2			% Server was accepting every host
     	    }
         }
-    ] = nkpacket:get_all(dom2),
+    ] = test_util:conns(dom2),
 	receive {Ref1, conn_stop} -> ok after 2000 -> error(?LINE) end,
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
 

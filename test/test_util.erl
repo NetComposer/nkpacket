@@ -28,9 +28,8 @@
 
 reset_1() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
- 	ok = nkpacket:stop_all(none),
- 	ok = nkpacket:stop_all(dom1),
- 	ok = nkpacket:stop_all(<<"dom1">>),
+ 	ok = nkpacket:stop_all(),
+ 	ok = nkpacket_connection:stop_all(),
  	timer:sleep(100),
 	Pid = self(),
 	Ref = make_ref(),
@@ -40,10 +39,8 @@ reset_1() ->
 
 reset_2() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
- 	ok = nkpacket:stop_all(none),
- 	ok = nkpacket:stop_all(dom1),
- 	ok = nkpacket:stop_all(<<"dom1">>),
- 	ok = nkpacket:stop_all(dom2),
+ 	ok = nkpacket:stop_all(),
+ 	ok = nkpacket_connection:stop_all(),
  	timer:sleep(100),
 	Pid = self(),
 	Ref1 = make_ref(),
@@ -55,11 +52,8 @@ reset_2() ->
 
 reset_3() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
- 	ok = nkpacket:stop_all(none),
- 	ok = nkpacket:stop_all(dom1),
- 	ok = nkpacket:stop_all(<<"dom1">>),
- 	ok = nkpacket:stop_all(dom2),
- 	ok = nkpacket:stop_all(dom3),
+ 	ok = nkpacket:stop_all(),
+ 	ok = nkpacket_connection:stop_all(),
  	timer:sleep(100),
 	Pid = self(),
 	Ref1 = make_ref(),
@@ -73,12 +67,8 @@ reset_3() ->
 
 reset_4() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
- 	ok = nkpacket:stop_all(none),
- 	ok = nkpacket:stop_all(dom1),
- 	ok = nkpacket:stop_all(<<"dom1">>),
- 	ok = nkpacket:stop_all(dom2),
- 	ok = nkpacket:stop_all(dom3),
- 	ok = nkpacket:stop_all(dom4),
+ 	ok = nkpacket:stop_all(),
+ 	ok = nkpacket_connection:stop_all(),
  	timer:sleep(100),
 	Pid = self(),
 	Ref1 = make_ref(),
@@ -115,7 +105,12 @@ get_port(tcp) ->
     Port1.
 
 
+listeners(Dom) ->
+	lists:sort([element(2, nkpacket:get_nkport(P)) || P <- nkpacket:get_all(Dom)]).
 
+
+conns(Dom) ->
+	lists:sort([element(2, nkpacket:get_nkport(P)) || P <- nkpacket_connection:get_all(Dom)]).
 
 
 

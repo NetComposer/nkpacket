@@ -330,7 +330,7 @@ spec_http_proto(_, _, _) -> error.
 %% =================================================================
 
   
--define(TEST, true).
+% -define(TEST, true).
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 

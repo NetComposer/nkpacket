@@ -103,8 +103,8 @@ init([NkPort]) ->
             _ -> 
                 Port1 = Port
         end,
-        nklib_proc:put(nkpacket_transports),
         Group = maps:get(group, Meta, none),
+        nklib_proc:put(nkpacket_listeners, Group),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
             local_port = Port1,

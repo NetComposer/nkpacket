@@ -73,26 +73,24 @@ basic() ->
 	}),
 	timer:sleep(100),
 
-	[
-		#nkport{
+	[Listen1] = nkpacket:get_all(dom1),
+	{ok, #nkport{
 			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
 			protocol = nkpacket_protocol_http, pid=Http1, socket = CowPid,
 			meta = #{group:=dom1, path := <<"/test1">>}
-		}
-	] = nkpacket:get_all(dom1),
-	[
-	 	#nkport{
+	}} = nkpacket:get_nkport(Listen1),
+	[Listen2] = nkpacket:get_all(dom2),
+	{ok, #nkport{
  			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
 			pid = Http2, socket = CowPid,
 			meta = #{group:=dom2, path := <<"/test2">>}
-		}
-	] = nkpacket:get_all(dom2),
-	[
-		#nkport{
+	}} = nkpacket:get_nkport(Listen2),
+	[Listen3] = nkpacket:get_all(dom3),
+	{ok, #nkport{
 			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
@@ -102,8 +100,7 @@ basic() ->
 				host := <<"localhost">>,
 				path := <<"/test3/a">>
 			}
-		}
-	] = nkpacket:get_all(dom3),
+	}} = nkpacket:get_nkport(Listen3),
 
 	Gun = open(Port, tcp),
 	{ok, 404, H1} = get(Gun, "/", []),

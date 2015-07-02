@@ -24,9 +24,11 @@
 -behaviour(gen_server).
 
 -export([send/2, stop/1, stop/2, start/1]).
+
+
 -export([reset_timeout/2, get_timeout/1]).
--export([incoming/2, get_all/0, get_all/1, stop_all/0]).
--export([connect/1, conn_init/1]).
+-export([get_all/0, get_all/1, get_all_groups/0, stop_all/0, stop_all/1]).
+-export([incoming/2, connect/1, conn_init/1]).
 -export([ranch_start_link/2, ranch_init/2]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3,   
             handle_cast/2, handle_info/2]).
@@ -122,16 +124,6 @@ send(Pid, Msg) when is_pid(Pid) ->
     end.
 
 
-
-% %% @doc Sends a message to a started connection
-% -spec async_send(pid(), nkpacket:outcoming()) ->
-%     ok.
-
-% async_send(Pid, OutMsg) when is_pid(Pid) ->
-%     gen_server:cast(Pid, {send, OutMsg}).
-
-
-
 %% @doc Stops a started connection with reason 'normal'
 -spec stop(#nkport{}|pid()) ->
     ok.
@@ -146,6 +138,49 @@ stop(Conn) ->
 
 stop(Conn, Reason) ->
     gen_server:cast(get_pid(Conn), {stop, Reason}).
+
+
+%% @doc Gets all started connections
+-spec get_all() ->
+    [pid()].
+
+get_all() ->
+    [Pid || {_Group, Pid} <- nklib_proc:values(nkpacket_connections)].
+
+
+%% @doc Gets all started connections for a Group.
+-spec get_all(nkpacket:group()) -> 
+    [pid()].
+
+get_all(Group) ->
+    [Pid || {G, Pid} <- nklib_proc:values(nkpacket_connections), G==Group].
+
+
+%% @doc Gets all groups having started connections
+-spec get_all_groups() -> 
+    map().
+
+get_all_groups() ->
+    lists:foldl(
+        fun({Group, Pid}, Acc) -> maps:put(Group, [Pid|maps:get(Group, Acc, [])]) end,
+        #{},
+        nklib_proc:values(nkpacket_connections)).
+
+
+%% @doc Stops all started connections
+-spec stop_all() ->
+    ok.
+
+stop_all() ->
+    lists:foreach(fun(Pid) -> stop(Pid, normal) end, get_all()).
+
+
+%% @doc Stops all started connections for a Group
+-spec stop_all(nkpacket:group()) ->
+    ok.
+
+stop_all(Group) ->
+    lists:foreach(fun(Pid) -> stop(Pid, normal) end, get_all(Group)).
 
 
 %% @doc Re-start the idle timeout
@@ -197,55 +232,6 @@ ranch_start_link(NkPort, Ref) ->
 
 
 %% ===================================================================
-%% Only testing
-%% ===================================================================
-
-%% @private
-get_all() ->
-    nklib_proc:fold_names(
-        fun(Name, Values, Acc) ->
-            case Name of
-                {nkpacket_connection, _, _} -> 
-                    lists:foldl(
-                        fun({val, _Meta, Pid}, Acc1) ->
-                            case catch nkpacket:get_nkport(Pid) of
-                                {ok, NkPort} -> [NkPort|Acc1];
-                                _ -> Acc1
-                            end
-                        end,
-                        Acc,
-                        Values);
-                _ ->
-                    Acc
-            end
-        end,
-        []).
-
-
-%% @private
-get_all(Group) ->
-    lists:filter(
-        fun(#nkport{meta=Meta}) ->
-            case Meta of
-                #{group:=Group} -> true;
-                #{group:=_} -> false;
-                _ when Group==none -> true;
-                _ -> true
-            end
-        end,
-        get_all()).
-
-
-%% @private
-stop_all() ->
-    lists:foreach(
-        fun(#nkport{pid=Pid}) -> nkpacket_connection:stop(Pid, normal) end,
-        get_all()).
-
-
-
-
-%% ===================================================================
 %% gen_server
 %% ===================================================================
 
@@ -285,7 +271,7 @@ init([NkPort]) ->
     } = NkPort,
     process_flag(trap_exit, true),          % Allow call to terminate/2
     Group = maps:get(group, Meta, none),
-    nklib_proc:put(nkpacket_transports),
+    nklib_proc:put(nkpacket_connections, Group),
     nklib_counters:async([nkpacket_connections, {nkpacket_connections, Group}]),
     Conn = {Protocol, Transp, Ip, Port},
     StoredMeta = if
