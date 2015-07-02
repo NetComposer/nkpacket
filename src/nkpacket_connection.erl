@@ -100,6 +100,7 @@ send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
         true ->
             case Protocol:encode(Msg, NkPort) of
                 {ok, OutMsg} ->
+                    lager:debug("Conn Quick Send: ~p", [OutMsg]),
                     case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
                         ok ->
                             reset_timeout(Pid),
@@ -408,6 +409,7 @@ handle_call(get_timeout, _From, #state{timeout_timer=Ref}=State) ->
 handle_call({send, Msg}, _From, #state{nkport=NkPort}=State) ->
     case encode(Msg, State) of
         {ok, OutMsg, State1} ->
+            lager:debug("Conn Send: ~p", [OutMsg]),
             Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
             {reply, Reply, restart_timer(State1)};
         {error, Error, State1} ->
@@ -601,6 +603,7 @@ parse(Data, #state{transp=Transp, socket=Socket}=State)
     end;
 
 parse(Data, State) ->
+    lager:debug("Conn Recv: ~p", [Data]),
     case do_parse(Data, State) of
         {ok, State1} ->
             {noreply, State1};
