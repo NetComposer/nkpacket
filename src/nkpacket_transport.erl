@@ -158,7 +158,10 @@ send([{connect, Conn}|Rest], Msg, Opts) ->
     end;
 
 send([{_, _, _, _}=Conn|Rest], Msg, #{group:=_}=Opts) ->
-    Pids = get_connected(Conn, Opts),
+    Pids = case Opts of
+        #{force_new:=true} -> [];
+        _ -> get_connected(Conn, Opts)
+    end,
     case do_send(Msg, Pids, Opts) of
         {ok, Pid} -> 
             lager:debug("Transport used previous connection to ~p (~p)", [Conn, Opts]),

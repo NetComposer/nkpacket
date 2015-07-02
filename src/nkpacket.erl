@@ -164,6 +164,7 @@
     connect_opts() |
     #{
         % Specific options
+        force_new => boolean(),             % Forces a new connection
         udp_to_tcp => boolean()             % Change to TCP for large packets
     }.
 
@@ -371,6 +372,7 @@ send(SendSpec, Msg) ->
 
 %% @doc Sends a message to a connection
 %% If a group is included, it will try to reuse any existing connection of the same group
+%% (except if force_new option is set)
 -spec send(send_spec() | [send_spec()], term(), send_opts()) ->
     {ok, pid()} | {error, term()}.
 
