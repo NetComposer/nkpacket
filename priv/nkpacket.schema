@@ -1,54 +1,54 @@
 %% @doc Maximum global number of network connections
-{mapping, "max_connections", "nkpacket.max_connections", [
+{mapping, "transp.max_connections", "nkpacket.max_connections", [
     {default, "{{max_connections}}"},
     {datatype, integer},
     {validators, ["max_connections"]}
 ]}.
 
 %% @doc Default TTL for DNS cache
-{mapping, "dns_cache_ttl", "nkpacket.dns_cache_ttl", [
+{mapping, "transp.dns_cache_ttl", "nkpacket.dns_cache_ttl", [
     {default, "30s"},
     {datatype, {duration, ms}},
     {validators, ["max_timeout"]}
 ]}.
 
 %% @doc Default TTL for UDP connections
-{mapping, "udp_timeout", "nkpacket.udp_timeout", [
+{mapping, "transp.udp_timeout", "nkpacket.udp_timeout", [
     {default, "30s"},
     {datatype, {duration, ms}},
     {validators, ["max_timeout"]}
 ]}.
 
 %% @doc Default TTL for TCP connections
-{mapping, "tcp_timeout", "nkpacket.tcp_timeout", [
+{mapping, "transp.tcp_timeout", "nkpacket.tcp_timeout", [
     {default, "180s"},
     {datatype, {duration, ms}},
     {validators, ["max_timeout"]}
 ]}.
 
 %% @doc Default TTL for SCTP connections
-{mapping, "sctp_timeout", "nkpacket.sctp_timeout", [
+{mapping, "transp.sctp_timeout", "nkpacket.sctp_timeout", [
     {default, "180s"},
     {datatype, {duration, ms}},
     {validators, ["max_timeout"]}
 ]}.
 
 %% @doc Default TTL for WS connections
-{mapping, "ws_timeout", "nkpacket.ws_timeout", [
+{mapping, "transp.ws_timeout", "nkpacket.ws_timeout", [
     {default, "180s"},
     {datatype, {duration, ms}},
     {validators, ["max_timeout"]}
 ]}.
 
 %% @doc Default TTL for HTTP connections
-{mapping, "http_timeout", "nkpacket.http_timeout", [
+{mapping, "transp.http_timeout", "nkpacket.http_timeout", [
     {default, "180s"},
     {datatype, {duration, ms}},
     {validators, ["max_timeout"]}
 ]}.
 
 %% @doc Default TTL for outbound connections
-{mapping, "connect_timeout", "nkpacket.connect_timeout", [
+{mapping, "transp.connect_timeout", "nkpacket.connect_timeout", [
     {default, "30s"},
     {datatype, {duration, ms}},
     {validators, ["max_timeout"]}
@@ -56,9 +56,9 @@
 
 
 {validator, "max_connections", "Must be lower than 1000000", 
-    fun(Size) -> Size>=0 andalso Size =< 1024 end}.
+    fun(Size) -> Size>0 andalso Size =< 1000000 end}.
 
 {validator, "max_timeout", "Must be lower than 1 week", 
-    fun(Size) -> Size>=0 andalso Size =< 604800000 end}.
+    fun(Size) -> Size>0 andalso Size =< 604800000 end}.
 
 
