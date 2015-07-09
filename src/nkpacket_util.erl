@@ -24,7 +24,7 @@
 
 -export([log_level/1, make_web_proto/1]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
--export([get_local_uri/2, get_remote_uri/2]).
+-export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
 -export([check_paths/2]).
 -export([parse_opts/1]).
@@ -258,6 +258,16 @@ get_uri(Scheme, Transp, Ip, Port) ->
         "<", nklib_util:to_binary(Scheme), "://", nklib_util:to_host(Ip), ":", 
         nklib_util:to_binary(Port), ";transport=", nklib_util:to_binary(Transp), ">"
     ]).
+
+%% @doc Removes the user part from a nkport()
+-spec remove_user(nkpacket:nkport()) ->
+    nkpacket:nkport().
+
+remove_user(#nkport{meta=#{user:=_}=Meta}=NkPort) ->
+    NkPort#nkport{meta=maps:remove(user, Meta)};
+
+remove_user(NkPort) ->
+    NkPort.
 
 
 %% @private
