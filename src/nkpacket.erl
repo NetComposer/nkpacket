@@ -365,9 +365,11 @@ get_user(Pid) when is_pid(Pid) ->
 
 
 %% @doc Gets the current pid() of a listener or connection
--spec pid(nkport()) ->
+-spec pid(pid()|nkport()) ->
     pid().
 
+pid(Pid) when is_pid(Pid) ->
+    Pid;
 pid(#nkport{pid=Pid}) ->
     Pid.
 
