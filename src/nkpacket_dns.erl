@@ -263,9 +263,9 @@ get_ips(Host, Opts) ->
                     end
             end,
             save_cache({ips, Host1}, Ips),
-            random(Ips);
+            nklib_util:randomize(Ips);
         Ips ->
-            random(Ips)
+            nklib_util:randomize(Ips)
     end.
 
 
@@ -460,32 +460,6 @@ groups([], [], Acc2) ->
 groups([], Acc1, Acc2) ->
     LAcc1 = [{W, T} || {_, W, T} <- Acc1],
     lists:reverse([LAcc1|Acc2]).
-
-
-%% @private
--spec random(list()) ->
-    list().
-
-random([]) ->
-    [];
-random([A]) ->
-    [A];
-random([A, B]) ->
-    case crypto:rand_uniform(0, 2) of
-        0 -> [A, B];
-        1 -> [B, A]
-    end;
-random([A, B, C]) ->
-    case crypto:rand_uniform(0, 3) of
-        0 -> [A, B, C];
-        1 -> [B, C, A];
-        2 -> [C, A, B]
-    end;
-random(List) ->
-    Size = length(List),
-    List1 = [{crypto:rand_uniform(0, Size), Term} || Term <- List],
-    [Term || {_, Term} <- lists:sort(List1)].
-
 
 
 
