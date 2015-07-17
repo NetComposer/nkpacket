@@ -381,21 +381,8 @@ outbound_opts(#nkport{transp=ws}) ->
     [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}];
 
 outbound_opts(#nkport{transp=wss, meta=Opts}) ->
-    case code:priv_dir(nkpacket) of
-        PrivDir when is_list(PrivDir) ->
-            DefCert = filename:join(PrivDir, "cert.pem"),
-            DefKey = filename:join(PrivDir, "key.pem");
-        _ ->
-            DefCert = "",
-            DefKey = ""
-    end,
-    Cert = maps:get(certfile, Opts, DefCert),
-    Key = maps:get(keyfile, Opts, DefKey),
-    lists:flatten([
-        binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw},
-        case Cert of "" -> []; _ -> {certfile, Cert} end,
-        case Key of "" -> []; _ -> {keyfile, Key} end
-    ]).
+    Base = [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}],
+    nkpacket_config:add_ssl_opts(Base, Opts).
 
 
 

@@ -55,7 +55,7 @@
 %% When starting an outgoing connection, if a suitable listening transport 
 %% is found with the same group, some values from listener's metadata will 
 %% be copied to the new connection: user, idle_timeout, host, path, ws_proto, 
-%% refresh_fun, certfile, keyfile, tcp_packet
+%% refresh_fun, certfile, keyfile, cacertfile, tcp_packet
 -type group() :: term().
 
 %% Recognized transport schemes
@@ -92,9 +92,20 @@
             middlewares => [module()]
         }}.
 
+-type ssl_opts() ::
+    #{
+        certfile => string(),                   % Path to CertFile
+        keyfile => string(),                    % Path to KeyFile
+        cacertfile => string(),                 % Path to CA CertFile
+        password => string(),                   % Password for the certificate
+        verify => boolean(),                    % Client must have valid certificate
+        depth => 0..2                           % 0:Trusted CA, 1:Peer, CA, Trusted CA
+    }.
+
 
 %% Options for listeners
 -type listener_opts() ::
+    ssl_opts() |
     #{
         % Common options
         group => group(),                       % Connection group
@@ -114,8 +125,6 @@
         sctp_in_streams => integer(),           % Max input streams
 
         % TCP/TLS/WS/WSS options
-        certfile => string(),                   % 
-        keyfile => string(),                    %
         tcp_packet => 1 | 2 | 4 | raw,          %
         tcp_max_connections => integer(),       % Default 1024
         tcp_listeners => integer(),             % Default 100
@@ -136,6 +145,7 @@
 
 %% Options for connections
 -type connect_opts() ::
+    ssl_opts() |
     #{
         % Common options
         group => group(),                   % Connection group
@@ -148,8 +158,6 @@
         listen_nkport => none | nkport(),   % Select (or disables auto) base NkPort
 
         % TCP/TLS/WS/WSS options
-        certfile => string(),           
-        keyfile => string(),                 
         tcp_packet => 1 | 2 | 4 | raw,      
 
         % WS/WSS

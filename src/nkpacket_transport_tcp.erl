@@ -143,7 +143,11 @@ init([NkPort]) ->
                 [RanchPort]),
             Group = maps:get(group, Meta, none),
             nklib_proc:put(nkpacket_listeners, Group),
-            ConnMeta = maps:with([certfile, keyfile, tcp_packet|?CONN_LISTEN_OPTS], Meta),
+            ConnMetaOpts = [
+                certfile, keyfile, cacertfile, password, verify, depth, tcp_packet 
+                | ?CONN_LISTEN_OPTS
+            ],
+            ConnMeta = maps:with(ConnMetaOpts, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
             nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
@@ -286,14 +290,11 @@ outbound_opts(#nkport{transp=tcp, meta=Opts}) ->
     ];
 
 outbound_opts(#nkport{transp=tls, meta=Opts}) ->
-    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
-    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
-    lists:flatten([
+    Base = [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
-        binary, {active, false}, {nodelay, true}, {keepalive, true},
-        case Cert of "" -> []; _ -> {certfile, Cert} end,
-        case Key of "" -> []; _ -> {keyfile, Key} end
-    ]).
+        binary, {active, false}, {nodelay, true}, {keepalive, true}
+    ],
+    nkpacket_config:add_ssl_opts(Base, Opts).
 
 
 %% @private Gets socket options for listening connections
@@ -309,17 +310,13 @@ listen_opts(#nkport{transp=tcp, local_ip=Ip, meta=Opts}) ->
     ];
 
 listen_opts(#nkport{transp=tls, local_ip=Ip, meta=Opts}) ->
-    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
-    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
-    lists:flatten([
+    Base = [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
-        {reuseaddr, true}, {backlog, 1024},
-        {versions, ['tlsv1.2', 'tlsv1.1', 'tlsv1']}, % Avoid SSLv3
-        case Cert of "" -> []; _ -> {certfile, Cert} end,
-        case Key of "" -> []; _ -> {keyfile, Key} end
-    ]).
+        {reuseaddr, true}, {backlog, 1024}
+    ],
+    nkpacket_config:add_ssl_opts(Base, Opts).
 
 
 %% @private

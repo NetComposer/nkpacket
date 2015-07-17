@@ -27,6 +27,7 @@
 -export([get_local_ips/0, max_connections/0, dns_cache_ttl/0]).
 -export([udp_timeout/0, tcp_timeout/0, sctp_timeout/0, ws_timeout/0, http_timeout/0, 
          connect_timeout/0, certfile/0, keyfile/0]).
+-export([add_ssl_opts/2]).
 -export([init/0]).
 
 -compile({no_auto_import, [get/1, put/2]}).
@@ -76,6 +77,34 @@ certfile() -> get(certfile).
 keyfile() -> get(keyfile).
 
 
+%% @doc Adds SSL options
+-spec add_ssl_opts(list(), map()) ->
+    list().
+
+add_ssl_opts(Base, Opts) ->
+    Cert = maps:get(certfile, Opts, certfile()),
+    Key = maps:get(keyfile, Opts, keyfile()),
+    CaCert = maps:get(cacertfile, Opts, ""),
+    Pass = maps:get(password, Opts, ""),
+    {Verify, Fail} = case maps:get(verify, Opts, false) of
+        true -> {verify_peer, true};
+        false -> {"", ""}
+    end,
+    Depth = maps:get(depth, Opts, ""),
+    lists:flatten([
+        Base,
+        {versions, ['tlsv1.2', 'tlsv1.1', 'tlsv1']},            % Avoid SSLv3
+        case Cert of "" -> []; _ -> {certfile, Cert} end,
+        case Key of "" -> []; _ -> {keyfile, Key} end,
+        case CaCert of "" -> []; _ -> {certfile, CaCert} end,
+        case Pass of "" -> []; _ -> {password, Pass} end,
+        case Verify of "" -> []; _ -> {verify, Verify} end,
+        case Fail of "" -> []; _ -> {fail_if_no_peer_cert, Fail} end,
+        case Depth of "" -> []; _ -> {depth, Depth} end
+    ]).
+
+
+
 %% ===================================================================
 %% Internal
 %% ===================================================================
@@ -99,7 +128,8 @@ spec() ->
         http_timeout => nat_integer,
         connect_timeout => nat_integer,
         certfile => string,
-        keyfile => string
+        keyfile => string,
+        cacertfile => string
     }.
 
 

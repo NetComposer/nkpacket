@@ -39,6 +39,7 @@
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
+
 -type filter() ::
     #{
         id => term(),           % Mandatory
@@ -58,8 +59,8 @@
 %% @private Starts a new shared transport or reuses an existing one
 %%
 %% The 'meta' field in NkPort can include options, but it will only be read from 
-%% the first started server: tcp_listeners, tcp_max_connections, certfile, keyfile
-%%
+%% the first started server: tcp_listeners, tcp_max_connections, certfile, keyfile,
+%% cacertfile, etc.
 %% It can also include 'cowboy_opts' with the same limitation. 
 %% The following options are fixed: timeout, compress
 %%
@@ -396,18 +397,14 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip})
         {reuseaddr, true}, {backlog, 1024}
     ];
 
-listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
+listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts}) 
         when Transp==wss; Transp==https ->
-    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
-    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
-    lists:flatten([
+    Base = [
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
-        {reuseaddr, true}, {backlog, 1024},
-        {versions, ['tlsv1.2', 'tlsv1.1', 'tlsv1']}, % Avoid SSLv3
-        case Cert of "" -> []; _ -> {certfile, Cert} end,
-        case Key of "" -> []; _ -> {keyfile, Key} end
-    ]).
+        {reuseaddr, true}, {backlog, 1024}
+    ],
+    nkpacket_config:add_ssl_opts(Base, Opts).
 
 
 %% @private
