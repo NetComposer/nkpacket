@@ -111,6 +111,7 @@ sctp_timeout|`integer()`|180000|(msecs)
 ws_timeout|`integer()`|180000|(msecs)
 http_timeout|`integer()`|180000|(msecs)
 connect_timeout|`integer()`|30000|(msecs)
+tls_opts|`nkpacket:tls_opts()`|#{}|See nkpacket.erl
 
 NkPACKET uses [lager](https://github.com/basho/lager) for log management. 
 

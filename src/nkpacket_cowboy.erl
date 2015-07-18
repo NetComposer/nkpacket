@@ -59,8 +59,7 @@
 %% @private Starts a new shared transport or reuses an existing one
 %%
 %% The 'meta' field in NkPort can include options, but it will only be read from 
-%% the first started server: tcp_listeners, tcp_max_connections, certfile, keyfile,
-%% cacertfile, etc.
+%% the first started server: tcp_listeners, tcp_max_connections, tls_opts
 %% It can also include 'cowboy_opts' with the same limitation. 
 %% The following options are fixed: timeout, compress
 %%
@@ -404,7 +403,7 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
     ],
-    nkpacket_config:add_ssl_opts(Base, Opts).
+    nkpacket_config:add_tls_opts(Base, Opts).
 
 
 %% @private

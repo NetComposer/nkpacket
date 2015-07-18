@@ -382,7 +382,7 @@ outbound_opts(#nkport{transp=ws}) ->
 
 outbound_opts(#nkport{transp=wss, meta=Opts}) ->
     Base = [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}],
-    nkpacket_config:add_ssl_opts(Base, Opts).
+    nkpacket_config:add_tls_opts(Base, Opts).
 
 
 

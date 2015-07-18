@@ -81,9 +81,9 @@ make_web_proto(O) ->
     {ok, map()} | {error, term()}.
 
 parse_opts(Opts) ->
-    case nklib_config:parse_config(Opts, spec()) of
-        {ok, List1, _} ->
-            {ok, maps:from_list(List1)};
+    case nklib_config:parse_config(Opts, spec(), map) of
+        {ok, Map, _} ->
+            {ok, Map};
         {error, Error} ->
             {error, Error}
     end.
@@ -312,15 +312,18 @@ spec() ->
         udp_stun_t1 => nat_integer,
         sctp_out_streams => nat_integer,
         sctp_in_streams => nat_integer,
-        certfile => string,
-        keyfile => string,
-        cacertfile => string,
-        password => string,
-        verify => boolean,
-        depth => {integer, 0, 2},
         tcp_packet => [{enum, [raw]}, {integer, [1, 2, 4]}],
         tcp_max_connections => nat_integer,
         tcp_listeners => nat_integer,
+        tls_opts => 
+            #{
+                certfile => string,
+                keyfile => string,
+                cacertfile => string,
+                password => string,
+                verify => boolean,
+                depth => {integer, 0, 16}
+            },
         host => host,
         path => path,
         cowboy_opts => list,

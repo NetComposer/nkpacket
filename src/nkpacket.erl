@@ -55,7 +55,7 @@
 %% When starting an outgoing connection, if a suitable listening transport 
 %% is found with the same group, some values from listener's metadata will 
 %% be copied to the new connection: user, idle_timeout, host, path, ws_proto, 
-%% refresh_fun, certfile, keyfile, cacertfile, tcp_packet
+%% refresh_fun, tcp_packet, tls_opts
 -type group() :: term().
 
 %% Recognized transport schemes
@@ -92,7 +92,7 @@
             middlewares => [module()]
         }}.
 
--type ssl_opts() ::
+-type tls_opts() ::
     #{
         certfile => string(),                   % Path to CertFile
         keyfile => string(),                    % Path to KeyFile
@@ -105,7 +105,6 @@
 
 %% Options for listeners
 -type listener_opts() ::
-    ssl_opts() |
     #{
         % Common options
         group => group(),                       % Connection group
@@ -128,6 +127,7 @@
         tcp_packet => 1 | 2 | 4 | raw,          %
         tcp_max_connections => integer(),       % Default 1024
         tcp_listeners => integer(),             % Default 100
+        tls_opts => tls_opts(),
 
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
@@ -145,7 +145,6 @@
 
 %% Options for connections
 -type connect_opts() ::
-    ssl_opts() |
     #{
         % Common options
         group => group(),                   % Connection group
@@ -158,7 +157,8 @@
         listen_nkport => none | nkport(),   % Select (or disables auto) base NkPort
 
         % TCP/TLS/WS/WSS options
-        tcp_packet => 1 | 2 | 4 | raw,      
+        tcp_packet => 1 | 2 | 4 | raw,    
+        tls_opts => tls_opts(),  
 
         % WS/WSS
         host => string() | binary(),        % Host header to use
