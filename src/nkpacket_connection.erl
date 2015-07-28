@@ -527,7 +527,7 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{srv_monitor=MRef}=Sta
     {stop, normal, State};
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_monitor=MRef}=State) ->
-    lager:debug("Connection stop (user stop)", []),
+    lager:debug("Connection stop (caller stop)", []),
     {stop, normal, State};
 
 handle_info(Msg, State) ->
