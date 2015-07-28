@@ -27,7 +27,7 @@
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
 -export([check_paths/2]).
--export([parse_opts/1]).
+-export([parse_opts/1, spec/0, tls_spec/0]).
 
 -include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
@@ -316,15 +316,7 @@ spec() ->
         tcp_packet => [{enum, [raw]}, {integer, [1, 2, 4]}],
         tcp_max_connections => nat_integer,
         tcp_listeners => nat_integer,
-        tls_opts => 
-            #{
-                certfile => string,
-                keyfile => string,
-                cacertfile => string,
-                password => string,
-                verify => boolean,
-                depth => {integer, 0, 16}
-            },
+        tls_opts => tls_spec(),
         host => host,
         path => path,
         cowboy_opts => list,
@@ -334,6 +326,17 @@ spec() ->
         listen_port => [{enum, [none]}, {record, nkport}],
         force_new => boolean,
         udp_to_tcp => boolean
+    }.
+
+
+tls_spec() -> 
+    #{
+        certfile => string,
+        keyfile => string,
+        cacertfile => string,
+        password => string,
+        verify => boolean,
+        depth => {integer, 0, 16}
     }.
 
 
