@@ -112,7 +112,8 @@
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
-        
+        valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
+
         % UDP options
         udp_starts_tcp => boolean(),            % UDP starts TCP on the same port
         udp_no_connections => boolean(),        % Do not create connections
@@ -155,6 +156,7 @@
         idle_timeout => integer(),          % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         listen_nkport => none | nkport(),   % Select (or disables auto) base NkPort
+        valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
 
         % TCP/TLS/WS/WSS options
         tcp_packet => 1 | 2 | 4 | raw,    
@@ -569,6 +571,15 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
     try
         case nkpacket_util:parse_opts(UriOpts4 ++ maps:to_list(Opts)) of
             {ok, Opts1} -> 
+                case Opts1 of
+                    #{valid_schemes:=ValidSchemes} ->
+                        case lists:member(Scheme, ValidSchemes) of
+                            true -> ok;
+                            false -> throw({invalid_scheme, Scheme})
+                        end;
+                    _ ->
+                        ok
+                end,
                 Addrs = nkpacket_dns:resolve(Uri, Opts1),
                 Protocol = case Opts1 of
                     #{group:=Group} -> 

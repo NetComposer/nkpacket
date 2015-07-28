@@ -306,6 +306,7 @@ spec() ->
         no_dns_cache => boolean,
         idle_timeout => pos_integer,
         refresh_fun => {function, 1},
+        valid_schemes => {list, atom},
         udp_starts_tcp => boolean,
         udp_no_connections => boolean,
         udp_stun_reply => boolean,
