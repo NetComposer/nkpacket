@@ -231,7 +231,7 @@ handle_call({connect, ConnPort}, _From, State) ->
 handle_call({send_stun, Ip, Port}, From, State) ->
     {noreply, do_send_stun(Ip, Port, {call, From}, State)};
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call(get_socket, _From, #state{socket=Socket}=State) ->

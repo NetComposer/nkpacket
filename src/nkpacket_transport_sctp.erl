@@ -184,7 +184,7 @@ handle_call({connect, ConnPort}, From, State) ->
     },
     {noreply, State1};
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call(Msg, From, State) ->

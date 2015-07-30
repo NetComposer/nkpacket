@@ -142,7 +142,7 @@ init([NkPort]) ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call({start, Ip, Port, Path, Pid}, _From, State) ->

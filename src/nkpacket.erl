@@ -628,7 +628,7 @@ resolve(Uri, Opts) ->
     term() | error.
 
 apply_nkport(Pid, Fun) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, {apply_nkport, Fun}, 180000) of
+    case catch gen_server:call(Pid, {nkpacket_apply_nkport, Fun}, 180000) of
         {'EXIT', _} -> error;
         Other -> Other
     end.

@@ -234,7 +234,7 @@ handle_call({start, ListenPid, Filter}, _From, #state{servers=Servers}=State) ->
     Servers1 = [{Filter, ListenRef}|Servers],
     {reply, ok, register(State#state{servers=Servers1})};
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call(get_state, _From, State) ->

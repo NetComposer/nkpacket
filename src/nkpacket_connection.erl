@@ -119,7 +119,7 @@ send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
     end;
 
 send(Pid, Msg) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, {send, Msg}, 180000) of
+    case catch gen_server:call(Pid, {nkpacket_send, Msg}, 180000) of
         {'EXIT', _} -> {error, no_process};
         Other -> Other
     end.
@@ -138,7 +138,7 @@ stop(Conn) ->
     ok.
 
 stop(Conn, Reason) ->
-    gen_server:cast(get_pid(Conn), {stop, Reason}).
+    gen_server:cast(get_pid(Conn), {nkpacket_stop, Reason}).
 
 
 %% @doc Gets all started connections
@@ -191,7 +191,7 @@ stop_all(Group) ->
     ok.
 
 reset_timeout(Conn) ->
-    gen_server:cast(get_pid(Conn), reset_timeout).
+    gen_server:cast(get_pid(Conn), nkpacket_reset_timeout).
 
 
 %% @doc Re-starts the idle timeout with new time
@@ -199,7 +199,7 @@ reset_timeout(Conn) ->
     ok | error.
 
 reset_timeout(Conn, MSecs) ->
-    case catch gen_server:call(get_pid(Conn), {reset_timeout, MSecs}, ?CALL_TIMEOUT) of
+    case catch gen_server:call(get_pid(Conn), {nkpacket_reset_timeout, MSecs}, ?CALL_TIMEOUT) of
         ok -> ok;
         _ -> error
     end.
@@ -210,7 +210,7 @@ reset_timeout(Conn, MSecs) ->
     ok.
 
 get_timeout(Conn) ->
-    gen_server:call(get_pid(Conn), get_timeout, ?CALL_TIMEOUT).
+    gen_server:call(get_pid(Conn), nkpacket_get_timeout, ?CALL_TIMEOUT).
 
 
 %% @private 
@@ -218,7 +218,7 @@ get_timeout(Conn) ->
     ok.
 
 incoming(Conn, Msg) ->
-    gen_server:cast(get_pid(Conn), {incoming, Msg}).
+    gen_server:cast(get_pid(Conn), {nkpacket_incoming, Msg}).
 
 
 %% @private
@@ -388,13 +388,13 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
 -spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
     nklib_util:gen_server_call(#state{}).
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({reset_timeout, MSecs}, _From, State) ->
+handle_call({nkpacket_reset_timeout, MSecs}, _From, State) ->
     {reply, ok, restart_timer(State#state{timeout=MSecs})};
 
-handle_call(get_timeout, _From, #state{timeout_timer=Ref}=State) ->
+handle_call(nkpacket_get_timeout, _From, #state{timeout_timer=Ref}=State) ->
     Reply = case is_reference(Ref) of 
         true ->
             case erlang:read_timer(Ref) of
@@ -406,10 +406,10 @@ handle_call(get_timeout, _From, #state{timeout_timer=Ref}=State) ->
     end,
     {reply, Reply, State};
 
-handle_call({send, Msg}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_send, Msg}, _From, #state{nkport=NkPort}=State) ->
     case encode(Msg, State) of
         {ok, OutMsg, State1} ->
-            lager:debug("Conn Send: ~p", [OutMsg]),
+            % lager:debug("Conn Send: ~p", [OutMsg]),
             Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
             {reply, Reply, restart_timer(State1)};
         {error, Error, State1} ->
@@ -434,20 +434,20 @@ handle_call(Msg, From, State) ->
 %     nkpacket_connection_lib:raw_send(NkPort, OutMsg),
 %     {noreply, restart_timer(State)};
 
-handle_cast(reset_timeout, State) ->
+handle_cast(nkpacket_reset_timeout, State) ->
     {noreply, restart_timer(State)};
 
-handle_cast({incoming, Data}, State) ->
+handle_cast({nkpacket_incoming, Data}, State) ->
     parse(Data, restart_timer(State));
 
-handle_cast({stop, Reason}, State) ->
+handle_cast({nkpacket_stop, Reason}, State) ->
     {stop, Reason, State};
 
-handle_cast({bridged, Bridge}, State) ->
+handle_cast({nkpacket_bridged, Bridge}, State) ->
     lager:debug("Bridged: ~p, ~p", [?PR(Bridge), ?PR(State#state.nkport)]),
     {noreply, start_bridge(Bridge, down, State)};
 
-handle_cast({stop_bridge, Pid}, #state{bridge=#nkport{pid=Pid}}=State) ->
+handle_cast({nkpacket_stop_bridge, Pid}, #state{bridge=#nkport{pid=Pid}}=State) ->
     lager:debug("UnBridged: ~p, ~p", [Pid, ?PR(State#state.nkport)]),
     #state{bridge_monitor=Mon} = State, 
     case is_reference(Mon) of
@@ -456,7 +456,7 @@ handle_cast({stop_bridge, Pid}, #state{bridge=#nkport{pid=Pid}}=State) ->
     end,
     {noreply, State#state{bridge_monitor=undefined, bridge=undefined}};
 
-handle_cast({stop_bridge, Pid}, State) ->
+handle_cast({nkpacket_stop_bridge, Pid}, State) ->
     lager:warning("Received unbridge for unknown bridge ~p", [Pid]),
     {noreply, State};
 
@@ -603,7 +603,7 @@ parse(Data, #state{transp=Transp, socket=Socket}=State)
     end;
 
 parse(Data, State) ->
-    lager:debug("Conn Recv: ~p", [Data]),
+    % lager:debug("Conn Recv: ~p", [Data]),
     case do_parse(Data, State) of
         {ok, State1} ->
             {noreply, State1};
@@ -693,7 +693,7 @@ start_bridge(Bridge, Type, State) ->
                   [self(), Type, FromIp, FromPort, ToIp, ToPort]),
             Mon = erlang:monitor(process, BridgePid),
             case Type of
-                up -> gen_server:cast(BridgePid, {bridged, NkPort});
+                up -> gen_server:cast(BridgePid, {nkpacket_bridged, NkPort});
                 down -> ok
             end,
             State#state{bridge=Bridge, bridge_monitor=Mon, bridge_type=Type};
@@ -701,7 +701,7 @@ start_bridge(Bridge, Type, State) ->
             State;
         #nkport{pid=OldPid} ->
             erlang:demonitor(OldMon),
-            gen_server:cast(OldPid, stop_bridge),
+            gen_server:cast(OldPid, nkpacket_stop_bridge),
             start_bridge(Bridge, Type, State#state{bridge=undefined})
     end.
 
