@@ -22,7 +22,8 @@
 -module(nkpacket_util).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([log_level/1, make_web_proto/1]).
+-export([console_loglevel/1, make_web_proto/1]).
+-export([debug/0, info/0, notice/0, warning/0, error/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
@@ -39,10 +40,18 @@
 
 
 %% @doc Changes log level for console
--spec log_level(debug|info|notice|warning|error) ->
+debug() -> console_loglevel(debug).
+info() -> console_loglevel(info).
+notice() -> console_loglevel(notice).
+warning() -> console_loglevel(warning).
+error() -> console_loglevel(error).
+
+
+%% @doc Changes log level for console
+-spec console_loglevel(debug|info|notice|warning|error) ->
     ok.
 
-log_level(Level) -> 
+console_loglevel(Level) -> 
     lager:set_loglevel(lager_console_backend, Level).
 
 
