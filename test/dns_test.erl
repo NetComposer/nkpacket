@@ -54,53 +54,51 @@ start() ->
 
 uris() ->
     Test = [
-        {"<sip:1.2.3.4;transport=udp>",  [{?MODULE, udp, {1,2,3,4}, 0}]},
-        {"<sip:1.2.3.4;transport=tcp>",  [{?MODULE, tcp, {1,2,3,4}, 0}]},
-        {"<sip:1.2.3.4;transport=tls>",  [{?MODULE, tls, {1,2,3,4}, 0}]},
-        {"<sip:1.2.3.4;transport=sctp>", [{?MODULE, sctp, {1,2,3,4}, 0}]},
-        {"<sip:1.2.3.4;transport=ws>",   [{?MODULE, ws, {1,2,3,4}, 0}]},
-        {"<sip:1.2.3.4;transport=wss>",  [{?MODULE, wss, {1,2,3,4}, 0}]},
-        {"<sip:1.2.3.4;transport=other>", {error, {invalid_transport, <<"other">>}}},
+        {"<sip:1.2.3.4;transport=udp>",  [{udp, {1,2,3,4}, 5060}]},
+        {"<sip:1.2.3.4;transport=tcp>",  [{tcp, {1,2,3,4}, 5060}]},
+        {"<sip:1.2.3.4;transport=tls>",  [{tls, {1,2,3,4}, 5061}]},
+        {"<sip:1.2.3.4;transport=sctp>", [{sctp, {1,2,3,4}, 5060}]},
+        {"<sip:1.2.3.4;transport=ws>",   [{ws, {1,2,3,4}, 80}]},
+        {"<sip:1.2.3.4;transport=wss>",  [{wss, {1,2,3,4}, 443}]},
+        {"<sip:1.2.3.4;transport=other>", []},   % invalid transport (see info log)
 
-        {"<sips:1.2.3.4;transport=udp>",  {error, {invalid_transport, udp}}},
-        {"<sips:1.2.3.4;transport=tcp>",  {error, {invalid_transport, tcp}}},
-        {"<sips:1.2.3.4;transport=tls>",  [{?MODULE, tls, {1,2,3,4}, 0}]},
-        {"<sips:1.2.3.4;transport=sctp>", {error, {invalid_transport, sctp}}},
-        {"<sips:1.2.3.4;transport=ws>",   {error, {invalid_transport, ws}}},
-        {"<sips:1.2.3.4;transport=wss>",  [{?MODULE, wss, {1,2,3,4}, 0}]},
-        {"<sip:1.2.3.4;transport=other>",  {error, {invalid_transport, <<"other">>}}},
+        {"<sips:1.2.3.4;transport=udp>",  []},   % invalid transport
+        {"<sips:1.2.3.4;transport=tcp>",  []},   % invalid transport
+        {"<sips:1.2.3.4;transport=tls>",  [{tls, {1,2,3,4}, 5061}]},
+        {"<sips:1.2.3.4;transport=sctp>", []},   % invalid transport
+        {"<sips:1.2.3.4;transport=ws>", []},     % invalid transport
+        {"<sips:1.2.3.4;transport=wss>",  [{wss, {1,2,3,4}, 443}]},
+        {"<sip:1.2.3.4;transport=other>",  []},  % invalid transport
 
-        {"<sip:1.2.3.4:4321;transport=tcp>",  [{?MODULE, tcp, {1,2,3,4}, 4321}]},
-        {"<sips:127.0.0.1:4321;transport=tls>",  [{?MODULE, tls, {127,0,0,1}, 4321}]},
+        {"<sip:1.2.3.4:4321;transport=tcp>",  [{tcp, {1,2,3,4}, 4321}]},
+        {"<sips:127.0.0.1:4321;transport=tls>",  [{tls, {127,0,0,1}, 4321}]},
 
-        {"<sip:1.2.3.4>",  [{?MODULE, udp, {1,2,3,4}, 0}]},
-        {"<sip:1.2.3.4:4321>",  [{?MODULE, udp, {1,2,3,4}, 4321}]},
-        {"<sips:1.2.3.4>",  [{?MODULE, tls, {1,2,3,4}, 0}]},
-        {"<sips:1.2.3.4:4321>",  [{?MODULE, tls, {1,2,3,4}, 4321}]},
+        {"<sip:1.2.3.4>",  [{udp, {1,2,3,4}, 5060}]},
+        {"<sip:1.2.3.4:4321>",  [{udp, {1,2,3,4}, 4321}]},
+        {"<sips:1.2.3.4>",  [{tls, {1,2,3,4}, 5061}]},
+        {"<sips:1.2.3.4:4321>",  [{tls, {1,2,3,4}, 4321}]},
 
-        {"<sip:127.0.0.1:1234>",  [{?MODULE, udp, {127,0,0,1}, 1234}]},
-        {"<sips:127.0.0.1:1234>",  [{?MODULE, tls, {127,0,0,1}, 1234}]}
+        {"<sip:127.0.0.1:1234>",  [{udp, {127,0,0,1}, 1234}]},
+        {"<sips:127.0.0.1:1234>",  [{tls, {127,0,0,1}, 1234}]},
 
-        % {"<sip:anyhost>",  {naptr, sip, "anyhost"}}
-        % {"<sips:anyhost>",  {naptr, sips, "anyhost"}}
+        {"<sip:all>", [{udp, {0,0,0,0}, 5060}]},
+        {"<sips:all>", [{tls, {0,0,0,0}, 5061}]}
     ],
     lists:foreach(
-        fun({Uri, Result}) -> 
-            [PUri] = nklib_parse:uris(Uri),
-            Result = resolve(PUri)
-        end,
-        Test).
+        fun({Uri, Result}) ->  
+            Result = nkpacket_dns:resolve(Uri, #{protocol=>?MODULE}) end, 
+            Test).
 
 
 resolv1() ->
     Naptr = [
-        {sips, tls, "_sips._tcp.test1.local"},
-        {sip, tcp, "_sip._tcp.test2.local"},
-        {sip, tcp, "_sip._tcp.test3.local"},
-        {sip, udp, "_sip._udp.test4.local"}
+        {1, 1, "s", "sips+d2t", [], "_sips._tcp.test1.local"},
+        {1, 2, "s", "sip+d2t", [], "_sip._tcp.test2.local"},
+        {2, 1, "s", "sip+d2t", [], "_sip._tcp.test3.local"},
+        {2, 2, "s", "sip+d2u", [], "_sip._udp.test4.local"}
     ],
     save_cache({naptr, "test.local"}, Naptr),
-    
+
     Srvs1 = [{1, 1, {"test100.local", 100}}],
     save_cache({srvs, "_sips._tcp.test1.local"}, Srvs1),
     
@@ -123,11 +121,11 @@ resolv1() ->
     save_cache({ips, "test500.local"}, [{1,1,500,1}]),
 
      %% Travis test machine returns two hosts...
-    [{?MODULE, udp, {127,0,0,1}, 5060}|_] = resolve("sip:localhost"),
-    [{?MODULE, tls, {127,0,0,1}, 5061}|_] = resolve("sips:localhost"),
+    O = #{protocol=>?MODULE},
+    [{udp, {127,0,0,1}, 5060}|_] = nkpacket_dns:resolve("sip:localhost", O),
+    [{tls, {127,0,0,1}, 5061}|_] = nkpacket_dns:resolve("sips:localhost", O),
 
-    List1 = resolve("sip:test.local"),
-    [A, B, C, D, E, F, G] = [{E1, E2, E3} || {?MODULE, E1, E2, E3} <- List1],
+    [A, B, C, D, E, F, G] = nkpacket_dns:resolve("sip:test.local", O),
     	
     true = (A=={tls, {1,1,100,1}, 100} orelse A=={tls, {1,1,100,2}, 100}),
     true = (B=={tls, {1,1,100,1}, 100} orelse B=={tls, {1,1,100,2}, 100}),
@@ -141,32 +139,53 @@ resolv1() ->
     F = {tcp, {1,1,300,1}, 300},
     G = {udp, {1,1,500,1}, 500},
 
-    List2 = resolve("sips:test.local"),
-    [H, I] = [{E1, E2, E3} || {?MODULE, E1, E2, E3} <- List2],
+    [H, I] = nkpacket_dns:resolve("sips:test.local", O),
     true = (H=={tls, {1,1,100,1}, 100} orelse H=={tls, {1,1,100,2}, 100}),
     true = (I=={tls, {1,1,100,1}, 100} orelse I=={tls, {1,1,100,2}, 100}),
-    true = H/=I.
+    true = H/=I,
+    ok.
 
 
 resolv2() ->
-    ?debugMsg("Sending NAPTR query to sip2sip.info"),
-    List1 = resolve("sip:sip2sip.info"),
-    case [{E1, E3} || {?MODULE, E1, _E2, E3} <- List1] of    
+    save_cache(
+        {naptr,"sip2sip.info"},
         [
-            {tls, 443},
-            {tls, 443},
-            {tls, 443},
-            {tcp, 5060},
-            {tcp, 5060},
-            {tcp, 5060},
-            {udp, 5060},
-            {udp, 5060},
-            {udp, 5060}
-        ] ->
-            ok;
-        _ ->
-            ?debugMsg("NAPTR test failed!")
-    end.
+            {5,100,"s","sips+d2t",[],"_sips._tcp.sip2sip.info"},
+            {10,100,"s","sip+d2t",[],"_sip._tcp.sip2sip.info"},
+            {30,100,"s","sip+d2u",[],"_sip._udp.sip2sip.info"}
+        ]),
+    save_cache(
+        {srvs,"_sips._tcp.sip2sip.info"},
+        [{100,100,{"proxy.sipthor.net",443}}]),
+    save_cache(
+        {srvs,"_sip._tcp.sip2sip.info"},
+        [{100,100,{"proxy.sipthor.net",5060}}]),
+    save_cache(
+        {srvs,"_sip._udp.sip2sip.info"},
+        [{100,100,{"proxy.sipthor.net",5060}}]),
+    save_cache(
+        {ips,"proxy.sipthor.net"},
+        [{81,23,228,129},{85,17,186,7},{81,23,228,150}]),
+
+    [
+        {tls, Ip1, 443},
+        {tls, Ip2, 443},
+        {tls, Ip3, 443},
+        {tcp, Ip4, 5060},
+        {tcp, Ip5, 5060},
+        {tcp, Ip6, 5060},
+        {udp, Ip7, 5060},
+        {udp, Ip8, 5060},
+        {udp, Ip9, 5060}
+    ] =
+        nkpacket_dns:resolve("sip:sip2sip.info", #{protocol=>?MODULE}),
+
+    Ips = lists:sort([{81,23,228,129},{85,17,186,7},{81,23,228,150}]),
+    Ips = lists:sort([Ip1, Ip2, Ip3]),
+    Ips = lists:sort([Ip4, Ip5, Ip6]),
+    Ips = lists:sort([Ip7, Ip8, Ip9]).
+
+
 
 
 
@@ -184,14 +203,26 @@ default_port(ws) -> 80;
 default_port(wss) -> 443;
 default_port(_) -> invalid.
 
+naptr(sip, "sips+d2t") -> {ok, tls};
+naptr(sip, "sip+d2u") -> {ok, udp};
+naptr(sip, "sip+d2t") -> {ok, tcp};
+naptr(sip, "sip+d2s") -> {ok, sctp};
+naptr(sip, "sips+d2w") -> {ok, wss};
+naptr(sip, "sip+d2w") -> {ok, ws};
+naptr(sips, "sips+d2t") -> {ok, tls};
+naptr(sips, "sips+d2w") -> {ok, wss};
+naptr(_, _) -> invalid.
+
+
+
 
 %% Util
 
-resolve(Uri) ->
-    case nkpacket:resolve(Uri) of
-        {ok, List, _} -> List;
-        {error, Error} -> {error, Error}
-    end.
+% resolve(Uri) ->
+%     case nkpacket:resolve(Uri) of
+%         {ok, List, _} -> List;
+%         {error, Error} -> {error, Error}
+%     end.
 
 
 save_cache(Key, Value) ->

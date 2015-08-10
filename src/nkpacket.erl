@@ -580,31 +580,15 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
                     _ ->
                         ok
                 end,
-                Addrs = nkpacket_dns:resolve(Uri, Opts1),
                 Protocol = case Opts1 of
                     #{group:=Group} -> 
                         nkpacket_config:get_protocol(Group, Scheme);
                     _ -> 
                         nkpacket_config:get_protocol(Scheme)
                 end,
-                ValidTransp = case erlang:function_exported(Protocol, transports, 1) of
-                    true ->
-                        Protocol:transports(Scheme);
-                    false ->
-                        [tcp, tls, udp, sctp, ws, wss]
-                end,
+                Addrs = nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}),
                 Conns = [ 
-                    case Transp of
-                        undefined ->
-                            {Protocol, hd(ValidTransp), Addr, Port};
-                        _ ->
-                            case lists:member(Transp, ValidTransp) of
-                                true -> {Protocol, Transp, Addr, Port};
-                                false -> throw({invalid_transport, Transp})
-                            end
-                    end
-                    ||
-                    {Transp, Addr, Port} <- Addrs
+                    {Protocol, Transp, Addr, Port} || {Transp, Addr, Port} <- Addrs
                 ],
                 {ok, Conns, Opts1};
             {error, Error} -> 

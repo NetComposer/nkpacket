@@ -23,8 +23,8 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([resolve/1, resolve/2, resolve_uri/2]).
--export([get_ips/1, get_ips/2, get_srvs/1, get_srvs/2, get_naptr/1, get_naptr/2]).
+-export([resolve/1, resolve/2]).
+-export([ips/1, ips/2, srvs/1, srvs/2, naptr/3]).
 -export([clear/1, clear/0]).
 -export([start_link/0, init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
@@ -34,9 +34,12 @@
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
+-compile([export_all]).
+
 -type opts() :: 
     #{
-        no_dns_cache => boolean()
+        no_dns_cache => boolean(),
+        protocol => nkpacket:protocol()
     }.
 
 -type uri_transp() :: nkpacket:transport()|undefined|binary().
@@ -47,72 +50,56 @@
 %% ===================================================================
 
 
-%% @doc Finds the ips, transports and ports to try for `Uri', following RFC3263
--spec resolve(nklib:user_uri()) -> 
+%% @doc Equivalent to resolve(Uri, #{})
+-spec resolve(nklib:user_uri()|[nklib:user_uri()])-> 
     [{uri_transp(), inet:ip_address(), inet:port_number()}].
 
 resolve(Uri) ->
     resolve(Uri, #{}).
 
 
-%% @doc Finds the ips, transports and ports to try for `Uri', following RFC3263
+%% @doc Finds transports, ips and ports to try for `Uri', following RFC3263
+%% If the option 'protocol' is used, it must be a NkPACKET protocol, and will
+%% be used for:
+%% - get default transports
+%% - get default ports
+%% - perform NAPTR queries
+%%
 -spec resolve(nklib:user_uri(), opts()) -> 
     [{uri_transp(), inet:ip_address(), inet:port_number()}].
 
-resolve(#uri{scheme=Scheme}=Uri, Opts) ->
-    case resolve_uri(Uri, Opts) of
-        {ok, Conns} ->
-            Conns;
-        {naptr, Scheme, Domain} ->
-            Naptr = case get_naptr(Domain, Opts) of
-                [] when Scheme==sip; Scheme==sips ->
-                    [
-                        {sip, tls, "_sips._tcp." ++ Domain},
-                        {sip, tcp, "_sip._tcp." ++ Domain},
-                        {sip, udp, "_sip._udp." ++ Domain}
-                    ];
-                [] ->
-                    [];
-                Other ->
-                    Other
-            end,
-            case resolve_srvs(Scheme, Naptr, Opts) of
-                [] when Scheme==sips -> 
-                    [{tls, Addr, 5061} || Addr <- get_ips(Domain, Opts)];
-                [] when Scheme==sip ->
-                    [{udp, Addr, 5060} || Addr <- get_ips(Domain, Opts)];
-                [] ->
-                    [];
-                Srvs ->
-                    Srvs
-            end
-    end;
+resolve([], _Opts) ->
+    [];
 
-resolve(Uri, Opts) ->
-    case nklib_parse:uris(Uri) of
-        [PUri] -> resolve(PUri, Opts);
-        _ -> {error, invalid_uri}
-    end.
+resolve(List, Opts) when is_list(List), not is_integer(hd(List)) ->
+    resolve(List, Opts, []);
+
+resolve(Other, Opts) ->
+    resolve([Other], Opts).
+
 
 
 %% @private
--spec resolve_uri(nklib:uri(), opts()) -> 
-    {ok, [{uri_transp(), inet:ip_address(), inet:port_number()}]} |
-    {naptr, nklib:scheme(), string()}.
+resolve([], _Opts, Acc) ->
+    Acc;
 
-resolve_uri(#uri{}=Uri, Opts) ->
-    #uri{scheme=Scheme, domain=Host, opts=UriOpts, ext_opts=ExtOpts, port=Port} = Uri,
+resolve([#uri{}=Uri|Rest], Opts, Acc) ->
+    #uri{
+        scheme = Scheme, 
+        domain = Host, 
+        opts = UriOpts, 
+        ext_opts = ExtOpts, 
+        port = Port
+    } = Uri,
     Host1 = case Host of
         <<"all">> -> "0.0.0.0";
         <<"all6">> -> "0:0:0:0:0:0:0:0";
         _ -> Host
     end,
     Target = nklib_util:get_list(<<"maddr">>, UriOpts, Host1),
-    case nklib_util:to_ip(Target) of 
-        {ok, TargetIp} -> 
-            IsNumeric = true;
-        _ -> 
-            TargetIp = IsNumeric = false
+    Target2 = case nklib_util:to_ip(Target) of 
+        {ok, IP} -> IP;
+        _ -> Target
     end,
     RawTransp =  case nklib_util:get_value(<<"transport">>, UriOpts) of
         undefined -> 
@@ -120,105 +107,142 @@ resolve_uri(#uri{}=Uri, Opts) ->
         RawTransp0 ->
             RawTransp0
     end,
-    Transp = get_transp(RawTransp),
-    case 
-        Port==0 andalso (Scheme==sip orelse Scheme==sips) andalso 
-        not IsNumeric andalso Transp==undefined 
-    of
-        true ->
-            {naptr, Scheme, Target};
-        false ->
-            Addrs = case IsNumeric of
-                true -> [TargetIp];
-                false -> get_ips(Target, Opts)
-            end,
-            {ok, [{Transp, Addr, Port} || Addr <- Addrs]}
+    Transp = transp(RawTransp),
+    Res = resolve(Scheme, Target2, Port, Transp, Opts),
+    resolve(Rest, Opts, Acc++Res);
+
+resolve([Uri|Rest], Opts, Acc) ->
+    case nklib_parse:uris(Uri) of
+        error ->
+            lager:warning("Invalud URI: ~p", [Uri]),
+            resolve(Rest, Opts, Acc);
+        Uris ->
+            resolve(Uris++Rest, Opts, Acc)
     end.
 
 
-%% @doc Finds published services using DNS NAPTR search.
--spec get_naptr(string()|binary()) -> 
-    [{sip|sips, nkpacket:transport(), string()}].
-
-get_naptr(Domain) ->
-    get_naptr(Domain, #{}).
-
-
-%% @doc Finds published services using DNS NAPTR search.
--spec get_naptr(string()|binary(), opts()) -> 
-    [{sip|sips, nkpacket:transport(), string()}].
-
-%% TODO: Check site certificates in case of tls
-get_naptr(Domain, Opts) ->
-    Domain1 = nklib_util:to_list(Domain),
-    case get_cache({naptr, Domain1}, Opts) of
-        undefined ->
-            Naptr = case inet_res:lookup(Domain1, in, naptr) of
-                [] ->
-                    [];
-                Res ->
-                    [Value || Term <- lists:sort(Res), 
-                              (Value = naptr_filter(Term)) /= false]
-            end,
-            save_cache({naptr, Domain1}, Naptr),
-            Naptr;
-        Naptr ->
-            Naptr
-    end.
-
-
-%% @private TODO: add support for other protocols?
-naptr_filter({_, _, "s", "sips+d2t", "", Domain}) -> {sips, tls, Domain};
-naptr_filter({_, _, "s", "sip+d2u", "", Domain}) -> {sip, udp, Domain};
-naptr_filter({_, _, "s", "sip+d2t", "", Domain}) -> {sip, tcp, Domain};
-naptr_filter({_, _, "s", "sip+d2s", "", Domain}) -> {sip, sctp, Domain};
-naptr_filter({_, _, "s", "sips+d2w", "", Domain}) -> {sips, wss, Domain};
-naptr_filter({_, _, "s", "sip+d2w", "", Domain}) -> {sips, ws, Domain};
-naptr_filter(_) -> false.
-
-
 %% @private
-resolve_srvs(Scheme, Domain, Opts) ->
-    resolve_srvs(Scheme, Domain, Opts, []).
-
-
-%% @private
-resolve_srvs(sips, [{Scheme, _, _}|Rest], Opts, Acc) when Scheme/=sips -> 
-    resolve_srvs(sips, Rest, Opts, Acc);
-
-resolve_srvs(Scheme, [{_, Transp, Domain}|Rest], Opts, Acc) -> 
-    case get_srvs(Domain, Opts) of
-        [] -> 
-            resolve_srvs(Scheme, Rest, Opts, Acc);
-        Srvs -> 
-            Addrs = [
-                [{Transp, Addr, SPort} || Addr <- get_ips(SHost, Opts)]
-                || {SHost, SPort} <- Srvs
-            ],
-            resolve_srvs(Scheme, Rest, Opts, [Addrs|Acc])
+resolve(Scheme, Ip, Port, Transp, Opts) when is_tuple(Ip) ->
+    case get_transp(Scheme, Transp, Opts) of
+        invalid ->
+            [];
+        Transp1 ->
+            case get_port(Port, Transp1, Opts) of
+                invalid -> [];
+                Port1 -> [{Transp1, Ip, Port1}]
+            end
     end;
 
-resolve_srvs(_, [], _Opts, Acc) ->
-    lists:flatten(lists:reverse(Acc)).
+resolve(Scheme, Host, 0, undefined, Opts) ->
+    case naptr(Scheme, Host, Opts) of
+        [] ->
+            case get_transp(Scheme, undefined, Opts) of
+                invalid ->
+                    [];
+                undefined ->
+                    Addrs = ips(Host, Opts),
+                    [{undefined, Addr, 0} || Addr <- Addrs];
+                Transp ->
+                    resolve(Scheme, Host, 0, Transp, Opts)
+            end;
+        Res ->
+            Res
+    end;
+
+resolve(Scheme, Host, 0, Transp, Opts) ->
+    case get_transp(Scheme, Transp, Opts) of
+        invalid ->
+            [];
+        Transp1 ->
+            SrvDomain = make_srv_domain(Scheme, Transp1, Host),
+            case srvs(SrvDomain, Opts) of
+                [] ->
+                    case get_port(0, Transp1, Opts) of
+                        invalid ->
+                            [];
+                        Port1 ->
+                            Addrs = ips(Host, Opts),
+                            [{Transp1, Addr, Port1} || Addr <- Addrs]
+                    end;
+                Srvs ->
+                    [{Transp1, Addr, Port1} || {Addr, Port1} <- Srvs]
+            end
+    end;
+
+resolve(Scheme, Host, Port, Transp, Opts) ->
+    case get_transp(Scheme, Transp, Opts) of
+        invalid ->
+            [];
+        Transp1 ->
+            Addrs = ips(Host, Opts),
+            Port1 = get_port(Port, Transp1, Opts),
+            [{Transp1, Addr, Port1} || Addr <- Addrs]
+    end.
+
+
+
+%% @doc Finds published services using DNS NAPTR search.
+-spec naptr(nklib:scheme(), string()|binary(), opts()) -> 
+    [{nkpacket:transport(), inet:ip_address(), inet:port_number()}].
+
+naptr(Scheme, Domain, #{protocol:=Protocol}=Opts) when Protocol/=undefined ->
+    case erlang:function_exported(Protocol, naptr, 2) of
+        true ->
+            Domain1 = nklib_util:to_list(Domain),
+            case get_cache({naptr, Domain1}, Opts) of
+                undefined ->
+                    Naptr = lists:sort(inet_res:lookup(Domain1, in, naptr)),
+                    save_cache({naptr, Domain1}, Naptr),
+                    lager:debug("Naptr: ~p", [Naptr]),
+                    naptr(Scheme, Naptr, Protocol, Opts, []);
+                Naptr ->
+                    naptr(Scheme, Naptr, Protocol, Opts, [])
+            end;
+        false ->
+            []
+    end;
+
+naptr(_Scheme, _Domain, _Opts) ->
+    [].
+
+
+%% @private
+naptr(_Scheme, [], _Proto, _Opts, Acc) ->
+    Acc;
+
+%% Type "s", no regular expression
+naptr(Scheme, [{_Pref, _Order, "s", Service, "", Target}|Rest], Proto, Opts, Acc) ->
+    case Proto:naptr(Scheme, Service) of
+        {ok, Transp} ->
+            Addrs = srvs(Target, Opts),
+            Acc2 = [{Transp, Addr, Port} || {Addr, Port} <- Addrs],
+            naptr(Scheme, Rest, Proto, Opts, Acc++Acc2);
+        _ ->
+            naptr(Scheme, Rest, Proto, Opts, Acc)
+    end;
+
+%% We don't yet support other NAPTR expressions
+naptr(Scheme, [_|Rest], Proto, Opts, Acc) ->
+    naptr(Scheme, Rest, Proto, Opts, Acc).
+
+
+%% @doc Equivalent to srvs(Domain, #{})
+-spec srvs(string()|binary()) ->
+    [{inet:ip_address(), inet:port_number()}].
+
+srvs(Domain) ->
+    srvs(Domain, #{}).
 
 
 %% @doc Gets all hosts for a SRV domain, sorting the result
 %% according to RFC2782
--spec get_srvs(string()|binary()) ->
-    [{string(), inet:port_number()}].
+%% Domain mast be of the type "_sip._tcp.sip2sip.info"
+-spec srvs(string()|binary(), opts()) ->
+    [{inet:ip_address(), inet:port_number()}].
 
-get_srvs(Domain) ->
-    get_srvs(Domain, #{}).
-
-
-%% @doc Gets all hosts for a SRV domain, sorting the result
-%% according to RFC2782
--spec get_srvs(string(), opts()) ->
-    [{string()|binary(), inet:port_number()}].
-
-get_srvs(Domain, Opts) ->
+srvs(Domain, Opts) ->
     Domain1 = nklib_util:to_list(Domain),
-    case get_cache({srvs, Domain1}, Opts) of
+    List = case get_cache({srvs, Domain1}, Opts) of
         undefined ->
             Srvs = case inet_res:lookup(Domain1, in, srv) of
                 [] -> [];
@@ -228,26 +252,33 @@ get_srvs(Domain, Opts) ->
             rfc2782_sort(Srvs);
         Srvs ->
             rfc2782_sort(Srvs)
+    end,
+    case List of 
+        [] -> 
+            [];
+        _ -> 
+            lager:debug("Srvs: ~p", [List]),
+            lists:flatten([
+                [{Addr, Port} || Addr <- ips(Host, Opts)] || {Host, Port} <- List
+            ])
     end.
 
 
+%% @doc Equivalent to ips(Host, #{})
+-spec ips(string()|binary())  ->
+    [inet:ip_address()].
+
+ips(Host) ->
+    ips(Host, #{}).
+
+
 %% @doc Gets all IPs for this host, or `[]' if not found.
 %% It will first try to get it form the cache.
 %% Each new invocation rotates the list of IPs.
--spec get_ips(string()|binary())  ->
+-spec ips(string(), opts()) ->
     [inet:ip_address()].
 
-get_ips(Host) ->
-    get_ips(Host, #{}).
-
-
-%% @doc Gets all IPs for this host, or `[]' if not found.
-%% It will first try to get it form the cache.
-%% Each new invocation rotates the list of IPs.
--spec get_ips(string(), opts()) ->
-    [inet:ip_address()].
-
-get_ips(Host, Opts) ->
+ips(Host, Opts) ->
     Host1 = nklib_util:to_list(Host),
     case get_cache({ips, Host1}, Opts) of
         undefined ->
@@ -369,22 +400,79 @@ terminate(_Reason, _State) ->
 %% ===================================================================
 
 %% @private
-get_transp(udp) -> udp;
-get_transp(tcp) -> tcp;
-get_transp(tls) -> tls;
-get_transp(sctp) -> sctp;
-get_transp(ws) -> ws;
-get_transp(wss) -> wss;
-get_transp(http) -> http;
-get_transp(https) -> https;
-get_transp(undefined) -> undefined;
-get_transp(Other) when is_atom(Other) -> atom_to_binary(Other, latin1);
-get_transp(Other) ->
+transp(udp) -> udp;
+transp(tcp) -> tcp;
+transp(tls) -> tls;
+transp(sctp) -> sctp;
+transp(ws) -> ws;
+transp(wss) -> wss;
+transp(http) -> http;
+transp(https) -> https;
+transp(undefined) -> undefined;
+transp(Other) when is_atom(Other) -> atom_to_binary(Other, latin1);
+transp(Other) ->
     Transp = string:to_lower(nklib_util:to_list(Other)),
     case catch list_to_existing_atom(Transp) of
         {'EXIT', _} -> nklib_util:to_binary(Other);
-        Atom -> get_transp(Atom)
+        Atom -> transp(Atom)
     end.
+
+
+%% @private
+get_port(0, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
+    case erlang:function_exported(Protocol, default_port, 1) of
+        true ->
+            % lager:warning("P: ~p, ~p", [Protocol, Transp]),
+            case Protocol:default_port(Transp) of
+                Port when is_integer(Port) -> Port;
+                _ -> invalid
+            end;
+        false ->
+            0
+    end;
+
+get_port(Port, _Transp, _Opts)->
+    Port.
+
+
+%% @private
+get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
+    case erlang:function_exported(Protocol, transports, 1) of
+        true ->
+            Valid = Protocol:transports(Scheme),
+            case Transp of
+                undefined ->
+                    case Valid of
+                        [Transp1|_] -> Transp1;
+                        [] -> undefined
+                    end;
+                _ ->
+                    case lists:member(Transp, Valid) of
+                        true -> 
+                            Transp;
+                        _ -> 
+                            lager:info("Invalid transport ~p for protocol ~p",
+                                       [Transp, Protocol]),
+                            invalid
+                    end
+            end;
+        false ->
+            Transp
+    end;
+
+get_transp(_Scheme, Transp, _Opts) ->
+    Transp.
+
+
+%% @private
+make_srv_domain(Scheme, Transp, Domain) ->
+    binary_to_list(
+        list_to_binary([
+            $_, nklib_util:to_binary(Scheme), $.,
+            $_, nklib_util:to_binary(Transp), $.,
+            nklib_util:to_binary(Domain)
+        ])
+    ).
 
 
 %% @private
@@ -535,9 +623,61 @@ sort_select(Pos, [C|Rest], Acc) ->
 %% ===================================================================
 
 
-% -define(TEST, true).
+-define(TEST, true).
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+
+basic_test() ->
+    [
+        {undefined, {1,2,3,4}, 0},
+        {tcp, {4,3,2,1}, 25},
+        {undefined, {0,0,0,0}, 1200},
+        {tls, {1,0,0,0,0,0,0,5}, 0}
+    ] = 
+        resolve("http://1.2.3.4, http://4.3.2.1:25;transport=tcp,"
+                "http://all:1200, <http://[1::5]>;transport=tls"),
+
+    [
+        {http, {1,2,3,4}, 80},
+        {https, {1,2,3,4}, 443},
+        % {tcp, {4,3,2,1}, 25},
+        {http, {0,0,0,0}, 1200},
+        {https, {1,0,0,0,0,0,0,5}, 443}
+    ] = 
+        resolve(
+            [
+                "http://1.2.3.4",
+                "https://1.2.3.4",
+                "http://4.3.2.1:25;transport=tcp",
+                "http://all:1200", 
+                "<https://[1::5]>;transport=https"
+            ], #{protocol=>nkpacket_protocol_http}),
+
+    [
+        {undefined, {127,0,0,1}, 0},
+        {undefined, {127,0,0,1}, 0},
+        {undefined, {127,0,0,1}, 25},
+        {tls, {127,0,0,1}, 0},
+        {udp, {127,0,0,1}, 1234}
+    ] = 
+        resolve("http://localhost, https://localhost, http://localhost:25, "
+                "http://localhost;transport=tls, https://localhost:1234;transport=udp"),
+
+    [
+        {http, {127,0,0,1}, 80},
+        {https, {127,0,0,1}, 443},
+        {http, {127,0,0,1}, 25}
+        % {tls, {127,0,0,1}, 0}
+        % {udp, {127,0,0,1}, 1234}
+    ] =
+        resolve("http://localhost, https://localhost, http://localhost:25, "
+                 "http://localhost;transport=tls, https://localhost:1234;transport=udp",
+                 #{protocol=>nkpacket_protocol_http}).
+
+
+
+
 
 weigth_test() ->
     ?debugMsg("DNS Weight Test"),
