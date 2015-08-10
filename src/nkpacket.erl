@@ -586,11 +586,16 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
                     _ -> 
                         nkpacket_config:get_protocol(Scheme)
                 end,
-                Addrs = nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}),
-                Conns = [ 
-                    {Protocol, Transp, Addr, Port} || {Transp, Addr, Port} <- Addrs
-                ],
-                {ok, Conns, Opts1};
+                case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
+                    {ok, Addrs} ->
+                        Conns = [ 
+                            {Protocol, Transp, Addr, Port} 
+                            || {Transp, Addr, Port} <- Addrs
+                        ],
+                        {ok, Conns, Opts1};
+                    {error, Error} ->
+                        {error, Error}
+                end;
             {error, Error} -> 
                 {error, Error}
         end

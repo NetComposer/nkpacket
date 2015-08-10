@@ -52,7 +52,8 @@
 
 %% @doc Equivalent to resolve(Uri, #{})
 -spec resolve(nklib:user_uri()|[nklib:user_uri()])-> 
-    [{uri_transp(), inet:ip_address(), inet:port_number()}].
+    {ok, [{uri_transp(), inet:ip_address(), inet:port_number()}]} |
+    {error, term()}.
 
 resolve(Uri) ->
     resolve(Uri, #{}).
@@ -66,10 +67,10 @@ resolve(Uri) ->
 %% - perform NAPTR queries
 %%
 -spec resolve(nklib:user_uri(), opts()) -> 
-    [{uri_transp(), inet:ip_address(), inet:port_number()}].
+    {ok, [{uri_transp(), inet:ip_address(), inet:port_number()}]}.
 
 resolve([], _Opts) ->
-    [];
+    {ok, []};
 
 resolve(List, Opts) when is_list(List), not is_integer(hd(List)) ->
     resolve(List, Opts, []);
@@ -81,7 +82,7 @@ resolve(Other, Opts) ->
 
 %% @private
 resolve([], _Opts, Acc) ->
-    Acc;
+    {ok, Acc};
 
 resolve([#uri{}=Uri|Rest], Opts, Acc) ->
     #uri{
@@ -108,14 +109,17 @@ resolve([#uri{}=Uri|Rest], Opts, Acc) ->
             RawTransp0
     end,
     Transp = transp(RawTransp),
-    Res = resolve(Scheme, Target2, Port, Transp, Opts),
-    resolve(Rest, Opts, Acc++Res);
+    try resolve(Scheme, Target2, Port, Transp, Opts) of
+        Res ->
+            resolve(Rest, Opts, Acc++Res)
+    catch
+        throw:Throw -> {error, Throw}
+    end;
 
 resolve([Uri|Rest], Opts, Acc) ->
     case nklib_parse:uris(Uri) of
         error ->
-            lager:warning("Invalud URI: ~p", [Uri]),
-            resolve(Rest, Opts, Acc);
+            throw({invalid_uri, Uri});
         Uris ->
             resolve(Uris++Rest, Opts, Acc)
     end.
@@ -123,22 +127,14 @@ resolve([Uri|Rest], Opts, Acc) ->
 
 %% @private
 resolve(Scheme, Ip, Port, Transp, Opts) when is_tuple(Ip) ->
-    case get_transp(Scheme, Transp, Opts) of
-        invalid ->
-            [];
-        Transp1 ->
-            case get_port(Port, Transp1, Opts) of
-                invalid -> [];
-                Port1 -> [{Transp1, Ip, Port1}]
-            end
-    end;
+    Transp1 = get_transp(Scheme, Transp, Opts),
+    Port1 = get_port(Port, Transp1, Opts),
+    [{Transp1, Ip, Port1}];
 
 resolve(Scheme, Host, 0, undefined, Opts) ->
     case naptr(Scheme, Host, Opts) of
         [] ->
             case get_transp(Scheme, undefined, Opts) of
-                invalid ->
-                    [];
                 undefined ->
                     Addrs = ips(Host, Opts),
                     [{undefined, Addr, 0} || Addr <- Addrs];
@@ -150,34 +146,22 @@ resolve(Scheme, Host, 0, undefined, Opts) ->
     end;
 
 resolve(Scheme, Host, 0, Transp, Opts) ->
-    case get_transp(Scheme, Transp, Opts) of
-        invalid ->
-            [];
-        Transp1 ->
-            SrvDomain = make_srv_domain(Scheme, Transp1, Host),
-            case srvs(SrvDomain, Opts) of
-                [] ->
-                    case get_port(0, Transp1, Opts) of
-                        invalid ->
-                            [];
-                        Port1 ->
-                            Addrs = ips(Host, Opts),
-                            [{Transp1, Addr, Port1} || Addr <- Addrs]
-                    end;
-                Srvs ->
-                    [{Transp1, Addr, Port1} || {Addr, Port1} <- Srvs]
-            end
+    Transp1 = get_transp(Scheme, Transp, Opts),
+    SrvDomain = make_srv_domain(Scheme, Transp1, Host),
+    case srvs(SrvDomain, Opts) of
+        [] ->
+            Port1 = get_port(0, Transp1, Opts),
+            Addrs = ips(Host, Opts),
+            [{Transp1, Addr, Port1} || Addr <- Addrs];
+        Srvs ->
+            [{Transp1, Addr, Port1} || {Addr, Port1} <- Srvs]
     end;
 
 resolve(Scheme, Host, Port, Transp, Opts) ->
-    case get_transp(Scheme, Transp, Opts) of
-        invalid ->
-            [];
-        Transp1 ->
-            Addrs = ips(Host, Opts),
-            Port1 = get_port(Port, Transp1, Opts),
-            [{Transp1, Addr, Port1} || Addr <- Addrs]
-    end.
+    Transp1 = get_transp(Scheme, Transp, Opts),
+    Addrs = ips(Host, Opts),
+    Port1 = get_port(Port, Transp1, Opts),
+    [{Transp1, Addr, Port1} || Addr <- Addrs].
 
 
 
@@ -419,23 +403,6 @@ transp(Other) ->
 
 
 %% @private
-get_port(0, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
-    case erlang:function_exported(Protocol, default_port, 1) of
-        true ->
-            % lager:warning("P: ~p, ~p", [Protocol, Transp]),
-            case Protocol:default_port(Transp) of
-                Port when is_integer(Port) -> Port;
-                _ -> invalid
-            end;
-        false ->
-            0
-    end;
-
-get_port(Port, _Transp, _Opts)->
-    Port.
-
-
-%% @private
 get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
     case erlang:function_exported(Protocol, transports, 1) of
         true ->
@@ -448,12 +415,8 @@ get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
                     end;
                 _ ->
                     case lists:member(Transp, Valid) of
-                        true -> 
-                            Transp;
-                        _ -> 
-                            lager:info("Invalid transport ~p for protocol ~p",
-                                       [Transp, Protocol]),
-                            invalid
+                        true -> Transp;
+                        _ -> throw({invalid_transport, Transp})
                     end
             end;
         false ->
@@ -462,6 +425,23 @@ get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
 
 get_transp(_Scheme, Transp, _Opts) ->
     Transp.
+
+
+%% @private
+get_port(0, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
+    case erlang:function_exported(Protocol, default_port, 1) of
+        true ->
+            % lager:warning("P: ~p, ~p", [Protocol, Transp]),
+            case Protocol:default_port(Transp) of
+                Port when is_integer(Port) -> Port;
+                _ -> throw({invalid_transport, Transp})
+            end;
+        false ->
+            0
+    end;
+
+get_port(Port, _Transp, _Opts)->
+    Port.
 
 
 %% @private
@@ -623,60 +603,64 @@ sort_select(Pos, [C|Rest], Acc) ->
 %% ===================================================================
 
 
--define(TEST, true).
+% -define(TEST, true).
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 
 basic_test() ->
-    [
+    {ok, [
         {undefined, {1,2,3,4}, 0},
         {tcp, {4,3,2,1}, 25},
         {undefined, {0,0,0,0}, 1200},
         {tls, {1,0,0,0,0,0,0,5}, 0}
-    ] = 
+    ]} = 
         resolve("http://1.2.3.4, http://4.3.2.1:25;transport=tcp,"
                 "http://all:1200, <http://[1::5]>;transport=tls"),
 
-    [
+    Http = #{protocol=>nkpacket_protocol_http},
+    {ok, [
         {http, {1,2,3,4}, 80},
         {https, {1,2,3,4}, 443},
         % {tcp, {4,3,2,1}, 25},
         {http, {0,0,0,0}, 1200},
         {https, {1,0,0,0,0,0,0,5}, 443}
-    ] = 
+    ]} = 
         resolve(
             [
                 "http://1.2.3.4",
                 "https://1.2.3.4",
-                "http://4.3.2.1:25;transport=tcp",
                 "http://all:1200", 
                 "<https://[1::5]>;transport=https"
-            ], #{protocol=>nkpacket_protocol_http}),
+            ], Http),
 
-    [
+    {error, {invalid_transport, tcp}} = 
+        resolve("http://4.3.2.1:25;transport=tcp", Http),
+
+   
+    {ok, [
         {undefined, {127,0,0,1}, 0},
         {undefined, {127,0,0,1}, 0},
         {undefined, {127,0,0,1}, 25},
         {tls, {127,0,0,1}, 0},
         {udp, {127,0,0,1}, 1234}
-    ] = 
+    ]} = 
         resolve("http://localhost, https://localhost, http://localhost:25, "
                 "http://localhost;transport=tls, https://localhost:1234;transport=udp"),
 
-    [
+    {ok, [
         {http, {127,0,0,1}, 80},
         {https, {127,0,0,1}, 443},
         {http, {127,0,0,1}, 25}
-        % {tls, {127,0,0,1}, 0}
-        % {udp, {127,0,0,1}, 1234}
-    ] =
-        resolve("http://localhost, https://localhost, http://localhost:25, "
-                 "http://localhost;transport=tls, https://localhost:1234;transport=udp",
-                 #{protocol=>nkpacket_protocol_http}).
+    ]} =
+        resolve("http://localhost, https://localhost, http://localhost:25", Http),
 
+    {error, {invalid_transport, tls}} = 
+        resolve("http://localhost;transport=tls", Http),
 
-
+    {error, {invalid_transport, udp}} = 
+        resolve("https://localhost:1234;transport=udp", Http),
+    ok.
 
 
 weigth_test() ->

@@ -54,35 +54,34 @@ start() ->
 
 uris() ->
     Test = [
-        {"<sip:1.2.3.4;transport=udp>",  [{udp, {1,2,3,4}, 5060}]},
-        {"<sip:1.2.3.4;transport=tcp>",  [{tcp, {1,2,3,4}, 5060}]},
-        {"<sip:1.2.3.4;transport=tls>",  [{tls, {1,2,3,4}, 5061}]},
-        {"<sip:1.2.3.4;transport=sctp>", [{sctp, {1,2,3,4}, 5060}]},
-        {"<sip:1.2.3.4;transport=ws>",   [{ws, {1,2,3,4}, 80}]},
-        {"<sip:1.2.3.4;transport=wss>",  [{wss, {1,2,3,4}, 443}]},
-        {"<sip:1.2.3.4;transport=other>", []},   % invalid transport (see info log)
+        {"<sip:1.2.3.4;transport=udp>",  {ok, [{udp, {1,2,3,4}, 5060}]}},
+        {"<sip:1.2.3.4;transport=tcp>",  {ok, [{tcp, {1,2,3,4}, 5060}]}},
+        {"<sip:1.2.3.4;transport=tls>",  {ok, [{tls, {1,2,3,4}, 5061}]}},
+        {"<sip:1.2.3.4;transport=sctp>", {ok, [{sctp, {1,2,3,4}, 5060}]}},
+        {"<sip:1.2.3.4;transport=ws>",   {ok, [{ws, {1,2,3,4}, 80}]}},
+        {"<sip:1.2.3.4;transport=wss>",  {ok, [{wss, {1,2,3,4}, 443}]}},
+        {"<sip:1.2.3.4;transport=other>", {error, {invalid_transport, <<"other">>}}},
+        {"<sips:1.2.3.4;transport=udp>",  {error, {invalid_transport, udp}}},
+        {"<sips:1.2.3.4;transport=tcp>",  {error, {invalid_transport, tcp}}},
+        {"<sips:1.2.3.4;transport=tls>",  {ok, [{tls, {1,2,3,4}, 5061}]}},
+        {"<sips:1.2.3.4;transport=sctp>", {error, {invalid_transport, sctp}}},
+        {"<sips:1.2.3.4;transport=ws>", {error, {invalid_transport, ws}}},  
+        {"<sips:1.2.3.4;transport=wss>",  {ok, [{wss, {1,2,3,4}, 443}]}},
+        {"<sip:1.2.3.4;transport=other>",  {error, {invalid_transport, <<"other">>}}}, 
 
-        {"<sips:1.2.3.4;transport=udp>",  []},   % invalid transport
-        {"<sips:1.2.3.4;transport=tcp>",  []},   % invalid transport
-        {"<sips:1.2.3.4;transport=tls>",  [{tls, {1,2,3,4}, 5061}]},
-        {"<sips:1.2.3.4;transport=sctp>", []},   % invalid transport
-        {"<sips:1.2.3.4;transport=ws>", []},     % invalid transport
-        {"<sips:1.2.3.4;transport=wss>",  [{wss, {1,2,3,4}, 443}]},
-        {"<sip:1.2.3.4;transport=other>",  []},  % invalid transport
+        {"<sip:1.2.3.4:4321;transport=tcp>",  {ok, [{tcp, {1,2,3,4}, 4321}]}},
+        {"<sips:127.0.0.1:4321;transport=tls>",  {ok, [{tls, {127,0,0,1}, 4321}]}},
 
-        {"<sip:1.2.3.4:4321;transport=tcp>",  [{tcp, {1,2,3,4}, 4321}]},
-        {"<sips:127.0.0.1:4321;transport=tls>",  [{tls, {127,0,0,1}, 4321}]},
+        {"<sip:1.2.3.4>",  {ok, [{udp, {1,2,3,4}, 5060}]}},
+        {"<sip:1.2.3.4:4321>",  {ok, [{udp, {1,2,3,4}, 4321}]}},
+        {"<sips:1.2.3.4>",  {ok, [{tls, {1,2,3,4}, 5061}]}},
+        {"<sips:1.2.3.4:4321>",  {ok, [{tls, {1,2,3,4}, 4321}]}},
 
-        {"<sip:1.2.3.4>",  [{udp, {1,2,3,4}, 5060}]},
-        {"<sip:1.2.3.4:4321>",  [{udp, {1,2,3,4}, 4321}]},
-        {"<sips:1.2.3.4>",  [{tls, {1,2,3,4}, 5061}]},
-        {"<sips:1.2.3.4:4321>",  [{tls, {1,2,3,4}, 4321}]},
+        {"<sip:127.0.0.1:1234>",  {ok, [{udp, {127,0,0,1}, 1234}]}},
+        {"<sips:127.0.0.1:1234>",  {ok, [{tls, {127,0,0,1}, 1234}]}},
 
-        {"<sip:127.0.0.1:1234>",  [{udp, {127,0,0,1}, 1234}]},
-        {"<sips:127.0.0.1:1234>",  [{tls, {127,0,0,1}, 1234}]},
-
-        {"<sip:all>", [{udp, {0,0,0,0}, 5060}]},
-        {"<sips:all>", [{tls, {0,0,0,0}, 5061}]}
+        {"<sip:all>", {ok, [{udp, {0,0,0,0}, 5060}]}},
+        {"<sips:all>", {ok, [{tls, {0,0,0,0}, 5061}]}}
     ],
     lists:foreach(
         fun({Uri, Result}) ->  
@@ -121,11 +120,11 @@ resolv1() ->
     save_cache({ips, "test500.local"}, [{1,1,500,1}]),
 
      %% Travis test machine returns two hosts...
-    O = #{protocol=>?MODULE},
-    [{udp, {127,0,0,1}, 5060}|_] = nkpacket_dns:resolve("sip:localhost", O),
-    [{tls, {127,0,0,1}, 5061}|_] = nkpacket_dns:resolve("sips:localhost", O),
+    Sip = #{protocol=>?MODULE},
+    {ok, [{udp, {127,0,0,1}, 5060}|_]} = nkpacket_dns:resolve("sip:localhost", Sip),
+    {ok, [{tls, {127,0,0,1}, 5061}|_]} = nkpacket_dns:resolve("sips:localhost", Sip),
 
-    [A, B, C, D, E, F, G] = nkpacket_dns:resolve("sip:test.local", O),
+    {ok, [A, B, C, D, E, F, G]} = nkpacket_dns:resolve("sip:test.local", Sip),
     	
     true = (A=={tls, {1,1,100,1}, 100} orelse A=={tls, {1,1,100,2}, 100}),
     true = (B=={tls, {1,1,100,1}, 100} orelse B=={tls, {1,1,100,2}, 100}),
@@ -139,7 +138,7 @@ resolv1() ->
     F = {tcp, {1,1,300,1}, 300},
     G = {udp, {1,1,500,1}, 500},
 
-    [H, I] = nkpacket_dns:resolve("sips:test.local", O),
+    {ok, [H, I]} = nkpacket_dns:resolve("sips:test.local", Sip),
     true = (H=={tls, {1,1,100,1}, 100} orelse H=={tls, {1,1,100,2}, 100}),
     true = (I=={tls, {1,1,100,1}, 100} orelse I=={tls, {1,1,100,2}, 100}),
     true = H/=I,
@@ -167,7 +166,7 @@ resolv2() ->
         {ips,"proxy.sipthor.net"},
         [{81,23,228,129},{85,17,186,7},{81,23,228,150}]),
 
-    [
+    {ok, [
         {tls, Ip1, 443},
         {tls, Ip2, 443},
         {tls, Ip3, 443},
@@ -177,7 +176,7 @@ resolv2() ->
         {udp, Ip7, 5060},
         {udp, Ip8, 5060},
         {udp, Ip9, 5060}
-    ] =
+    ]} =
         nkpacket_dns:resolve("sip:sip2sip.info", #{protocol=>?MODULE}),
 
     Ips = lists:sort([{81,23,228,129},{85,17,186,7},{81,23,228,150}]),

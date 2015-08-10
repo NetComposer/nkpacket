@@ -26,7 +26,7 @@
 -module(nkpacket_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([transports/1, default_port/1, encode/2, naptr/1]).
+-export([transports/1, default_port/1, encode/2, naptr/2]).
 -export([conn_init/1, conn_parse/2, conn_encode/2, conn_bridge/3, conn_handle_call/3,
 		 conn_handle_cast/2, conn_handle_info/2, conn_stop/2]).
 -export([listen_init/1, listen_parse/4, listen_handle_call/3,
