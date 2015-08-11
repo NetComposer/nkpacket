@@ -26,7 +26,7 @@
 -export([send/2, stop/1, stop/2, start/1]).
 
 
--export([reset_timeout/2, get_timeout/1]).
+-export([reset_timeout/2, get_timeout/1, update_monitor/2]).
 -export([get_all/0, get_all/1, get_all_groups/0, stop_all/0, stop_all/1]).
 -export([incoming/2, connect/1, conn_init/1]).
 -export([ranch_start_link/2, ranch_init/2]).
@@ -219,6 +219,14 @@ get_timeout(Conn) ->
 
 incoming(Conn, Msg) ->
     gen_server:cast(get_pid(Conn), {nkpacket_incoming, Msg}).
+
+
+%% @private
+-spec update_monitor(nkpacket:nkport()|pid(), pid()) ->
+    ok.
+
+update_monitor(Conn, Pid) ->
+    gen_server:cast(get_pid(Conn), {update_monitor, Pid}).
 
 
 %% @private
@@ -460,6 +468,10 @@ handle_cast({nkpacket_stop_bridge, Pid}, State) ->
     lager:warning("Received unbridge for unknown bridge ~p", [Pid]),
     {noreply, State};
 
+handle_cast({update_monitor, Pid}, #state{user_monitor=OldMon}=State) ->
+    nklib_util:demonitor(OldMon),
+    {noreply, State#state{user_monitor=monitor(process, Pid)}};
+
 handle_cast(Msg, State) ->
     case call_protocol(conn_handle_cast, [Msg], State) of
         undefined -> {noreply, State};
@@ -527,7 +539,7 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{srv_monitor=MRef}=Sta
     {stop, normal, State};
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_monitor=MRef}=State) ->
-    lager:debug("Connection stop (caller stop)", []),
+    lager:debug("Connection stop (monitor stop)", []),
     {stop, normal, State};
 
 handle_info(Msg, State) ->
