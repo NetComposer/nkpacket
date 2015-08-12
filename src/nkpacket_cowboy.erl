@@ -96,7 +96,7 @@ do_start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
 
 %% @private
 -spec get_all() ->
-    [{nkpacket:transport(), inet:ip_address(), inet:port(), pid(), [filter()]}].
+    [{nkpacket:transport(), inet:ip_address(), inet:port_number(), pid(), [filter()]}].
 
 get_all() ->
     [
@@ -106,7 +106,7 @@ get_all() ->
 
 
 %% @private
--spec get_servers(nkpacket:transport(), inet:address(), inet:port_number()) ->
+-spec get_servers(nkpacket:transport(), inet:ip_address(), inet:port_number()) ->
     [filter()].
 
 get_servers(Transp, Ip, Port) -> 
@@ -156,7 +156,7 @@ reply(Code, Hds, Body, Req) ->
 
 %% @private 
 -spec init(term()) ->
-    nklib_util:gen_server_init(#state{}).
+    {ok, #state{}} | {stop, term()}.
 
 init([NkPort, Filter]) ->
     #nkport{
@@ -226,8 +226,8 @@ init([NkPort, Filter]) ->
 
 
 %% @private
--spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
-    nklib_util:gen_server_call(#state{}).
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}} | {noreply, term(), #state{}}.
 
 handle_call({start, ListenPid, Filter}, _From, #state{servers=Servers}=State) ->
     ListenRef = erlang:monitor(process, ListenPid),
@@ -247,7 +247,7 @@ handle_call(Msg, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) ->
-    nklib_util:gen_server_cast(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast(Msg, State) ->
     lager:error("Module ~p received unexpected cast: ~p", [?MODULE, Msg]),
@@ -256,7 +256,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) ->
-    nklib_util:gen_server_info(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}=Msg, State) ->
     #state{servers=Servers} = State,
@@ -283,7 +283,7 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec code_change(term(), #state{}, term()) ->
-    nklib_util:gen_server_code_change(#state{}).
+    {ok, #state{}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -291,7 +291,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 -spec terminate(term(), #state{}) ->
-    nklib_util:gen_server_terminate().
+    ok.
 
 terminate(Reason, #state{ranch_pid=RanchPid}=State) ->  
     lager:debug("Cowboy listener stop: ~p", [Reason]),

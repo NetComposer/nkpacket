@@ -34,14 +34,10 @@
 
 %% ===================================================================
 %% Types
-%% Types
 %% ===================================================================
 
 
-
-
-
--spec transports(nklibt:scheme()) ->
+-spec transports(nklib:scheme()) ->
     [nkpacket:transport()].
 
 transports(_) -> [udp, tcp, tls, sctp, ws, wss].

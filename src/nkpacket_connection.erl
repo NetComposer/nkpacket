@@ -268,7 +268,7 @@ ranch_start_link(NkPort, Ref) ->
 
 %% @private 
 -spec init(term()) ->
-    nklib_util:gen_server_init(#state{}).
+    {ok, #state{}} | {stop, term()}.
 
 init([NkPort]) ->
     #nkport{
@@ -393,8 +393,9 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
 
 
 %% @private
--spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
-    nklib_util:gen_server_call(#state{}).
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}} | {noreply, term(), #state{}} | 
+    {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
@@ -436,7 +437,7 @@ handle_call(Msg, From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) ->
-    nklib_util:gen_server_cast(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 % handle_cast({send, OutMsg}, #state{nkport=NkPort}=State) ->
 %     nkpacket_connection_lib:raw_send(NkPort, OutMsg),
@@ -482,7 +483,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) ->
-    nklib_util:gen_server_info(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({tcp, Socket, Data}, #state{socket=Socket}=State) ->
     inet:setopts(Socket, [{active, once}]),
@@ -552,7 +553,7 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec code_change(term(), #state{}, term()) ->
-    nklib_util:gen_server_code_change(#state{}).
+    {ok, #state{}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -560,7 +561,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 -spec terminate(term(), #state{}) ->
-    nklib_util:gen_server_terminate().
+    ok.
 
 terminate(Reason, State) ->
     #state{
@@ -584,7 +585,7 @@ terminate(Reason, State) ->
 
 %% @private
 -spec parse(term(), #state{}) ->
-    nklib_util:gen_server_info(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 parse(Data, #state{transp=Transp, socket=Socket}=State) 
         when not is_pid(Socket) andalso (Transp==ws orelse Transp==wss) ->

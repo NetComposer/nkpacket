@@ -348,7 +348,7 @@ get_local(Pid) when is_pid(Pid) ->
 
 %% @doc Gets the current remote peer address and port
 -spec get_remote(pid()|nkport()) ->
-    {ok, {transport(), inet:address(), inet:port_number()}} | error.
+    {ok, {transport(), inet:ip_address(), inet:port_number()}} | error.
 
 get_remote(#nkport{transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Transp, Ip, Port}};
