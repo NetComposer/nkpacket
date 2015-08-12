@@ -537,7 +537,7 @@ is_local_ip(Ip) ->
 
 
 %% @private
--spec resolve(nklib:user_uri()) -> 
+-spec resolve(nklib:user_uri()|[nklib:user_uri()]) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
@@ -546,7 +546,7 @@ resolve(Uri) ->
 
 
 %% @private
--spec resolve(nklib:user_uri(), map()) -> 
+-spec resolve(nklib:user_uri()|[nklib:user_uri()], map()) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
    
