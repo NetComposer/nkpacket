@@ -33,7 +33,7 @@
 -export([send/2, send/3, connect/2]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
 -export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_user/1]).
--export([resolve/1, resolve/2]).
+-export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
 
 -export_type([group/0, transport/0, protocol/0, nkport/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0]).
@@ -536,8 +536,9 @@ is_local_ip(Ip) ->
 %% ===================================================================
 
 
+
 %% @private
--spec resolve(nklib:user_uri()|[nklib:user_uri()]) -> 
+-spec resolve(nklib:user_uri()) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
@@ -546,29 +547,11 @@ resolve(Uri) ->
 
 
 %% @private
--spec resolve(nklib:user_uri()|[nklib:user_uri()], map()) -> 
-    {ok, [raw_connection()], map()} |
-    {error, term()}.
-   
-resolve([], Opts) ->
-    {ok, [], Opts};
-
-resolve(List, Opts) when is_list(List), not is_integer(hd(List)) ->
-    resolve(List, Opts, []);
-
-resolve(Other, Opts) ->
-    resolve([Other], Opts).
-
-
-%% @private
--spec resolve(nklib:user_uri(), map(), list()) -> 
+-spec resolve(nklib:user_uri(), map()) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
-resolve([], Opts, Acc) ->
-    {ok, Acc, Opts};
-
-resolve([#uri{scheme=Scheme}=Uri|Rest], Opts, Acc) ->
+resolve(#uri{scheme=Scheme}=Uri, Opts) ->
     #uri{domain=Host, path=Path, ext_opts=UriOpts, ext_headers=Headers} = Uri,
     UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquote(V)} || {K, V} <- UriOpts],
     UriOpts2 = case Host of
@@ -610,7 +593,7 @@ resolve([#uri{scheme=Scheme}=Uri|Rest], Opts, Acc) ->
                             {Protocol, Transp, Addr, Port} 
                             || {Transp, Addr, Port} <- Addrs
                         ],
-                        resolve(Rest, Opts1, Acc++Conns);
+                        {ok, Conns, Opts1};
                     {error, Error} ->
                         {error, Error}
                 end;
@@ -621,12 +604,57 @@ resolve([#uri{scheme=Scheme}=Uri|Rest], Opts, Acc) ->
         throw:Throw -> {error, Throw}
     end;
 
-resolve([Uri|Rest], Opts, Acc) ->
+resolve(Uri, Opts) ->
+    case nklib_parse:uris(Uri) of
+        [Parsed] ->
+            resolve(Parsed, Opts);
+        _ ->
+            {error, {invalid_uri, Uri}}
+    end.
+
+
+%% @private
+-spec multi_resolve(nklib:user_uri()|[nklib:user_uri()]) -> 
+    {ok, [{[raw_connection()], map()}]} |
+    {error, term()}.
+
+multi_resolve(Uri) ->
+    multi_resolve(Uri, #{}).
+
+
+%% @private
+-spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], map()) -> 
+    {ok, [raw_connection()], map()} |
+    {error, term()}.
+   
+multi_resolve([], _Opts) ->
+    {ok, []};
+
+multi_resolve(List, Opts) when is_list(List), not is_integer(hd(List)) ->
+    multi_resolve(List, Opts, []);
+
+multi_resolve(Other, Opts) ->
+    multi_resolve([Other], Opts).
+
+
+%% @private
+multi_resolve([], _Opts, Acc) ->
+    {ok, lists:reverse(Acc)};
+
+multi_resolve([#uri{}=Uri|Rest], Opts, Acc) ->
+    case resolve(Uri, Opts) of
+        {ok, Conns, Opts1} ->
+            multi_resolve(Rest, Opts, [{Conns, Opts1}|Acc]);
+        {error, Error} ->
+            {error, Error}
+    end;
+
+multi_resolve([Uri|Rest], Opts, Acc) ->
     case nklib_parse:uris(Uri) of
         error ->
             {error, {invalid_uri, Uri}};
-        Uris ->
-            resolve(Uris++Rest, Opts, Acc)
+        Parsed ->
+            multi_resolve(Parsed++Rest, Opts, Acc)
     end.
 
 
