@@ -336,12 +336,12 @@ spec() ->
         force_new => boolean,
         udp_to_tcp => boolean,
 
-        tls_certfile => {update, map, tls_spec, certfile, string},
-        tls_keyfile => {update, map, tls_spec, keyfile, string},
-        tls_cacertfile => {update, map, tls_spec, cacertfile, string},
-        tls_password => {update, map, tls_spec, password, string},
-        tls_verify => {update, map, tls_spec, verify, boolean},
-        tls_depth => {update, map, tls_spec, depth, {integer, 0, 16}},
+        tls_certfile => {update, map, tls_opts, certfile, string},
+        tls_keyfile => {update, map, tls_opts, keyfile, string},
+        tls_cacertfile => {update, map, tls_opts, cacertfile, string},
+        tls_password => {update, map, tls_opts, password, string},
+        tls_verify => {update, map, tls_opts, verify, boolean},
+        tls_depth => {update, map, tls_opts, depth, {integer, 0, 16}},
 
         password => binary      % Not used by nkpacket, for users
 
