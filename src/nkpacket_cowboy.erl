@@ -39,6 +39,7 @@
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
+
 -type filter() ::
     #{
         id => term(),           % Mandatory
@@ -58,8 +59,7 @@
 %% @private Starts a new shared transport or reuses an existing one
 %%
 %% The 'meta' field in NkPort can include options, but it will only be read from 
-%% the first started server: tcp_listeners, tcp_max_connections, certfile, keyfile
-%%
+%% the first started server: tcp_listeners, tcp_max_connections, tls_opts
 %% It can also include 'cowboy_opts' with the same limitation. 
 %% The following options are fixed: timeout, compress
 %%
@@ -96,7 +96,7 @@ do_start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
 
 %% @private
 -spec get_all() ->
-    [{nkpacket:transport(), inet:ip_address(), inet:port(), pid(), [filter()]}].
+    [{nkpacket:transport(), inet:ip_address(), inet:port_number(), pid(), [filter()]}].
 
 get_all() ->
     [
@@ -106,7 +106,7 @@ get_all() ->
 
 
 %% @private
--spec get_servers(nkpacket:transport(), inet:address(), inet:port_number()) ->
+-spec get_servers(nkpacket:transport(), inet:ip_address(), inet:port_number()) ->
     [filter()].
 
 get_servers(Transp, Ip, Port) -> 
@@ -156,7 +156,7 @@ reply(Code, Hds, Body, Req) ->
 
 %% @private 
 -spec init(term()) ->
-    nklib_util:gen_server_init(#state{}).
+    {ok, #state{}} | {stop, term()}.
 
 init([NkPort, Filter]) ->
     #nkport{
@@ -226,15 +226,15 @@ init([NkPort, Filter]) ->
 
 
 %% @private
--spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
-    nklib_util:gen_server_call(#state{}).
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}} | {noreply, term(), #state{}}.
 
 handle_call({start, ListenPid, Filter}, _From, #state{servers=Servers}=State) ->
     ListenRef = erlang:monitor(process, ListenPid),
     Servers1 = [{Filter, ListenRef}|Servers],
     {reply, ok, register(State#state{servers=Servers1})};
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call(get_state, _From, State) ->
@@ -247,7 +247,7 @@ handle_call(Msg, _From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) ->
-    nklib_util:gen_server_cast(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast(Msg, State) ->
     lager:error("Module ~p received unexpected cast: ~p", [?MODULE, Msg]),
@@ -256,7 +256,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) ->
-    nklib_util:gen_server_info(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}=Msg, State) ->
     #state{servers=Servers} = State,
@@ -283,7 +283,7 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec code_change(term(), #state{}, term()) ->
-    nklib_util:gen_server_code_change(#state{}).
+    {ok, #state{}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -291,7 +291,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 -spec terminate(term(), #state{}) ->
-    nklib_util:gen_server_terminate().
+    ok.
 
 terminate(Reason, #state{ranch_pid=RanchPid}=State) ->  
     lager:debug("Cowboy listener stop: ~p", [Reason]),
@@ -396,18 +396,14 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip})
         {reuseaddr, true}, {backlog, 1024}
     ];
 
-listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
+listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts}) 
         when Transp==wss; Transp==https ->
-    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
-    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
-    lists:flatten([
+    Base = [
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
-        {reuseaddr, true}, {backlog, 1024},
-        {versions, ['tlsv1.2', 'tlsv1.1', 'tlsv1']}, % Avoid SSLv3
-        case Cert of "" -> []; _ -> {certfile, Cert} end,
-        case Key of "" -> []; _ -> {keyfile, Key} end
-    ]).
+        {reuseaddr, true}, {backlog, 1024}
+    ],
+    nkpacket_config:add_tls_opts(Base, Opts).
 
 
 %% @private

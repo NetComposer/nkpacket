@@ -33,7 +33,7 @@
 -export([send/2, send/3, connect/2]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
 -export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_user/1]).
--export([resolve/1, resolve/2]).
+-export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
 
 -export_type([group/0, transport/0, protocol/0, nkport/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0]).
@@ -55,7 +55,7 @@
 %% When starting an outgoing connection, if a suitable listening transport 
 %% is found with the same group, some values from listener's metadata will 
 %% be copied to the new connection: user, idle_timeout, host, path, ws_proto, 
-%% refresh_fun, certfile, keyfile, tcp_packet
+%% refresh_fun, tcp_packet, tls_opts
 -type group() :: term().
 
 %% Recognized transport schemes
@@ -92,6 +92,16 @@
             middlewares => [module()]
         }}.
 
+-type tls_opts() ::
+    #{
+        certfile => string(),                   % Path to CertFile
+        keyfile => string(),                    % Path to KeyFile
+        cacertfile => string(),                 % Path to CA CertFile
+        password => string(),                   % Password for the certificate
+        verify => boolean(),                    % Client must have valid certificate
+        depth => 0..2                           % 0:Trusted CA, 1:Peer, CA, Trusted CA
+    }.
+
 
 %% Options for listeners
 -type listener_opts() ::
@@ -102,7 +112,8 @@
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
-        
+        valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
+
         % UDP options
         udp_starts_tcp => boolean(),            % UDP starts TCP on the same port
         udp_no_connections => boolean(),        % Do not create connections
@@ -114,11 +125,10 @@
         sctp_in_streams => integer(),           % Max input streams
 
         % TCP/TLS/WS/WSS options
-        certfile => string(),                   % 
-        keyfile => string(),                    %
         tcp_packet => 1 | 2 | 4 | raw,          %
         tcp_max_connections => integer(),       % Default 1024
         tcp_listeners => integer(),             % Default 100
+        tls_opts => tls_opts(),
 
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
@@ -146,11 +156,11 @@
         idle_timeout => integer(),          % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         listen_nkport => none | nkport(),   % Select (or disables auto) base NkPort
+        valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
 
         % TCP/TLS/WS/WSS options
-        certfile => string(),           
-        keyfile => string(),                 
-        tcp_packet => 1 | 2 | 4 | raw,      
+        tcp_packet => 1 | 2 | 4 | raw,    
+        tls_opts => tls_opts(),  
 
         % WS/WSS
         host => string() | binary(),        % Host header to use
@@ -338,7 +348,7 @@ get_local(Pid) when is_pid(Pid) ->
 
 %% @doc Gets the current remote peer address and port
 -spec get_remote(pid()|nkport()) ->
-    {ok, {transport(), inet:address(), inet:port_number()}} | error.
+    {ok, {transport(), inet:ip_address(), inet:port_number()}} | error.
 
 get_remote(#nkport{transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Transp, Ip, Port}};
@@ -357,9 +367,11 @@ get_user(Pid) when is_pid(Pid) ->
 
 
 %% @doc Gets the current pid() of a listener or connection
--spec pid(nkport()) ->
+-spec pid(pid()|nkport()) ->
     pid().
 
+pid(Pid) when is_pid(Pid) ->
+    Pid;
 pid(#nkport{pid=Pid}) ->
     Pid.
 
@@ -524,6 +536,7 @@ is_local_ip(Ip) ->
 %% ===================================================================
 
 
+
 %% @private
 -spec resolve(nklib:user_uri()) -> 
     {ok, [raw_connection()], map()} |
@@ -559,33 +572,31 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
     try
         case nkpacket_util:parse_opts(UriOpts4 ++ maps:to_list(Opts)) of
             {ok, Opts1} -> 
-                Addrs = nkpacket_dns:resolve(Uri, Opts1),
+                case Opts1 of
+                    #{valid_schemes:=ValidSchemes} ->
+                        case lists:member(Scheme, ValidSchemes) of
+                            true -> ok;
+                            false -> throw({invalid_scheme, Scheme})
+                        end;
+                    _ ->
+                        ok
+                end,
                 Protocol = case Opts1 of
                     #{group:=Group} -> 
                         nkpacket_config:get_protocol(Group, Scheme);
                     _ -> 
                         nkpacket_config:get_protocol(Scheme)
                 end,
-                ValidTransp = case erlang:function_exported(Protocol, transports, 1) of
-                    true ->
-                        Protocol:transports(Scheme);
-                    false ->
-                        [tcp, tls, udp, sctp, ws, wss]
-                end,
-                Conns = [ 
-                    case Transp of
-                        undefined ->
-                            {Protocol, hd(ValidTransp), Addr, Port};
-                        _ ->
-                            case lists:member(Transp, ValidTransp) of
-                                true -> {Protocol, Transp, Addr, Port};
-                                false -> throw({invalid_transport, Transp})
-                            end
-                    end
-                    ||
-                    {Transp, Addr, Port} <- Addrs
-                ],
-                {ok, Conns, Opts1};
+                case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
+                    {ok, Addrs} ->
+                        Conns = [ 
+                            {Protocol, Transp, Addr, Port} 
+                            || {Transp, Addr, Port} <- Addrs
+                        ],
+                        {ok, Conns, Opts1};
+                    {error, Error} ->
+                        {error, Error}
+                end;
             {error, Error} -> 
                 {error, Error}
         end
@@ -595,10 +606,55 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
 
 resolve(Uri, Opts) ->
     case nklib_parse:uris(Uri) of
-        [PUri] -> 
-            resolve(PUri, Opts);
-        _ -> 
-            {error, invalid_uri}
+        [Parsed] ->
+            resolve(Parsed, Opts);
+        _ ->
+            {error, {invalid_uri, Uri}}
+    end.
+
+
+%% @private
+-spec multi_resolve(nklib:user_uri()|[nklib:user_uri()]) -> 
+    {ok, [{[raw_connection()], map()}]} |
+    {error, term()}.
+
+multi_resolve(Uri) ->
+    multi_resolve(Uri, #{}).
+
+
+%% @private
+-spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], map()) -> 
+    {ok, [raw_connection()], map()} |
+    {error, term()}.
+   
+multi_resolve([], _Opts) ->
+    {ok, []};
+
+multi_resolve(List, Opts) when is_list(List), not is_integer(hd(List)) ->
+    multi_resolve(List, Opts, []);
+
+multi_resolve(Other, Opts) ->
+    multi_resolve([Other], Opts).
+
+
+%% @private
+multi_resolve([], _Opts, Acc) ->
+    {ok, lists:reverse(Acc)};
+
+multi_resolve([#uri{}=Uri|Rest], Opts, Acc) ->
+    case resolve(Uri, Opts) of
+        {ok, Conns, Opts1} ->
+            multi_resolve(Rest, Opts, [{Conns, Opts1}|Acc]);
+        {error, Error} ->
+            {error, Error}
+    end;
+
+multi_resolve([Uri|Rest], Opts, Acc) ->
+    case nklib_parse:uris(Uri) of
+        error ->
+            {error, {invalid_uri, Uri}};
+        Parsed ->
+            multi_resolve(Parsed++Rest, Opts, Acc)
     end.
 
 
@@ -607,7 +663,7 @@ resolve(Uri, Opts) ->
     term() | error.
 
 apply_nkport(Pid, Fun) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, {apply_nkport, Fun}, 180000) of
+    case catch gen_server:call(Pid, {nkpacket_apply_nkport, Fun}, 180000) of
         {'EXIT', _} -> error;
         Other -> Other
     end.

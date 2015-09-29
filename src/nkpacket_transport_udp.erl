@@ -125,7 +125,7 @@ start_link(NkPort) ->
     packet :: binary(),
     retrans_timer :: reference(),
     next_retrans :: integer(),
-    from :: {call, nklib_util:gen_server_from()} | {cast, pid()}
+    from :: {call, {pid(), term()}} | {cast, pid()}
 }).
 
 -record(state, {
@@ -144,7 +144,7 @@ start_link(NkPort) ->
 
 %% @private 
 -spec init(term()) ->
-    nklib_util:gen_server_init(#state{}).
+    {ok, #state{}} | {stop, term()}.
 
 init([NkPort]) ->
     #nkport{
@@ -217,8 +217,9 @@ init([NkPort]) ->
 
 
 %% @private
--spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
-    nklib_util:gen_server_call(#state{}).
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}} | {noreply, term(), #state{}} | 
+    {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
 handle_call({connect, ConnPort}, _From, State) ->
     #nkport{
@@ -231,7 +232,7 @@ handle_call({connect, ConnPort}, _From, State) ->
 handle_call({send_stun, Ip, Port}, From, State) ->
     {noreply, do_send_stun(Ip, Port, {call, From}, State)};
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call(get_socket, _From, #state{socket=Socket}=State) ->
@@ -247,7 +248,7 @@ handle_call(Msg, From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) ->
-    nklib_util:gen_server_cast(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast({send_stun, Ip, Port, Pid}, State) ->
     {noreply, do_send_stun(Ip, Port, {cast, Pid}, State)};
@@ -262,7 +263,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) ->
-    nklib_util:gen_server_info(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({udp, Socket, Ip, Port, <<0:2, _Header:158, _Msg/binary>>=Packet}, State) ->
     #state{stuns=Stuns, reply_stun=StunReply, socket=Socket} = State,
@@ -323,14 +324,14 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec code_change(term(), #state{}, term()) ->
-    nklib_util:gen_server_code_change(#state{}).
+    {ok, #state{}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% @private
 -spec terminate(term(), #state{}) ->
-    nklib_util:gen_server_terminate().
+    ok.
 
 terminate(Reason, State) ->  
     #state{tcp_pid = Pid} = State,

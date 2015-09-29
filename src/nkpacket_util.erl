@@ -22,12 +22,13 @@
 -module(nkpacket_util).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([log_level/1, make_web_proto/1]).
+-export([console_loglevel/1, make_web_proto/1]).
+-export([debug/0, info/0, notice/0, warning/0, error/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
--export([get_local_uri/2, get_remote_uri/2]).
+-export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
 -export([check_paths/2]).
--export([parse_opts/1]).
+-export([parse_opts/1, spec/0, tls_spec/0]).
 
 -include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
@@ -39,10 +40,18 @@
 
 
 %% @doc Changes log level for console
--spec log_level(debug|info|notice|warning|error) ->
+debug() -> console_loglevel(debug).
+info() -> console_loglevel(info).
+notice() -> console_loglevel(notice).
+warning() -> console_loglevel(warning).
+error() -> console_loglevel(error).
+
+
+%% @doc Changes log level for console
+-spec console_loglevel(debug|info|notice|warning|error) ->
     ok.
 
-log_level(Level) -> 
+console_loglevel(Level) -> 
     lager:set_loglevel(lager_console_backend, Level).
 
 
@@ -81,9 +90,9 @@ make_web_proto(O) ->
     {ok, map()} | {error, term()}.
 
 parse_opts(Opts) ->
-    case nklib_config:parse_config(Opts, spec()) of
-        {ok, List1, _} ->
-            {ok, maps:from_list(List1)};
+    case nklib_config:parse_config(Opts, spec(), #{return=>map}) of
+        {ok, Map, _} ->
+            {ok, Map};
         {error, Error} ->
             {error, Error}
     end.
@@ -259,6 +268,16 @@ get_uri(Scheme, Transp, Ip, Port) ->
         nklib_util:to_binary(Port), ";transport=", nklib_util:to_binary(Transp), ">"
     ]).
 
+%% @doc Removes the user part from a nkport()
+-spec remove_user(nkpacket:nkport()) ->
+    nkpacket:nkport().
+
+remove_user(#nkport{meta=#{user:=_}=Meta}=NkPort) ->
+    NkPort#nkport{meta=maps:remove(user, Meta)};
+
+remove_user(NkPort) ->
+    NkPort.
+
 
 %% @private
 check_paths(_, <<"/">>) ->
@@ -296,17 +315,17 @@ spec() ->
         no_dns_cache => boolean,
         idle_timeout => pos_integer,
         refresh_fun => {function, 1},
+        valid_schemes => {list, atom},
         udp_starts_tcp => boolean,
         udp_no_connections => boolean,
         udp_stun_reply => boolean,
         udp_stun_t1 => nat_integer,
         sctp_out_streams => nat_integer,
         sctp_in_streams => nat_integer,
-        certfile => string,
-        keyfile => string,
         tcp_packet => [{enum, [raw]}, {integer, [1, 2, 4]}],
         tcp_max_connections => nat_integer,
         tcp_listeners => nat_integer,
+        tls_opts => tls_spec(),
         host => host,
         path => path,
         cowboy_opts => list,
@@ -315,7 +334,29 @@ spec() ->
         connect_timeout => nat_integer,
         listen_port => [{enum, [none]}, {record, nkport}],
         force_new => boolean,
-        udp_to_tcp => boolean
+        udp_to_tcp => boolean,
+
+        tls_certfile => {update, map, tls_opts, certfile, string},
+        tls_keyfile => {update, map, tls_opts, keyfile, string},
+        tls_cacertfile => {update, map, tls_opts, cacertfile, string},
+        tls_password => {update, map, tls_opts, password, string},
+        tls_verify => {update, map, tls_opts, verify, boolean},
+        tls_depth => {update, map, tls_opts, depth, {integer, 0, 16}},
+
+        password => binary      % Not used by nkpacket, for users
+
+
+    }.
+
+
+tls_spec() -> 
+    #{
+        certfile => string,
+        keyfile => string,
+        cacertfile => string,
+        password => string,
+        verify => boolean,
+        depth => {integer, 0, 16}
     }.
 
 

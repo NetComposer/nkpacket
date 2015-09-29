@@ -106,7 +106,7 @@ start_link(NkPort) ->
 
 %% @private 
 -spec init(term()) ->
-    nklib_util:gen_server_init(#state{}).
+    {ok, #state{}} | {stop, term()}.
 
 init([NkPort]) ->
     #nkport{
@@ -143,7 +143,8 @@ init([NkPort]) ->
                 [RanchPort]),
             Group = maps:get(group, Meta, none),
             nklib_proc:put(nkpacket_listeners, Group),
-            ConnMeta = maps:with([certfile, keyfile, tcp_packet|?CONN_LISTEN_OPTS], Meta),
+            ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
+            ConnMeta = maps:with(ConnMetaOpts, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
             nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
@@ -168,10 +169,11 @@ init([NkPort]) ->
 
 
 %% @private
--spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
-    nklib_util:gen_server_call(#state{}).
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}} | {noreply, term(), #state{}} | 
+    {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call(get_state, _From, State) ->
@@ -187,7 +189,7 @@ handle_call(Msg, From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) ->
-    nklib_util:gen_server_cast(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast(Msg, State) ->
     case call_protocol(listen_handle_cast, [Msg], State) of
@@ -199,7 +201,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) ->
-    nklib_util:gen_server_info(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=State) ->
     {stop, normal, State};
@@ -217,14 +219,14 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec code_change(term(), #state{}, term()) ->
-    nklib_util:gen_server_code_change(#state{}).
+    {ok, #state{}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% @private
 -spec terminate(term(), #state{}) ->
-    nklib_util:gen_server_terminate().
+    ok.
 
 terminate(Reason, State) ->  
     #state{
@@ -286,14 +288,11 @@ outbound_opts(#nkport{transp=tcp, meta=Opts}) ->
     ];
 
 outbound_opts(#nkport{transp=tls, meta=Opts}) ->
-    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
-    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
-    lists:flatten([
+    Base = [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
-        binary, {active, false}, {nodelay, true}, {keepalive, true},
-        case Cert of "" -> []; _ -> {certfile, Cert} end,
-        case Key of "" -> []; _ -> {keyfile, Key} end
-    ]).
+        binary, {active, false}, {nodelay, true}, {keepalive, true}
+    ],
+    nkpacket_config:add_tls_opts(Base, Opts).
 
 
 %% @private Gets socket options for listening connections
@@ -309,17 +308,13 @@ listen_opts(#nkport{transp=tcp, local_ip=Ip, meta=Opts}) ->
     ];
 
 listen_opts(#nkport{transp=tls, local_ip=Ip, meta=Opts}) ->
-    Cert = maps:get(certfile, Opts, nkpacket_config:certfile()),
-    Key = maps:get(keyfile, Opts, nkpacket_config:keyfile()),
-    lists:flatten([
+    Base = [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
-        {reuseaddr, true}, {backlog, 1024},
-        {versions, ['tlsv1.2', 'tlsv1.1', 'tlsv1']}, % Avoid SSLv3
-        case Cert of "" -> []; _ -> {certfile, Cert} end,
-        case Key of "" -> []; _ -> {keyfile, Key} end
-    ]).
+        {reuseaddr, true}, {backlog, 1024}
+    ],
+    nkpacket_config:add_tls_opts(Base, Opts).
 
 
 %% @private

@@ -26,7 +26,7 @@ eunit:
 	./rebar eunit skip_deps=true
 
 shell:
-	erl -config util/shell_app.config -args_file util/shell_vm.args -s reloader -s nkpacket_app
+	erl -config util/shell_app.config -args_file util/shell_vm.args -s nkpacket_app
 
 
 # Still failling

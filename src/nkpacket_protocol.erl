@@ -26,7 +26,7 @@
 -module(nkpacket_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([transports/1, default_port/1, encode/2]).
+-export([transports/1, default_port/1, encode/2, naptr/2]).
 -export([conn_init/1, conn_parse/2, conn_encode/2, conn_bridge/3, conn_handle_call/3,
 		 conn_handle_cast/2, conn_handle_info/2, conn_stop/2]).
 -export([listen_init/1, listen_parse/4, listen_handle_call/3,
@@ -88,6 +88,27 @@ default_port(_) ->
 encode(_, _) ->
     continue.
 
+
+%% @doc Implement this function to allow NAPTR DNS queries.
+%% When a request to resolve a URL maps to a non-IP host, with undefined
+%% port and transport, NkPACKET will try a NAPTR DNS query.
+%% For each response, this functions is called with the "service" part
+%% of the NAPTR response, and you must extract the scheme and transport.
+%% This would be an example for SIP:
+%% naptr(sip, "sips+d2t") -> {ok, tls};
+%% naptr(sip, "sip+d2u") -> {ok, udp};
+%% naptr(sip, "sip+d2t") -> {ok, tcp};
+%% naptr(sip, "sip+d2s") -> {ok, sctp};
+%% naptr(sip, "sips+d2w") -> {ok, wss};
+%% naptr(sip, "sip+d2w") -> {ok, ws};
+%% naptr(sips, "sips+d2t") -> {ok, tls};
+%% naptr(sips, "sips+d2w") -> {ok, wss};
+%% naptr(_, _) -> invalid.
+-spec naptr(nklib:scheme(), string()) ->
+	{ok, nkpacket:transport()} | invalid.
+
+naptr(_, _) ->
+	invalid.
 
 
 

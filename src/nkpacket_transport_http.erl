@@ -73,7 +73,7 @@ start_link(NkPort) ->
 
 %% @private Starts transport process
 -spec init(term()) ->
-    nklib_util:gen_server_init(#state{}).
+    {ok, #state{}} | {stop, term()}.
 
 init([NkPort]) ->
     #nkport{
@@ -139,10 +139,11 @@ init([NkPort]) ->
 
 
 %% @private
--spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
-    nklib_util:gen_server_call(#state{}).
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}} | {noreply, term(), #state{}} | 
+    {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
@@ -183,7 +184,7 @@ handle_call(Msg, From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) ->
-    nklib_util:gen_server_cast(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -198,7 +199,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) ->
-    nklib_util:gen_server_info(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=State) ->
     {stop, normal, State};
@@ -217,7 +218,7 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec code_change(term(), #state{}, term()) ->
-    nklib_util:gen_server_code_change(#state{}).
+    {ok, #state{}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -225,7 +226,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 -spec terminate(term(), #state{}) ->
-    nklib_util:gen_server_terminate().
+    ok.
 
 terminate(Reason, State) ->  
     catch call_protocol(listen_stop, [Reason], State),

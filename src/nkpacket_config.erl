@@ -26,16 +26,13 @@
 -export([get_protocol/1, get_protocol/2]).
 -export([get_local_ips/0, max_connections/0, dns_cache_ttl/0]).
 -export([udp_timeout/0, tcp_timeout/0, sctp_timeout/0, ws_timeout/0, http_timeout/0, 
-         connect_timeout/0, certfile/0, keyfile/0]).
+         connect_timeout/0, tls_opts/0]).
+-export([add_tls_opts/2]).
 -export([init/0]).
 
 -compile({no_auto_import, [get/1, put/2]}).
 
 -include("nkpacket.hrl").
-
--define(GLOBAL_GET(Term), nklib_config:get(?MODULE, Term)).
--define(DOMAIN_GET(Domain, Term), nklib_config:get_domain(?MODULE, Domain, Term)).
-
 
 
 %% ===================================================================
@@ -72,8 +69,22 @@ sctp_timeout() -> get(sctp_timeout).
 ws_timeout() -> get(ws_timeout).
 http_timeout() -> get(http_timeout).
 connect_timeout() -> get(connect_timeout).
-certfile() -> get(certfile).
-keyfile() -> get(keyfile).
+tls_opts() -> get(tls_opts).
+
+
+%% @doc Adds SSL options
+-spec add_tls_opts(list(), map()) ->
+    list().
+
+add_tls_opts(Base, Opts) ->
+    SSL1 = maps:get(tls_opts, Opts, #{}),
+    SSL2 = maps:merge(tls_opts(), SSL1),
+    SSL3 = case SSL2 of
+        #{verify:=true} -> SSL2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
+        #{verify:=fasle} -> maps:remove(verify, SSL2);
+        _ -> SSL2
+    end,
+    Base ++ maps:to_list(SSL3).
 
 
 %% ===================================================================
@@ -83,9 +94,14 @@ keyfile() -> get(keyfile).
 get(Key) ->
     nklib_config:get(?MODULE, Key).
 
+get(Key, Default) ->
+    nklib_config:get(?MODULE, Key, Default).
+
 get_group(Group, Key) ->
     nklib_config:get_domain(?MODULE, Group, Key).
 
+put(Key, Val) ->
+    nklib_config:put(?MODULE, Key, Val).
 
 
 spec() ->
@@ -98,8 +114,15 @@ spec() ->
         ws_timeout => nat_integer,
         http_timeout => nat_integer,
         connect_timeout => nat_integer,
-        certfile => string,
-        keyfile => string
+        tls_opts => 
+            #{
+                certfile => string,
+                keyfile => string,
+                cacertfile => string,
+                password => string,
+                verify => boolean,
+                depth => {integer, 0, 16}
+            }
     }.
 
 
@@ -127,18 +150,22 @@ default_config() ->
 
 init() ->
     nklib_config:put(?MODULE, local_ips, nkpacket_util:get_local_ips()),
-    case code:priv_dir(nkpacket) of
+    BaseSSL1 = case code:priv_dir(nkpacket) of
         PrivDir when is_list(PrivDir) ->
-            DefCert = filename:join(PrivDir, "cert.pem"),
-            DefKey = filename:join(PrivDir, "key.pem");
+            #{
+                certfile => filename:join(PrivDir, "cert.pem"),
+                keyfile => filename:join(PrivDir, "key.pem")
+            };
         _ ->
-            DefCert = "",
-            DefKey = ""
+            #{}
     end,
-    nklib_config:put(?MODULE, certfile, DefCert),
-    nklib_config:put(?MODULE, keyfile, DefKey),
+    %% Avoid SSLv3
+    BaseSSL2 = BaseSSL1#{versions => ['tlsv1.2', 'tlsv1.1', 'tlsv1']},
     case nklib_config:load_env(?MODULE, nkpacket, default_config(), spec()) of
         ok ->
+            SSL1 = nklib_util:to_map(get(tls_opts, [])),
+            SSL2 = maps:merge(BaseSSL2, SSL1),
+            put(tls_opts, SSL2),
             register_protocol(http, nkpacket_protocol_http),
             register_protocol(https, nkpacket_protocol_http),
             ok;

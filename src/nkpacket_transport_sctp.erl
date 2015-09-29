@@ -92,7 +92,7 @@ start_link(NkPort) ->
 
 %% @private 
 -spec init(term()) ->
-    nklib_util:gen_server_init(#state{}).
+    {ok, #state{}} | {stop, term()}.
 
 init([NkPort]) ->
     #nkport{
@@ -145,8 +145,9 @@ init([NkPort]) ->
 
 
 %% @private
--spec handle_call(term(), nklib_util:gen_server_from(), #state{}) ->
-    nklib_util:gen_server_call(#state{}).
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, term(), #state{}} | {noreply, term(), #state{}} | 
+    {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
 handle_call({connect, ConnPort}, From, State) ->
     #nkport{
@@ -184,7 +185,7 @@ handle_call({connect, ConnPort}, From, State) ->
     },
     {noreply, State1};
 
-handle_call({apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call(Msg, From, State) ->
@@ -197,7 +198,7 @@ handle_call(Msg, From, State) ->
 
 %% @private
 -spec handle_cast(term(), #state{}) ->
-    nklib_util:gen_server_cast(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast({connection_error, From}, #state{pending_froms=Froms}=State) ->
     Froms1 = lists:keydelete(From, 2, Froms),
@@ -216,7 +217,7 @@ handle_cast(Msg, State) ->
 
 %% @private
 -spec handle_info(term(), #state{}) ->
-    nklib_util:gen_server_info(#state{}).
+    {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
     #state{socket=Socket, nkport=#nkport{protocol=Proto, meta=ListenMeta}} = State,
@@ -286,7 +287,7 @@ handle_info(Msg, State) ->
 
 %% @private
 -spec code_change(term(), #state{}, term()) ->
-    nklib_util:gen_server_code_change(#state{}).
+    {ok, #state{}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -294,7 +295,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private
 -spec terminate(term(), #state{}) ->
-    nklib_util:gen_server_terminate().
+    ok.
 
 terminate(Reason, #state{socket=Socket}=State) ->  
     lager:debug("SCTP server process stopped", []),
