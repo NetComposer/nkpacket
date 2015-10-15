@@ -161,8 +161,8 @@ init() ->
     end,
     %% Avoid SSLv3
     BaseSSL2 = BaseSSL1#{versions => ['tlsv1.2', 'tlsv1.1', 'tlsv1']},
-    case nklib_config:load_env(?MODULE, nkpacket, default_config(), spec()) of
-        ok ->
+    case nklib_config:load_env(?MODULE, nkpacket, spec(), default_config()) of
+        {ok, _} ->
             SSL1 = nklib_util:to_map(get(tls_opts, [])),
             SSL2 = maps:merge(BaseSSL2, SSL1),
             put(tls_opts, SSL2),
