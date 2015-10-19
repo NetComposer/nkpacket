@@ -483,7 +483,7 @@ get_cache(Key, _Opts) ->
     ok.
 
 save_cache(Key, Value) ->
-    case nkpacket_config:dns_cache_ttl() of
+    case nkpacket_config_cache:dns_cache_ttl() of
         TTL when is_integer(TTL), TTL > 0 ->
             Now = nklib_util:timestamp(),
             Secs = TTL div 1000,

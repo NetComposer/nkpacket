@@ -24,11 +24,8 @@
 
 -export([register_protocol/2, register_protocol/3]).
 -export([get_protocol/1, get_protocol/2]).
--export([get_local_ips/0, max_connections/0, dns_cache_ttl/0]).
--export([udp_timeout/0, tcp_timeout/0, sctp_timeout/0, ws_timeout/0, http_timeout/0, 
-         connect_timeout/0, tls_opts/0]).
--export([add_tls_opts/2]).
--export([init/0]).
+-export([tls_opts/0, add_tls_opts/2]).
+-export([init/0, make_cache/0]).
 
 -compile({no_auto_import, [get/1, put/2]}).
 
@@ -58,18 +55,19 @@ register_protocol(Group, Scheme, Protocol) when is_atom(Scheme), is_atom(Protoco
     nklib_config:put_domain(?MODULE, Group, {protocol, Scheme}, Protocol).
 
 
-get_protocol(Scheme) -> get({protocol, Scheme}).
-get_protocol(Group, Scheme) -> get_group(Group, {protocol, Scheme}).
-get_local_ips() -> get(local_ips).
-dns_cache_ttl() -> get(dns_cache_ttl).
-max_connections() -> get(max_connections).
-udp_timeout() -> get(udp_timeout).
-tcp_timeout() -> get(tcp_timeout).
-sctp_timeout() -> get(sctp_timeout).
-ws_timeout() -> get(ws_timeout).
-http_timeout() -> get(http_timeout).
-connect_timeout() -> get(connect_timeout).
-tls_opts() -> get(tls_opts).
+%% @doc
+get_protocol(Scheme) -> 
+    get({protocol, Scheme}).
+
+
+%% @doc
+get_protocol(Group, Scheme) -> 
+    get_group(Group, {protocol, Scheme}).
+
+
+%% @doc (hot compile does not support maps in R17)
+tls_opts() -> 
+    get(tls_opts).
 
 
 %% @doc Adds SSL options
@@ -78,7 +76,7 @@ tls_opts() -> get(tls_opts).
 
 add_tls_opts(Base, Opts) ->
     SSL1 = maps:get(tls_opts, Opts, #{}),
-    SSL2 = maps:merge(tls_opts(), SSL1),
+    SSL2 = maps:merge(get(tls_opts), SSL1),
     SSL3 = case SSL2 of
         #{verify:=true} -> SSL2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
         #{verify:=fasle} -> maps:remove(verify, SSL2);
@@ -114,6 +112,8 @@ spec() ->
         ws_timeout => nat_integer,
         http_timeout => nat_integer,
         connect_timeout => nat_integer,
+        packet_local_host => [{enum, [auto]}, host],
+        packet_local_host6 => [{enum, [auto]}, host6],
         tls_opts => 
             #{
                 certfile => string,
@@ -129,19 +129,21 @@ spec() ->
 
 %% @private Default config values
 -spec default_config() ->
-    nklib:optslist().
+    map().
 
 default_config() ->
-    [
-        {max_connections, 1024},
-        {dns_cache_ttl, 30000},                 % msecs
-        {udp_timeout, 30000},                   % 
-        {tcp_timeout, 180000},                  % 
-        {sctp_timeout, 180000},                 % 
-        {ws_timeout, 180000},                   % 
-        {http_timeout, 180000},                 % 
-        {connect_timeout, 30000}                %
-    ].
+    #{
+        max_connections =>  1024,
+        dns_cache_ttl => 30000,                 % msecs
+        udp_timeout => 30000,                   % 
+        tcp_timeout => 180000,                  % 
+        sctp_timeout => 180000,                 % 
+        ws_timeout => 180000,                   % 
+        http_timeout => 180000,                 % 
+        connect_timeout => 30000,               %
+        local_host => auto,
+        local_host6 => auto
+    }.
 
 
 %% @private
@@ -150,6 +152,9 @@ default_config() ->
 
 init() ->
     nklib_config:put(?MODULE, local_ips, nkpacket_util:get_local_ips()),
+    nklib_config:put(?MODULE, main_ip, nkpacket_util:find_main_ip()),
+    nklib_config:put(?MODULE, main_ip6, nkpacket_util:find_main_ip(auto, ipv6)),
+
     BaseSSL1 = case code:priv_dir(nkpacket) of
         PrivDir when is_list(PrivDir) ->
             #{
@@ -168,9 +173,14 @@ init() ->
             put(tls_opts, SSL2),
             register_protocol(http, nkpacket_protocol_http),
             register_protocol(https, nkpacket_protocol_http),
+            make_cache(),
             ok;
         {error, Error} ->
             lager:error("Config error: ~p", [Error]),
             error(config_error)
     end.
 
+
+make_cache() ->
+    Keys = [local_ips, main_ip, main_ip6 | maps:keys(default_config())],
+    nklib_config:make_cache(Keys, ?MODULE, none, nkpacket_config_cache, none).

@@ -299,14 +299,14 @@ init([NkPort]) ->
             Timeout0;
         undefined ->
             case Transp of
-                udp -> nkpacket_config:udp_timeout();
-                tcp -> nkpacket_config:tcp_timeout();
-                tls -> nkpacket_config:tcp_timeout();
-                sctp -> nkpacket_config:sctp_timeout();
-                ws -> nkpacket_config:ws_timeout();
-                wss -> nkpacket_config:ws_timeout();
-                http -> nkpacket_config:http_timeout();
-                https -> nkpacket_config:http_timeout()
+                udp -> nkpacket_config_cache:udp_timeout();
+                tcp -> nkpacket_config_cache:tcp_timeout();
+                tls -> nkpacket_config_cache:tcp_timeout();
+                sctp -> nkpacket_config_cache:sctp_timeout();
+                ws -> nkpacket_config_cache:ws_timeout();
+                wss -> nkpacket_config_cache:ws_timeout();
+                http -> nkpacket_config_cache:http_timeout();
+                https -> nkpacket_config_cache:http_timeout()
             end
     end,
     lager:debug("created ~p connection ~p to/from (~p, ~p) ~p", 

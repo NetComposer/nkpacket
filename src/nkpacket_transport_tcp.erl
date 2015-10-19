@@ -66,7 +66,7 @@ connect(NkPort) ->
     SocketOpts = outbound_opts(NkPort),
     {InetMod, TranspMod, _} = get_modules(Transp),
     ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config:connect_timeout();
+        undefined -> nkpacket_config_cache:connect_timeout();
         Timeout0 -> Timeout0
     end,
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of

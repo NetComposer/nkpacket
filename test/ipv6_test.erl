@@ -153,7 +153,7 @@ is_local() ->
 	false = nkpacket:is_local(Uri3, #{group=>dom2}),
 
 	case 
-		[Ip || Ip <- nkpacket_config:get_local_ips(), size(Ip)==8]
+		[Ip || Ip <- nkpacket_config_cache:local_ips(), size(Ip)==8]
 		-- [{0,0,0,0,0,0,0,1}]
 	of
 		[] -> 

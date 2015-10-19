@@ -74,7 +74,7 @@ connect(NkPort) ->
     SocketOpts = outbound_opts(NkPort),
     TranspMod = case Transp of ws -> tcp, ranch_tcp; wss -> ranch_ssl end,
     ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config:connect_timeout();
+        undefined -> nkpacket_config_cache:connect_timeout();
         Timeout0 -> Timeout0
     end,
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
