@@ -49,9 +49,9 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
-    #nkport{local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, local_ip=Ip, local_port=Port} = NkPort,
     {
-        {Transp, Ip, Port, make_ref()},
+        {{Proto, Transp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,

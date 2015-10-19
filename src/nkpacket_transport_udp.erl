@@ -64,9 +64,9 @@ send_stun_async(Pid, Ip, Port) ->
     supervisor:child_spec().
 
 get_listener(NkPort) ->
-    #nkport{transp=udp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, transp=udp, local_ip=Ip, local_port=Port} = NkPort,
     {
-        {udp, Ip, Port, make_ref()}, 
+        {{Proto, udp, Ip, Port}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 

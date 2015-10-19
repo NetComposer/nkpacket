@@ -42,9 +42,9 @@
     supervisor:child_spec().
 
 get_listener(NkPort) ->
-    #nkport{transp=sctp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, transp=sctp, local_ip=Ip, local_port=Port} = NkPort,
     {
-        {sctp, Ip, Port, make_ref()}, 
+        {{Proto, sctp, Ip, Port}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
