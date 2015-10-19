@@ -179,8 +179,8 @@ handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
 handle_call(get_state, _From, State) ->
     {reply, State, State};
 
-handle_call(Msg, From, State) ->
-    case call_protocol(listen_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -191,8 +191,8 @@ handle_call(Msg, From, State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast(Msg, State) ->
-    case call_protocol(listen_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -209,8 +209,8 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=Sta
 handle_info({'EXIT', Pid, Reason}, #state{ranch_pid=Pid}=State) ->
     {stop, {ranch_stop, Reason}, State};
 
-handle_info(Msg, State) ->
-    case call_protocol(listen_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -232,10 +232,10 @@ terminate(Reason, State) ->
     #state{
         ranch_id = RanchId,
         ranch_pid = RanchPid,
-        nkport = #nkport{transp=Transp, socket=Socket}
+        nkport = #nkport{transp=Transp, socket=Socket} = NkPort
     } = State,
     lager:debug("TCP/TLS listener stop: ~p", [Reason]),
-    catch call_protocol(listen_stop, [Reason], State),
+    catch call_protocol(listen_stop, [Reason, NkPort], State),
     exit(RanchPid, shutdown),
     timer:sleep(100),   %% Give time to ranch to close acceptors
     catch ranch_server:cleanup_listener_opts(RanchId),

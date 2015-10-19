@@ -238,8 +238,8 @@ handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
 handle_call(get_socket, _From, #state{socket=Socket}=State) ->
     {reply, {ok, Socket}, State};
 
-handle_call(Msg, From, State) ->
-    case call_protocol(listen_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -253,8 +253,8 @@ handle_call(Msg, From, State) ->
 handle_cast({send_stun, Ip, Port, Pid}, State) ->
     {noreply, do_send_stun(Ip, Port, {cast, Pid}, State)};
 
-handle_cast(Msg, State) ->
-    case call_protocol(listen_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -314,8 +314,8 @@ handle_info({'EXIT', _Pid, normal}, State) ->
 handle_info(killme, _State) ->
     error(killme);
 
-handle_info(Msg, State) ->
-    case call_protocol(listen_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -334,14 +334,14 @@ code_change(_OldVsn, State, _Extra) ->
     ok.
 
 terminate(Reason, State) ->  
-    #state{tcp_pid = Pid} = State,
+    #state{nkport=NkPort, tcp_pid=Pid} = State,
     case is_pid(Pid) of
         true ->
             exit(Pid, shutdown);
         false ->
             ok
     end,
-    catch call_protocol(listen_stop, [Reason], State).
+    catch call_protocol(listen_stop, [Reason, NkPort], State).
 
 
 
@@ -443,9 +443,9 @@ do_stun_response(TransId, Attrs, State) ->
 
 
 %% @private 
-read_packets(Ip, Port, Packet, #state{no_connections=true}=State, N) ->
+read_packets(Ip, Port, Packet, #state{no_connections=true, nkport=NkPort}=State, N) ->
     #state{socket=Socket} = State,
-    case call_protocol(listen_parse, [Ip, Port, Packet], State) of
+    case call_protocol(listen_parse, [Ip, Port, Packet, NkPort], State) of
         undefined -> 
             lager:warning("Received data for uknown protocol", []),
             {ok, State};

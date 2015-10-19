@@ -25,10 +25,10 @@
 -behaviour(nkpacket_protocol).
 
 -export([transports/1, default_port/1]).
--export([conn_init/1, conn_parse/2, conn_encode/2, conn_stop/2]).
--export([conn_handle_call/3, conn_handle_cast/2, conn_handle_info/2]).
--export([listen_init/1, listen_parse/4, listen_stop/2]).
--export([listen_handle_call/3, listen_handle_cast/2, listen_handle_info/2]).
+-export([conn_init/1, conn_parse/3, conn_encode/3, conn_stop/3]).
+-export([conn_handle_call/4, conn_handle_cast/3, conn_handle_info/3]).
+-export([listen_init/1, listen_parse/5, listen_stop/3]).
+-export([listen_handle_call/4, listen_handle_cast/3, listen_handle_info/3]).
 
 -include("nkpacket.hrl").
 
@@ -62,8 +62,7 @@ default_port(_) -> invalid.
 
 -record(listen_state, {
 	pid,
-	ref,
-	nkport
+	ref
 }).
 
 
@@ -73,36 +72,36 @@ default_port(_) -> invalid.
 listen_init(NkPort) ->
 	lager:notice("Protocol LISTEN init: ~p (~p)", [NkPort, self()]),
 	State = case nkpacket:get_user(NkPort) of
-		{ok, {Pid, Ref}} -> #listen_state{pid=Pid, ref=Ref, nkport=NkPort};
-		_ -> #listen_state{nkport=NkPort}
+		{ok, {Pid, Ref}} -> #listen_state{pid=Pid, ref=Ref};
+		_ -> #listen_state{}
 	end,
 	maybe_reply(listen_init, State),
 	{ok, State}.
 
 
-listen_handle_call(Msg, _From, State) ->
+listen_handle_call(Msg, _From, _NkPort, State) ->
 	lager:warning("Unexpected call: ~p", [Msg]),
 	{ok, State}.
 
 
-listen_handle_cast(Msg, State) ->
+listen_handle_cast(Msg, _NkPort, State) ->
 	lager:warning("Unexpected cast: ~p", [Msg]),
 	{ok, State}.
 
 
-listen_handle_info({'EXIT', _, forced_stop}, State) ->
+listen_handle_info({'EXIT', _, forced_stop}, _NkPort, State) ->
 	{stop, forced_stop, State};
 
-listen_handle_info(Msg, State) ->
+listen_handle_info(Msg, _NkPort, State) ->
 	lager:warning("Unexpected listen info: ~p", [Msg]),
 	{ok, State}.
 
-listen_parse(Ip, Port, Data, State) ->
+listen_parse(Ip, Port, Data, _NkPort, State) ->
 	lager:notice("LISTEN Parsing fromm ~p:~p: ~p", [Ip, Port, Data]),
 	maybe_reply({listen_parse, Data}, State),
 	{ok, State}.
 
-listen_stop(Reason, State) ->
+listen_stop(Reason, _NkPort, State) ->
 	lager:notice("LISTEN  stop: ~p, ~p", [Reason, State]),
 	maybe_reply(listen_stop, State),
 	ok.
@@ -115,8 +114,7 @@ listen_stop(Reason, State) ->
 
 -record(conn_state, {
 	pid,
-	ref,
-	nkport
+	ref
 }).
 
 -spec conn_init(nkpacket:nkport()) ->
@@ -125,72 +123,71 @@ listen_stop(Reason, State) ->
 conn_init(NkPort) ->
 	lager:notice("Protocol CONN init: ~p (~p)", [NkPort, self()]),
 	State = case nkpacket:get_user(NkPort) of
-		{ok, {Pid, Ref}} -> #conn_state{pid=Pid, ref=Ref, nkport=NkPort};
-		_ -> #conn_state{nkport=NkPort}
+		{ok, {Pid, Ref}} -> #conn_state{pid=Pid, ref=Ref};
+		_ -> #conn_state{}
 	end,
 	maybe_reply(conn_init, State),
 	{ok, State}.
 
 
-conn_parse({text, Data}, State) ->
+conn_parse({text, Data}, _NkPort, State) ->
 	lager:debug("Parsing WS TEXT: ~p", [Data]),
 	maybe_reply({parse, {text, Data}}, State),
 	{ok, State};
 
-conn_parse({binary, <<>>}, State) ->
+conn_parse({binary, <<>>}, _NkPort, State) ->
 	lager:error("EMPTY"),
 	{ok, State};
 
 
-conn_parse({binary, Data}, State) ->
+conn_parse({binary, Data}, _NkPort, State) ->
 	Msg = erlang:binary_to_term(Data),
 	lager:debug("Parsing WS BIN: ~p", [Msg]),
 	maybe_reply({parse, {binary, Msg}}, State),
 	{ok, State};
 
-conn_parse(close, State) ->
+conn_parse(close, _NkPort, State) ->
 	{ok, State};
 
-conn_parse(pong, State) ->
+conn_parse(pong, _NkPort, State) ->
 	{ok, State};
 
-conn_parse({pong, Payload}, State) ->
+conn_parse({pong, Payload}, _NkPort, State) ->
 	lager:debug("Parsing WS PONG: ~p", [Payload]),
 	maybe_reply({pong, Payload}, State),
 	{ok, State};
 
-conn_parse(Data, State) ->
+conn_parse(Data, #nkport{meta=#{group:=Group}}, State) ->
 	Msg = erlang:binary_to_term(Data),
-	#conn_state{nkport=#nkport{meta=#{group:=Group}}} = State,
 	lager:debug("Parsing: ~p (~p)", [Msg, Group]),
 	maybe_reply({parse, Msg}, State),
 	{ok, State}.
 
-conn_encode({nkraw, Msg}, #conn_state{nkport=NkPort}=State) ->
+conn_encode({nkraw, Msg}, NkPort, State) ->
 	lager:debug("UnParsing RAW: ~p, ~p", [Msg, NkPort]),
 	maybe_reply({encode, Msg}, State),
 	{ok, Msg, State};
 
-conn_encode(Msg, #conn_state{nkport=NkPort}=State) ->
+conn_encode(Msg, NkPort, State) ->
 	lager:debug("UnParsing: ~p, ~p", [Msg, NkPort]),
 	maybe_reply({encode, Msg}, State),
 	{ok, erlang:term_to_binary(Msg), State}.
 
-conn_handle_call(Msg, _From, State) ->
+conn_handle_call(Msg, _From, _NkPort, State) ->
 	lager:warning("Unexpected call: ~p", [Msg]),
 	{ok, State}.
 
 
-conn_handle_cast(Msg, State) ->
+conn_handle_cast(Msg, _NkPort, State) ->
 	lager:warning("Unexpected cast: ~p", [Msg]),
 	{ok, State}.
 
 
-conn_handle_info(Msg, State) ->
+conn_handle_info(Msg, _NkPort, State) ->
 	lager:warning("Unexpected conn info: ~p", [Msg]),
 	{ok, State}.
 
-conn_stop(Reason, State) ->
+conn_stop(Reason, _NkPort, State) ->
 	lager:notice("CONN stop: ~p", [Reason]),
 	maybe_reply(conn_stop, State),
 	ok.

@@ -174,8 +174,8 @@ handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
             {reply, next, State}
     end;
 
-handle_call(Msg, From, State) ->
-    case call_protocol(listen_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -189,8 +189,8 @@ handle_call(Msg, From, State) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
-handle_cast(Msg, State) ->
-    case call_protocol(listen_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -208,8 +208,8 @@ handle_info({'DOWN', _MRef, process, Pid, Reason}, #state{shared=Pid}=State) ->
     % lager:warning("WS received SHARED stop"),
     {stop, Reason, State};
 
-handle_info(Msg, State) ->
-    case call_protocol(listen_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -228,8 +228,8 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(Reason, State) ->  
-    catch call_protocol(listen_stop, [Reason], State),
+terminate(Reason, #state{nkport=NkPort}=State) ->  
+    catch call_protocol(listen_stop, [Reason, NkPort], State),
     ok.
 
 

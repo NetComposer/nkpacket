@@ -427,8 +427,8 @@ handle_call({nkpacket_send, Msg}, _From, #state{nkport=NkPort}=State) ->
             {stop, Reason, {error, encode_error}, State1}
     end;
 
-handle_call(Msg, From, State) ->
-    case call_protocol(conn_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(conn_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -473,8 +473,8 @@ handle_cast({update_monitor, Pid}, #state{user_monitor=OldMon}=State) ->
     nklib_util:demonitor(OldMon),
     {noreply, State#state{user_monitor=monitor(process, Pid)}};
 
-handle_cast(Msg, State) ->
-    case call_protocol(conn_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(conn_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -493,8 +493,8 @@ handle_info({ssl, Socket, Data}, #state{socket=Socket}=State) ->
     ssl:setopts(Socket, [{active, once}]),
     parse(Data, restart_timer(State));
 
-handle_info({tcp_closed, _Socket}, State) ->
-    case call_protocol(conn_parse, [close], State) of
+handle_info({tcp_closed, _Socket}, #state{nkport=NkPort}=State) ->
+    case call_protocol(conn_parse, [close, NkPort], State) of
         undefined -> 
             {stop, normal, State};
         {ok, State1} ->
@@ -543,8 +543,8 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{user_monitor=MRef}=St
     lager:debug("Connection stop (monitor stop)", []),
     {stop, normal, State};
 
-handle_info(Msg, State) ->
-    case call_protocol(conn_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(conn_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -568,7 +568,7 @@ terminate(Reason, State) ->
         transp = Transp, 
         nkport = NkPort
     } = State,
-    catch call_protocol(conn_stop, [Reason], State),
+    catch call_protocol(conn_stop, [Reason, NkPort], State),
     lager:debug("Connection ~p process stopped (~p, ~p)", 
            [Transp, Reason, self()]),
     % Sometimes ssl sockets are slow to close here
@@ -641,7 +641,7 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
             #nkport{remote_ip=FromIp, remote_port=FromPort} = From,
             #nkport{local_ip=ToIp, local_port=ToPort} = To
     end,
-    case call_protocol(conn_bridge, [Data, Type], State) of
+    case call_protocol(conn_bridge, [Data, Type, From], State) of
         undefined ->
             case nkpacket_connection_lib:raw_send(To, Data) of
                 ok ->
@@ -670,8 +670,8 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
             {stop, Reason, State1}
     end;
 
-do_parse(Data, #state{nkport=#nkport{protocol=Protocol}}=State) ->
-    case call_protocol(conn_parse, [Data], State) of
+do_parse(Data, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
+    case call_protocol(conn_parse, [Data, NkPort], State) of
         undefined ->
             lager:warning("Received data for undefined protocol ~p", [Protocol]),
             {ok, State};
@@ -749,8 +749,8 @@ encode(Msg, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
 
 
 %% @private
-encode2(Msg, State) -> 
-    case call_protocol(conn_encode, [Msg], State) of
+encode2(Msg, #state{nkport=NkPort}=State) -> 
+    case call_protocol(conn_encode, [Msg, NkPort], State) of
         undefined when is_binary(Msg) ->
             {ok, Msg, State};
         undefined when is_list(Msg) ->

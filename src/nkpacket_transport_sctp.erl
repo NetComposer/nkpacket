@@ -188,8 +188,8 @@ handle_call({connect, ConnPort}, From, State) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call(Msg, From, State) ->
-    case call_protocol(listen_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -207,8 +207,8 @@ handle_cast({connection_error, From}, #state{pending_froms=Froms}=State) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
-handle_cast(Msg, State) ->
-    case call_protocol(listen_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -270,15 +270,16 @@ handle_info({'EXIT', Pid, _Status}=Msg, #state{pending_conns=Conns}=State) ->
         true ->
             {noreply, State#state{pending_conns=Conns--[Pid]}};
         false ->
-            case call_protocol(listen_handle_info, [Msg], State) of
+            #state{nkport=NkPort} = State,
+            case call_protocol(listen_handle_info, [Msg, NkPort], State) of
                 undefined -> {noreply, State};
                 {ok, State1} -> {noreply, State1};
                 {stop, Reason, State1} -> {stop, Reason, State1}
             end
     end;
 
-handle_info(Msg, State) ->
-    case call_protocol(listen_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -297,9 +298,9 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(Reason, #state{socket=Socket}=State) ->  
+terminate(Reason, #state{nkport=NkPort, socket=Socket}=State) ->  
     lager:debug("SCTP server process stopped", []),
-    catch call_protocol(listen_stop, [Reason], State),
+    catch call_protocol(listen_stop, [Reason, NkPort], State),
     gen_sctp:close(Socket).
 
 
