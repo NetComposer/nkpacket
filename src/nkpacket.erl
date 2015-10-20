@@ -154,8 +154,8 @@
         connect_timeout => integer(),       % MSecs, default in config
         no_dns_cache => boolean(),          % Avoid DNS cache
         idle_timeout => integer(),          % MSecs, default in config
-        refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
-        listen_nkport => none | nkport(),   % Select (or disables auto) base NkPort
+        refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
+        listen_port => none | mandatory | nkport(),  % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
 
         % TCP/TLS/WS/WSS options
@@ -399,7 +399,10 @@ send(SendSpec, Msg) ->
 send(SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
-            nkpacket_transport:send(SendSpec, Msg, Opts1);
+            case nkpacket_transport:send(SendSpec, Msg, Opts1) of
+                {ok, {Pid, _Msg1}} -> {ok, Pid};
+                {error, Error} -> {error, Error}
+            end;
         {error, Error} ->
             {error, Error}
     end;
