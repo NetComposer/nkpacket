@@ -108,7 +108,7 @@ send([Uri|Rest], Msg, Opts) when is_binary(Uri); is_list(Uri) ->
 send([#uri{}=Uri|Rest], Msg, Opts) ->
     case nkpacket:resolve(Uri, Opts) of
         {ok, RawConns, Opts1} ->
-            lager:debug("Transport send to ~p (~p)", [RawConns, Rest]),
+            lager:debug("transport send to ~p (~p)", [RawConns, Rest]),
             send(RawConns++Rest, Msg, Opts1);
         {error, Error} ->
             lager:notice("Error sending to ~p: ~p", [Uri, Error]),
@@ -116,7 +116,7 @@ send([#uri{}=Uri|Rest], Msg, Opts) ->
     end;
 
 send([Port|Rest], Msg, Opts) when is_pid(Port); is_record(Port, nkport) ->
-    lager:debug("Transport send to nkport ~p", [Port]),
+    lager:debug("transport send to nkport ~p", [Port]),
     case do_send(Msg, [Port], Opts#{udp_to_tcp=>false}) of
         {ok, Res} -> {ok, Res};
         {error, Opts1} -> send(Rest, Msg, Opts1)
@@ -140,7 +140,7 @@ send([{Protocol, Transp, Ip, 0}|Rest], Msg, Opts) ->
 send([{connect, Conn}|Rest], Msg, Opts) ->
     RemoveOpts = [udp_to_tcp, last_error],
     ConnOpts = maps:without(RemoveOpts, Opts),
-    lager:debug("Transport connecting to ~p (~p)", [Conn, ConnOpts]),
+    lager:debug("transport connecting to ~p (~p)", [Conn, ConnOpts]),
     case connect([Conn], ConnOpts) of
         {ok, Pid} ->
             case do_send(Msg, [Pid], Opts) of
@@ -164,11 +164,11 @@ send([{_, _, _, _}=Conn|Rest], Msg, #{group:=_}=Opts) ->
     end,
     case do_send(Msg, Pids, Opts) of
         {ok, Res} -> 
-            lager:debug("Transport used previous connection to ~p (~p)", [Conn, Opts]),
+            lager:debug("transport used previous connection to ~p (~p)", [Conn, Opts]),
             {ok, Res};
         retry_tcp ->
             Conn1 = setelement(2, Conn, tcp), 
-            lager:debug("Transport retrying with tcp", []),
+            lager:debug("transport retrying with tcp", []),
             send([Conn1|Rest], Msg, Opts);
         {error, Opts1} -> 
             send([{connect, Conn}|Rest], Msg, Opts1)
@@ -294,7 +294,7 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
         undefined when ListenOpt==mandatory ->
             {error, no_listening_transport};
         _ ->
-            lager:debug("Base port: ~p", [BasePort]),
+            lager:debug("transport base port: ~p", [BasePort]),
             #nkport{meta=Meta} = BasePort,
             ConnPort = BasePort#nkport{
                 transp = Transp, 
