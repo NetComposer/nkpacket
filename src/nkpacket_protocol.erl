@@ -158,30 +158,30 @@ conn_bridge(Data, _Type, _NkPort, ConnState) ->
 -spec conn_handle_call(term(), {pid(), term()}, nkpacket:nkport(), conn_state()) ->
 	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
-conn_handle_call(_Msg, _From, _NkPort, ListenState) ->
-	{stop, not_defined, ListenState}.
+conn_handle_call(_Msg, _From, _NkPort, ConnState) ->
+	{stop, not_defined, ConnState}.
 
 
 %% @doc Called when the connection received a gen_server:cast/2
 -spec conn_handle_cast(term(), nkpacket:nkport(), conn_state()) ->
 	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
-conn_handle_cast(_Msg, _NkPort, ListenState) ->
-	{stop, not_defined, ListenState}.
+conn_handle_cast(_Msg, _NkPort, ConnState) ->
+	{stop, not_defined, ConnState}.
 
 
 %% @doc Called when the connection received an erlang message
 -spec conn_handle_info(term(), nkpacket:nkport(), conn_state()) ->
 	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
-conn_handle_info(_Msg, _NkPort, ListenState) ->
-	{stop, not_defined, ListenState}.
+conn_handle_info(_Msg, _NkPort, ConnState) ->
+	{stop, not_defined, ConnState}.
 
 %% @doc Called when the connection stops
 -spec conn_stop(Reason::term(), nkpacket:nkport(), conn_state()) ->
 	ok.
 
-conn_stop(_Reason, _NkPort, _State) ->
+conn_stop(_Reason, _NkPort, _ConnState) ->
 	ok.
 
 

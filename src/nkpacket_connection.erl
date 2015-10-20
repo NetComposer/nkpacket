@@ -329,7 +329,8 @@ init([NkPort]) ->
     end,
     NkPort1 = NkPort#nkport{pid=self()},
     % We need to store some meta in case someone calls get_nkport
-    StoredNkPort = NkPort1#nkport{meta=maps:with([group, host, path, ws_proto], Meta)},
+    StoredNkPort = NkPort1#nkport{
+                        meta=maps:with([group, host, path, ws_proto], Meta)},
     State = #state{
         transp = Transp,
         nkport = StoredNkPort,
@@ -344,6 +345,7 @@ init([NkPort]) ->
         refresh_fun = maps:get(refresh_fun, Meta, undefined),
         protocol = Protocol
     },
+    %% 'user' key is only sent to conn_init, then it is removed
     case nkpacket_util:init_protocol(Protocol, conn_init, NkPort1) of
         {ok, ProtoState} ->
             State1 = State#state{proto_state=ProtoState},
