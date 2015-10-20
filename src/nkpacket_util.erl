@@ -335,6 +335,7 @@ spec() ->
         listen_port => [{enum, [none]}, {record, nkport}],
         force_new => boolean,
         udp_to_tcp => boolean,
+        pre_send_fun => {function, 2},
 
         tls_certfile => {update, map, tls_opts, certfile, string},
         tls_keyfile => {update, map, tls_opts, keyfile, string},

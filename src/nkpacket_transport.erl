@@ -191,10 +191,14 @@ send([], _, _) ->
 
 %% @private
 -spec do_send(term(), [#nkport{}|pid()], nkpacket:send_opts()) ->
-    {ok, #nkport{}} | retry_tcp | {error, nkpacket:send_opts()}.
+    {ok, {pid(), term()}} | retry_tcp | {error, nkpacket:send_opts()}.
 
 do_send(_Msg, [], Opts) ->
     {error, Opts};
+
+do_send(Msg, [Port|Rest], #{pre_send_fun:=Fun}=Opts) ->
+    Msg1 = get_msg_fun(Fun, Msg, Port),
+    do_send(Msg1, [Port|Rest], maps:remove(pre_send_fun, Opts));
 
 do_send(Msg, [Port|Rest], Opts) ->
     case nkpacket_connection:send(Port, Msg) of
@@ -216,6 +220,20 @@ do_send(Msg, [Port|Rest], Opts) ->
     end.
 
         
+%% @private
+-spec get_msg_fun(fun((#nkport{}) -> binary()), term(), #nkport{}|pid()) ->
+    {ok, binary()} | {error, invalid_nkport}.
+
+get_msg_fun(Fun, Msg, #nkport{}=NkPort) ->
+    Fun(Msg, NkPort);
+
+get_msg_fun(Fun, Msg, Pid) when is_pid(Pid) ->
+    case nkpacket:get_nkport(Pid) of
+        {ok, NkPort} -> Fun(Msg, NkPort);
+        _ -> {error, invalid_nkport}
+    end.
+
+
 %% @private Starts a new outbound connection.
 -spec connect([nkpacket:raw_connection()], nkpacket:connect_opts()) ->
     {ok, pid()} | {error, term()}.

@@ -38,7 +38,7 @@
 -export_type([group/0, transport/0, protocol/0, nkport/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
--export_type([http_proto/0, incoming/0, outcoming/0]).
+-export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -175,7 +175,8 @@
     #{
         % Specific options
         force_new => boolean(),             % Forces a new connection
-        udp_to_tcp => boolean()             % Change to TCP for large packets
+        udp_to_tcp => boolean(),            % Change to TCP for large packets
+        pre_send_fun => pre_send_fun()
     }.
 
 
@@ -209,6 +210,11 @@
 -type outcoming() ::
     iolist() | binary() |
     cow_ws:frame().                 % Only WS
+
+
+%% See send
+-type pre_send_fun() ::
+    fun((term(), nkport()) -> term()).
 
 
 %% ===================================================================
