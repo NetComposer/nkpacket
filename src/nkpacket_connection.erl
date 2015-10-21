@@ -501,8 +501,8 @@ handle_info({tcp_closed, _Socket}, #state{nkport=NkPort}=State) ->
             {stop, normal, State};
         {ok, State1} ->
             {stop, normal, State1};
-        {stop, Reason, State1} ->
-            {stop, Reason, State1}
+        {stop, _, State1} ->
+            {stop, normal, State1}
     end;
     
 handle_info({tcp_error, _Socket}, State) ->
@@ -683,7 +683,8 @@ do_parse(Data, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
             State2 = start_bridge(Bridge, up, State1),
             do_parse(Data, State2);
         {stop, Reason, State1} ->
-            {stop, Reason, State1}
+            lager:info("Error response from conn_parse: ~p", [Reason]),
+            {stop, normal, State1}
     end.
 
 
