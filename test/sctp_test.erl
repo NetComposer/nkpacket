@@ -80,8 +80,8 @@ basic() ->
 		pid=Sctp2, socket = {_Port2, 0},
         meta = #{group:=dom2}
 	} = Listen2,
-	{ok, {_, _, Port1}} = nkpacket:get_local(Sctp1),	
-	{ok, {_, _, _}} = nkpacket:get_local(Sctp2),
+	{ok, {_, _, _, Port1}} = nkpacket:get_local(Sctp1),	
+	{ok, {_, _, _, _}} = nkpacket:get_local(Sctp2),
 
 	Uri = "<test://localhost:"++integer_to_list(Port1)++";transport=sctp>",
 	{ok, Conn1} = nkpacket:send(Uri, msg1, 

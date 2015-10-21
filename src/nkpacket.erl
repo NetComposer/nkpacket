@@ -353,20 +353,20 @@ get_nkport(Pid) when is_pid(Pid) ->
 
 %% @doc Gets the current port number of a listener or connection
 -spec get_local(pid()|nkport()) ->
-    {ok, {transport(), inet:ip_address(), inet:port_number()}} | error.
+    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
 
-get_local(#nkport{transp=Transp, local_ip=Ip, local_port=Port}) ->
-    {ok, {Transp, Ip, Port}};
+get_local(#nkport{protocol=Proto, transp=Transp, local_ip=Ip, local_port=Port}) ->
+    {ok, {Proto, Transp, Ip, Port}};
 get_local(Pid) when is_pid(Pid) ->
     apply_nkport(Pid, fun get_local/1).
 
 
 %% @doc Gets the current remote peer address and port
 -spec get_remote(pid()|nkport()) ->
-    {ok, {transport(), inet:ip_address(), inet:port_number()}} | error.
+    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
 
-get_remote(#nkport{transp=Transp, remote_ip=Ip, remote_port=Port}) ->
-    {ok, {Transp, Ip, Port}};
+get_remote(#nkport{protocol=Proto, transp=Transp, remote_ip=Ip, remote_port=Port}) ->
+    {ok, {Proto, Transp, Ip, Port}};
 get_remote(Pid) when is_pid(Pid) ->
     apply_nkport(Pid, fun get_remote/1).
 
@@ -641,7 +641,7 @@ multi_resolve(Uri) ->
 
 
 %% @private
--spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], map()) -> 
+-spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], resolve_opts()) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
    

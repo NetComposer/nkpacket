@@ -70,8 +70,8 @@ basic() ->
 	        meta = #{group:=dom2}
 	}} = nkpacket:get_nkport(Listen2),
 
-	{ok, {_, _, ListenPort1}} = nkpacket:get_local(Tcp1),	
-	{ok, {_, _, ListenPort2}} = nkpacket:get_local(Tcp2),	
+	{ok, {_, _, _, ListenPort1}} = nkpacket:get_local(Tcp1),	
+	{ok, {_, _, _, ListenPort2}} = nkpacket:get_local(Tcp2),	
 	case ListenPort1 of
 		1235 -> ok;
 		_ -> lager:warning("Could not open port 1235")
@@ -123,7 +123,7 @@ tls() ->
 	ok = nkpacket_config:register_protocol(test, test_protocol),
 	{ok, Tls1} = nkpacket:start_listener({test_protocol, tls, {0,0,0,0}, 0},
 						   			     M1#{group=>dom1, tcp_listeners=>1}),
-	{ok, {_, _, ListenPort1}} = nkpacket:get_local(Tls1),	
+	{ok, {_, _, _, ListenPort1}} = nkpacket:get_local(Tls1),	
 	case ListenPort1 of
 		1236 -> ok;
 		_ -> lager:warning("Could not open port 1236")
@@ -204,8 +204,8 @@ send() ->
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
-	% {ok, {_, _, _Listen1}} = nkpacket:get_local(Udp1),	
-	{ok, {udp, _, Listen2}} = nkpacket:get_local(Udp2),	
+	% {ok, {_, _, _, _Listen1}} = nkpacket:get_local(Udp1),	
+	{ok, {_, udp, _, Listen2}} = nkpacket:get_local(Udp2),	
 
 	% Invalid sends
 	lager:warning("Next warning about a invalid send specification is expected"),

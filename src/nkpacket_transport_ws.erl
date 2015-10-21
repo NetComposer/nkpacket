@@ -150,7 +150,7 @@ init([NkPort]) ->
         erlang:monitor(process, SharedPid),
         case Port of
             0 -> 
-                {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
+                {ok, {_, _, _, Port1}} = nkpacket:get_local(SharedPid);
             _ -> 
                 Port1 = Port
         end,

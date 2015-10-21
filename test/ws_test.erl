@@ -53,7 +53,7 @@ basic() ->
 	% Should use default port for ws: 1238
 	Url0 = "<test://all;transport=ws>",
 	{ok, Ws1} = nkpacket:start_listener(Url0, M1#{group=>dom1}),
-	{ok, {ws, {0,0,0,0}, LPort1}} = nkpacket:get_local(Ws1),
+	{ok, {_, ws, {0,0,0,0}, LPort1}} = nkpacket:get_local(Ws1),
 	case LPort1 of
 		1238 -> ok;
 		_ -> lager:warning("Could not open port 1238")
@@ -157,7 +157,7 @@ wss() ->
 	Url0 = "<test://all;transport=wss>",
 	{ok, Ws1} = nkpacket:start_listener(Url0, M1#{group=>dom1}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
-	{ok, {wss, {0,0,0,0}, LPort1}} = nkpacket:get_local(Ws1),
+	{ok, {_, wss, {0,0,0,0}, LPort1}} = nkpacket:get_local(Ws1),
 	case LPort1 of
 		1239 -> ok;
 		_ -> lager:warning("Could not open port 1239")
@@ -268,7 +268,7 @@ multi() ->
 
 	{ok, Ws1} = nkpacket:start_listener({test_protocol, ws, {0,0,0,0}, 0},
 						   			    M1#{group=>dom1, path=>"/dom1/more"}),
-	{ok, {ws, {0,0,0,0}, P1}} = nkpacket:get_local(Ws1),
+	{ok, {_, ws, {0,0,0,0}, P1}} = nkpacket:get_local(Ws1),
 	P1S = integer_to_list(P1),
 
 	{ok, Ws2} = nkpacket:start_listener("<test://all:"++P1S++"/dom2;transport=ws>",

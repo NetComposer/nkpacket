@@ -49,7 +49,7 @@ basic() ->
 	Conn1 = {test_protocol, udp, {0,0,0,0}, 0},
 	% First '0' port try to open default transport port (1234)
 	{ok, UdpP1} = nkpacket:start_listener(Conn1, #{}),	% No group
-	{ok, {udp, {0,0,0,0}, Port1}} = nkpacket:get_local(UdpP1),
+	{ok, {_, udp, {0,0,0,0}, Port1}} = nkpacket:get_local(UdpP1),
 	case Port1 of
 		1234 -> ok;
 		_ -> lager:warning("Could not open port 1234")
@@ -172,7 +172,7 @@ listen() ->
 	{ok, Udp2} = nkpacket:start_listener("<test://all;transport=udp>;group=dom1",
 										 M2#{udp_no_connections=>true}),
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
-	{ok, {_, _, 1234}} = nkpacket:get_local(Udp2),
+	{ok, {_, _, _, 1234}} = nkpacket:get_local(Udp2),
 	ok = gen_udp:send(Socket, {127,0,0,1}, 1234, <<"test5">>),
 	receive {Ref2, {listen_parse, <<"test5">>}} -> ok after 1000 -> error(?LINE) end,
 

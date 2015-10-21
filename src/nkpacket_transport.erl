@@ -402,8 +402,8 @@ open_port(Ip, Port, Module, Fun, Opts, Iter) ->
         {ok, Socket} ->
             {ok, Socket};
         {error, eaddrinuse} when Iter > 0 ->
-            lager:warning("~p port ~p is in use, waiting (~p)", 
-                     [Module, Port, Iter]),
+            lager:notice("~p port ~p is in use, waiting (~p)", 
+                         [Module, Port, Iter]),
             timer:sleep(1000),
             open_port(Ip, Port, Module, Fun, Opts, Iter-1);
         {error, Error} ->
