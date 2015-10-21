@@ -182,7 +182,13 @@ resolv2() ->
     Ips = lists:sort([{81,23,228,129},{85,17,186,7},{81,23,228,150}]),
     Ips = lists:sort([Ip1, Ip2, Ip3]),
     Ips = lists:sort([Ip4, Ip5, Ip6]),
-    Ips = lists:sort([Ip7, Ip8, Ip9]).
+    Ips = lists:sort([Ip7, Ip8, Ip9]),
+
+    {ok, [{udp, _, 0}]} = 
+        nkpacket_dns:resolve("sip:sip2sip.info", 
+                              #{protocol=>?MODULE, resolve_type=>listen}),
+    ok.
+
 
 
 
