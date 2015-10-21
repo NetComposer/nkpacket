@@ -121,7 +121,11 @@ init([NkPort]) ->
             nklib_proc:put(nkpacket_listeners, Group),
             ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
-            nklib_proc:put({nkpacket_listen, Group, Protocol, sctp}, ConnPort),
+            ListenType = case size(Ip) of
+                4 -> nkpacket_listen4;
+                8 -> nkpacket_listen8
+            end,
+            nklib_proc:put({ListenType, Group, Protocol, sctp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserPid} -> erlang:monitor(process, UserPid);

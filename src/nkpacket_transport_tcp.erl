@@ -146,7 +146,11 @@ init([NkPort]) ->
             ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
-            nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
+            ListenType = case size(Ip) of
+                4 -> nkpacket_listen4;
+                8 -> nkpacket_listen8
+            end,
+            nklib_proc:put({ListenType, Group, Protocol, Transp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserRef} -> erlang:monitor(process, UserRef);

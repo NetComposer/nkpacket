@@ -113,7 +113,11 @@ init([NkPort]) ->
             meta = ConnMeta
         },   
         % We don't yet support HTTP outgoing connections, but for the future...
-        nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
+        ListenType = case size(Ip) of
+            4 -> nkpacket_listen4;
+            8 -> nkpacket_listen8
+        end,
+        nklib_proc:put({ListenType, Group, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
         MonRef = case Meta of
             #{monitor:=UserRef} -> 

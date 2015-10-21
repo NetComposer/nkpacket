@@ -277,15 +277,8 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
             #nkport{};
         #nkport{}=ListenPort ->
             ListenPort;
-        _ ->
-            Listening = nkpacket:get_listening(Protocol, Transp, Opts),
-            IpSize = size(Ip),
-            case
-                [
-                    NkPort || #nkport{listen_ip=LIp}=NkPort <- Listening, 
-                              size(LIp)==IpSize
-                ]
-            of
+        _ ->    % undefined or true
+            case nkpacket:get_listening(Protocol, Transp, Opts#{ip=>Ip}) of
                 [NkPort|_] -> NkPort;
                 [] -> #nkport{}
             end

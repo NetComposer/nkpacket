@@ -453,15 +453,21 @@ get_listening(Protocol, Transp) ->
 
 
 %% @private Finds a listening transport of Proto.
--spec get_listening(protocol(), transport(), #{group=>group()}) -> 
+-spec get_listening(protocol(), transport(), #{group=>group(), ip=>4|6|tuple()}) -> 
     [nkport()].
 
 get_listening(Protocol, Transp, Opts) ->
     Group = maps:get(group, Opts, none),
+    Tag = case maps:get(ip, Opts, 4) of
+        4 -> nkpacket_listen4;
+        6 -> nkpacket_listen6;
+        Ip when is_tuple(Ip), size(Ip)==4 -> nkpacket_listen4;
+        Ip when is_tuple(Ip), size(Ip)==8 -> nkpacket_listen6
+    end,
     [
         NkPort || 
         {NkPort, _Pid} 
-            <- nklib_proc:values({nkpacket_listen, Group, Protocol, Transp})
+            <- nklib_proc:values({Tag, Group, Protocol, Transp})
     ].
 
 
@@ -481,11 +487,11 @@ is_local(Uri) ->
 
 is_local(#uri{}=Uri, Opts) ->
     case resolve(Uri, Opts) of
-        {ok, [{Protocol, Transp, _Ip, _Port}|_]=Conns, _Opts1} ->
+        {ok, [{Protocol, Transp, Ip, _Port}|_]=Conns, _Opts1} ->
+            List = get_listening(Protocol, Transp, Opts#{ip=>Ip}),
             Listen = [
-                {Transp, Ip, Port} ||
-                #nkport{local_ip=Ip, local_port=Port}
-                    <- get_listening(Protocol, Transp, Opts)
+                {Transp, LIp, LPort} ||
+                    #nkport{local_ip=LIp, local_port=LPort} <- List
             ],
             LocalIps = nkpacket_config_cache:local_ips(),
             is_local(Listen, Conns, LocalIps);
