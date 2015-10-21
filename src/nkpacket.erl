@@ -36,7 +36,7 @@
 -export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
 
 -export_type([group/0, transport/0, protocol/0, nkport/0]).
--export_type([listener_opts/0, connect_opts/0, send_opts/0]).
+-export_type([listener_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
 
@@ -180,6 +180,15 @@
     }.
 
 
+%% Options for resolving
+-type resolve_opts() ::
+    #{
+        resolve_type => listen | connect
+    }
+    | listener_opts()
+    | send_opts().
+
+
 %% Connection specification
 -type user_connection() :: 
     nklib:user_uri() | connection().
@@ -261,7 +270,7 @@ get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
     end;
 
 get_listener(Uri, Opts) when is_map(Opts) ->
-    case resolve(Uri, Opts) of
+    case resolve(Uri, Opts#{resolve_type=>listen}) of
         {ok, [Conn], Opts1} ->
             get_listener(Conn, Opts1);
         {ok, _, _} ->
@@ -556,7 +565,7 @@ resolve(Uri) ->
 
 
 %% @private
--spec resolve(nklib:user_uri(), map()) -> 
+-spec resolve(nklib:user_uri(), resolve_opts()) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
 

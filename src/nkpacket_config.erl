@@ -102,50 +102,6 @@ put(Key, Val) ->
     nklib_config:put(?MODULE, Key, Val).
 
 
-spec() ->
-    #{
-        max_connections => {integer, 1, 1000000},
-        dns_cache_ttl => {integer, 0, none},
-        udp_timeout => nat_integer,
-        tcp_timeout => nat_integer,
-        sctp_timeout => nat_integer,
-        ws_timeout => nat_integer,
-        http_timeout => nat_integer,
-        connect_timeout => nat_integer,
-        packet_local_host => [{enum, [auto]}, host],
-        packet_local_host6 => [{enum, [auto]}, host6],
-        tls_opts => 
-            #{
-                certfile => string,
-                keyfile => string,
-                cacertfile => string,
-                password => string,
-                verify => boolean,
-                depth => {integer, 0, 16}
-            }
-    }.
-
-
-
-%% @private Default config values
--spec default_config() ->
-    map().
-
-default_config() ->
-    #{
-        max_connections =>  1024,
-        dns_cache_ttl => 30000,                 % msecs
-        udp_timeout => 30000,                   % 
-        tcp_timeout => 180000,                  % 
-        sctp_timeout => 180000,                 % 
-        ws_timeout => 180000,                   % 
-        http_timeout => 180000,                 % 
-        connect_timeout => 30000,               %
-        local_host => auto,
-        local_host6 => auto
-    }.
-
-
 %% @private
 -spec init() ->
     ok.
@@ -166,7 +122,9 @@ init() ->
     end,
     %% Avoid SSLv3
     BaseSSL2 = BaseSSL1#{versions => ['tlsv1.2', 'tlsv1.1', 'tlsv1']},
-    case nklib_config:load_env(?MODULE, nkpacket, spec(), default_config()) of
+    Syntax = nkpacket_syntax:global_syntax(),
+    Defaults = nkpacket_syntax:global_defaults(),
+    case nklib_config:load_env(?MODULE, nkpacket, Syntax, Defaults) of
         {ok, _} ->
             SSL1 = nklib_util:to_map(get(tls_opts, [])),
             SSL2 = maps:merge(BaseSSL2, SSL1),
@@ -182,5 +140,6 @@ init() ->
 
 
 make_cache() ->
-    Keys = [local_ips, main_ip, main_ip6 | maps:keys(default_config())],
+     Defaults = nkpacket_syntax:global_defaults(),
+    Keys = [local_ips, main_ip, main_ip6 | maps:keys(Defaults)],
     nklib_config:make_cache(Keys, ?MODULE, none, nkpacket_config_cache, none).

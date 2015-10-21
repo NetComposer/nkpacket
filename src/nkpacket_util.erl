@@ -28,7 +28,7 @@
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
 -export([check_paths/2]).
--export([parse_opts/1, spec/0, tls_spec/0]).
+-export([parse_opts/1]).
 
 -include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
@@ -90,7 +90,8 @@ make_web_proto(O) ->
     {ok, map()} | {error, term()}.
 
 parse_opts(Opts) ->
-    case nklib_config:parse_config(Opts, spec(), #{return=>map}) of
+    Syntax = nkpacket_syntax:syntax(),
+    case nklib_config:parse_config(Opts, Syntax, #{return=>map}) of
         {ok, Map, _} ->
             {ok, Map};
         {error, Error} ->
@@ -306,66 +307,6 @@ check_paths_iter(_A, _B) ->
 %% =================================================================
 
 
-%% @private
-spec() ->
-    #{
-        group => any,
-        user => any,
-        monitor => proc,
-        no_dns_cache => boolean,
-        idle_timeout => pos_integer,
-        refresh_fun => {function, 1},
-        valid_schemes => {list, atom},
-        udp_starts_tcp => boolean,
-        udp_no_connections => boolean,
-        udp_stun_reply => boolean,
-        udp_stun_t1 => nat_integer,
-        sctp_out_streams => nat_integer,
-        sctp_in_streams => nat_integer,
-        tcp_packet => [{enum, [raw]}, {integer, [1, 2, 4]}],
-        tcp_max_connections => nat_integer,
-        tcp_listeners => nat_integer,
-        tls_opts => tls_spec(),
-        host => host,
-        path => path,
-        cowboy_opts => list,
-        ws_proto => lower,
-        http_proto => fun spec_http_proto/3,
-        connect_timeout => nat_integer,
-        listen_port => [{enum, [none, mandatory]}, {record, nkport}],
-        force_new => boolean,
-        udp_to_tcp => boolean,
-        pre_send_fun => {function, 2},
-
-        tls_certfile => {update, map, tls_opts, certfile, string},
-        tls_keyfile => {update, map, tls_opts, keyfile, string},
-        tls_cacertfile => {update, map, tls_opts, cacertfile, string},
-        tls_password => {update, map, tls_opts, password, string},
-        tls_verify => {update, map, tls_opts, verify, boolean},
-        tls_depth => {update, map, tls_opts, depth, {integer, 0, 16}},
-
-        password => binary      % Not used by nkpacket, for users
-
-
-    }.
-
-
-tls_spec() -> 
-    #{
-        certfile => string,
-        keyfile => string,
-        cacertfile => string,
-        password => string,
-        verify => boolean,
-        depth => {integer, 0, 16}
-    }.
-
-
-%% @private
-spec_http_proto(_, {static, #{path:=_}}, _) -> ok;
-spec_http_proto(_, {dispatch, #{routes:=_}}, _) -> ok;
-spec_http_proto(_, {custom, #{env:=_, middlewares:=_}}, _) -> ok;
-spec_http_proto(_, _, _) -> error.
 
 
 %% ===================================================================
