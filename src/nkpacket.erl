@@ -32,7 +32,7 @@
 -export([stop_all/0, stop_all/1]).
 -export([send/2, send/3, connect/2]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
--export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_user/1]).
+-export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_meta/1, get_user/1]).
 -export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
 
 -export_type([group/0, transport/0, protocol/0, nkport/0]).
@@ -369,6 +369,16 @@ get_remote(#nkport{protocol=Proto, transp=Transp, remote_ip=Ip, remote_port=Port
     {ok, {Proto, Transp, Ip, Port}};
 get_remote(Pid) when is_pid(Pid) ->
     apply_nkport(Pid, fun get_remote/1).
+
+
+%% @doc Gets the user metadata of a listener or connection
+-spec get_meta(pid()|nkport()) ->
+    {ok, map()} | error.
+
+get_meta(#nkport{meta=Meta}) ->
+    {ok, Meta};
+get_meta(Pid) when is_pid(Pid) ->
+    apply_nkport(Pid, fun get_meta/1).
 
 
 %% @doc Gets the user metadata of a listener or connection
