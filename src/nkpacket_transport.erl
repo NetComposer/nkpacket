@@ -273,7 +273,7 @@ connect([Conn|Rest], Opts) ->
 do_connect({Protocol, Transp, Ip, Port}, Opts) ->
     ListenOpt = maps:get(listen_port, Opts, undefined),
     BasePort = case ListenOpt of
-        none ->
+        false ->
             #nkport{};
         #nkport{}=ListenPort ->
             ListenPort;
@@ -291,7 +291,7 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
             end
     end,
     case BasePort#nkport.listen_ip of
-        undefined when ListenOpt==mandatory ->
+        undefined when ListenOpt ->
             {error, no_listening_transport};
         _ ->
             lager:debug("transport base port: ~p", [BasePort]),

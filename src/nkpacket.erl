@@ -155,7 +155,7 @@
         no_dns_cache => boolean(),          % Avoid DNS cache
         idle_timeout => integer(),          % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
-        listen_port => none | mandatory | nkport(),  % Select (or disables auto) base NkPort
+        listen_port => boolean()| nkport(), % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
 
         % TCP/TLS/WS/WSS options

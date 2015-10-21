@@ -96,7 +96,7 @@ syntax() ->
         ws_proto => lower,
         http_proto => fun spec_http_proto/3,
         connect_timeout => nat_integer,
-        listen_port => [{enum, [none, mandatory]}, {record, nkport}],
+        listen_port => [boolean, {record, nkport}],
         force_new => boolean,
         udp_to_tcp => boolean,
         pre_send_fun => {function, 2},
