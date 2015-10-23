@@ -65,9 +65,9 @@ get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==
     WsProto = maps:get(ws_proto, Opts, all),
     Group = maps:get(group, Opts, none),
     nklib_util:filtermap(
-        fun({#{path:=ConnPath}=Meta, Pid}) ->
+        fun({Meta, Pid}) ->
             Ok = 
-                ConnPath==Path andalso
+                maps:get(path, Meta, <<"/">>) == Path andalso
                 case maps:get(host, Meta, all) of
                     all -> true;
                     Host -> true;
