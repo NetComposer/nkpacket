@@ -229,7 +229,7 @@ get_msg_fun(Fun, Msg, #nkport{}=NkPort) ->
 
 get_msg_fun(Fun, Msg, Pid) when is_pid(Pid) ->
     case nkpacket:get_nkport(Pid) of
-        {ok, NkPort} -> Fun(Msg, NkPort);
+        {ok, NkPort} -> get_msg_fun(Fun, Msg, NkPort);
         _ -> {error, invalid_nkport}
     end.
 
