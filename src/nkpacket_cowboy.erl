@@ -69,7 +69,7 @@
 
 start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
     Fun = fun() -> do_start(NkPort, Filter) end,
-    #nkport{local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{listen_ip=Ip, listen_port=Port} = NkPort,
     try 
         nklib_proc:try_call(Fun, {?MODULE, Ip, Port}, 100, 50)
     catch
@@ -82,7 +82,7 @@ start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
     {ok, pid()} | {error, term()}.
 
 do_start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
-    #nkport{transp=Transp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{transp=Transp, listen_ip=Ip, listen_port=Port} = NkPort,
     case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
         [{_Servers, Listen}|_] ->
             case catch gen_server:call(Listen, {start, Pid, Filter}, infinity) of
@@ -161,8 +161,8 @@ reply(Code, Hds, Body, Req) ->
 init([NkPort, Filter]) ->
     #nkport{
         transp = Transp, 
-        local_ip = Ip, 
-        local_port = Port,
+        listen_ip = ListenIp, 
+        listen_port = ListenPort,
         pid = ListenPid,
         meta = Meta
     } = NkPort,
@@ -171,17 +171,17 @@ init([NkPort, Filter]) ->
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
-            {ok, {_, Port1}} = InetMod:sockname(Socket),
+            {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
             Shared = NkPort#nkport{
-                local_port = Port1, 
-                listen_ip = Ip,
-                listen_port = Port1,
+                local_ip = LocalIp,
+                local_port = LocalPort, 
+                listen_port = LocalPort,
                 pid = self(),
                 protocol = undefined,
                 socket = Socket,
                 meta = #{}
             },
-            RanchId = {Transp, Ip, Port1},
+            RanchId = {Transp, ListenIp, LocalPort},
             Timeout = case Meta of
                 #{idle_timeout:=Timeout0} -> 
                     Timeout0;
@@ -209,7 +209,7 @@ init([NkPort, Filter]) ->
                 ],
                 ?MODULE,
                 CowboyOpts2),
-            nklib_proc:put(?MODULE, {Transp, Ip, Port1}),
+            nklib_proc:put(?MODULE, {Transp, ListenIp, LocalPort}),
             ListenRef = monitor(process, ListenPid),
             State = #state{
                 nkport = Shared,
@@ -220,7 +220,7 @@ init([NkPort, Filter]) ->
             {ok, register(State)};
         {error, Error} ->
             lager:error("could not start ~p transport on ~p:~p (~p)", 
-                   [Transp, Ip, Port, Error]),
+                   [Transp, ListenIp, ListenPort, Error]),
             {stop, Error}
     end.
 
@@ -388,7 +388,7 @@ execute([Filter|Rest], Req, Env) ->
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{transp=Transp, local_ip=Ip}) 
+listen_opts(#nkport{transp=Transp, listen_ip=Ip}) 
         when Transp==ws; Transp==http ->
     [
         {ip, Ip}, {active, false}, binary,
@@ -396,7 +396,7 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip})
         {reuseaddr, true}, {backlog, 1024}
     ];
 
-listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts}) 
+listen_opts(#nkport{transp=Transp, listen_ip=Ip, meta=Opts}) 
         when Transp==wss; Transp==https ->
     Base = [
         {ip, Ip}, {active, false}, binary,
@@ -408,7 +408,7 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts})
 
 %% @private
 register(#state{nkport=Shared, servers=Servers}=State) ->
-    #nkport{transp=Transp, local_ip=Ip, local_port=Port} = Shared,
+    #nkport{transp=Transp, listen_ip=Ip, listen_port=Port} = Shared,
     Filters = [Filter || {Filter, _Ref} <- Servers],
     nklib_proc:put({?MODULE, Transp, Ip, Port}, Filters),
     State.

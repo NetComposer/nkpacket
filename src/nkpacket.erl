@@ -259,8 +259,8 @@ get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
             end,
             NkPort = #nkport{
                 transp = Transp,
-                local_ip = Ip,
-                local_port = Port,
+                listen_ip = Ip,
+                listen_port = Port,
                 protocol = Protocol,
                 meta = Opts2
             },

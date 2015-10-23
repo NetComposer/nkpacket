@@ -352,8 +352,8 @@ get_defport(Protocol, Transp) ->
 open_port(NkPort, Opts) ->
     #nkport{
         transp = Transp,
-        local_ip = Ip, 
-        local_port = Port, 
+        listen_ip = Ip, 
+        listen_port = Port, 
         protocol = Protocol
     } = NkPort,
     {Module, Fun} = case Transp of

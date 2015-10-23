@@ -49,7 +49,7 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
-    #nkport{protocol=Proto, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port} = NkPort,
     {
         {{Proto, Transp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
@@ -129,18 +129,14 @@ start_link(NkPort) ->
 init([NkPort]) ->
     #nkport{
         transp = Transp, 
-        local_ip = Ip, 
-        local_port = Port,
+        listen_ip = ListenIp, 
+        listen_port = ListenPort,
         meta = Meta,
         protocol = Protocol
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
-        NkPort1 = NkPort#nkport{
-            listen_ip = Ip,
-            listen_port = Port,
-            pid = self()
-        },
+        NkPort1 = NkPort#nkport{pid = self()},
         Filter1 = maps:with([group, host, path, ws_proto], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
         case nkpacket_cowboy:start(NkPort1, Filter2) of
@@ -148,24 +144,20 @@ init([NkPort]) ->
             {error, Error} -> SharedPid = throw(Error)
         end,
         erlang:monitor(process, SharedPid),
-        case Port of
-            0 -> 
-                {ok, {_, _, _, Port1}} = nkpacket:get_local(SharedPid);
-            _ -> 
-                Port1 = Port
-        end,
+        {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(SharedPid),
         Group = maps:get(group, Meta, none),
         nklib_proc:put(nkpacket_listeners, Group),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
-            local_port = Port1,
-            listen_port = Port1,
+            local_ip = LocalIp,
+            local_port = LocalPort,
+            listen_port = LocalPort,
             socket = SharedPid,
-            meta = maps:with(?CONN_LISTEN_OPTS, Meta)        
+            meta = ConnMeta        
         },   
-        ListenType = case size(Ip) of
+        ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
-            8 -> nkpacket_listen8
+            8 -> nkpacket_listen6
         end,
         nklib_proc:put({ListenType, Group, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
@@ -186,7 +178,7 @@ init([NkPort]) ->
     catch
         throw:TError -> 
             lager:error("could not start ~p transport on ~p:~p (~p)", 
-                   [Transp, Ip, Port, TError]),
+                   [Transp, ListenIp, ListenPort, TError]),
         {stop, TError}
     end.
 

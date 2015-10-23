@@ -41,7 +41,7 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
-    #nkport{protocol=Proto, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port} = NkPort,
     {
         {{Proto, Transp, Ip, Port}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
@@ -111,8 +111,8 @@ start_link(NkPort) ->
 init([NkPort]) ->
     #nkport{
         transp = Transp, 
-        local_ip = Ip, 
-        local_port = Port,
+        listen_ip = ListenIp, 
+        listen_port = ListenPort,
         meta = Meta,
         protocol = Protocol
     } = NkPort,
@@ -121,15 +121,16 @@ init([NkPort]) ->
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
-            {ok, {_, Port1}} = InetMod:sockname(Socket),
+            {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
             NkPort1 = NkPort#nkport{
-                local_port = Port1, 
-                listen_ip = Ip,
-                listen_port = Port1,
+                local_ip = LocalIp,
+                local_port = LocalPort, 
+                listen_ip = ListenIp,
+                listen_port = LocalPort,
                 pid = self(),
                 socket = Socket
             },
-            RanchId = {Transp, Ip, Port1},
+            RanchId = {Transp, ListenIp, LocalPort},
             RanchPort = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)},
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
@@ -146,9 +147,9 @@ init([NkPort]) ->
             ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
-            ListenType = case size(Ip) of
+            ListenType = case size(ListenIp) of
                 4 -> nkpacket_listen4;
-                8 -> nkpacket_listen8
+                8 -> nkpacket_listen6
             end,
             nklib_proc:put({ListenType, Group, Protocol, Transp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
@@ -167,7 +168,7 @@ init([NkPort]) ->
             {ok, State};
         {error, Error} ->
             lager:error("could not start ~p transport on ~p:~p (~p)", 
-                   [Transp, Ip, Port, Error]),
+                   [Transp, ListenIp, ListenPort, Error]),
             {stop, Error}
     end.
 
@@ -303,7 +304,7 @@ outbound_opts(#nkport{transp=tls, meta=Opts}) ->
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{transp=tcp, local_ip=Ip, meta=Opts}) ->
+listen_opts(#nkport{transp=tcp, listen_ip=Ip, meta=Opts}) ->
     [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,
@@ -311,7 +312,7 @@ listen_opts(#nkport{transp=tcp, local_ip=Ip, meta=Opts}) ->
         {reuseaddr, true}, {backlog, 1024}
     ];
 
-listen_opts(#nkport{transp=tls, local_ip=Ip, meta=Opts}) ->
+listen_opts(#nkport{transp=tls, listen_ip=Ip, meta=Opts}) ->
     Base = [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,

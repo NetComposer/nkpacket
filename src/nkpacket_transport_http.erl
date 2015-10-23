@@ -41,7 +41,7 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
-    #nkport{protocol=Proto, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port} = NkPort,
     {
         {{Proto, Transp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
@@ -78,16 +78,16 @@ start_link(NkPort) ->
 init([NkPort]) ->
     #nkport{
         transp = Transp, 
-        local_ip = Ip, 
-        local_port = Port,
+        listen_ip = Ip, 
+        listen_port = Port,
         meta = Meta,
         protocol = Protocol
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
         NkPort1 = NkPort#nkport{
-            listen_ip = Ip,
-            listen_port = Port,
+            % listen_ip = Ip,
+            % listen_port = Port,
             pid = self()
         },
         Filter1 = maps:with([host, path], Meta),
@@ -107,6 +107,7 @@ init([NkPort]) ->
         nklib_proc:put(nkpacket_listeners, Group),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
+            local_ip = Ip,
             local_port = Port1,
             listen_port = Port1,
             socket = SharedPid,
@@ -115,7 +116,7 @@ init([NkPort]) ->
         % We don't yet support HTTP outgoing connections, but for the future...
         ListenType = case size(Ip) of
             4 -> nkpacket_listen4;
-            8 -> nkpacket_listen8
+            8 -> nkpacket_listen6
         end,
         nklib_proc:put({ListenType, Group, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),

@@ -42,7 +42,7 @@
     supervisor:child_spec().
 
 get_listener(NkPort) ->
-    #nkport{protocol=Proto, transp=sctp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, transp=sctp, listen_ip=Ip, listen_port=Port} = NkPort,
     {
         {{Proto, sctp, Ip, Port}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
@@ -97,8 +97,8 @@ start_link(NkPort) ->
 init([NkPort]) ->
     #nkport{
         transp = sctp,
-        local_ip = Ip, 
-        local_port = Port,
+        listen_ip = Ip, 
+        listen_port = Port,
         protocol = Protocol,
         meta = Meta
     } = NkPort,
@@ -110,8 +110,8 @@ init([NkPort]) ->
             {ok, Port1} = inet:port(Socket),
             % RemoveOpts = [sctp_out_streams, sctp_in_streams],
             NkPort1 = NkPort#nkport{
+                local_ip = Ip,
                 local_port = Port1, 
-                listen_ip = Ip,
                 listen_port = Port1,
                 pid = self(),
                 socket = {Socket, 0}
@@ -123,7 +123,7 @@ init([NkPort]) ->
             ConnPort = NkPort1#nkport{meta=ConnMeta},
             ListenType = case size(Ip) of
                 4 -> nkpacket_listen4;
-                8 -> nkpacket_listen8
+                8 -> nkpacket_listen6
             end,
             nklib_proc:put({ListenType, Group, Protocol, sctp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
@@ -317,7 +317,7 @@ terminate(Reason, #state{nkport=NkPort, socket=Socket}=State) ->
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{local_ip=Ip, meta=Meta}) ->
+listen_opts(#nkport{listen_ip=Ip, meta=Meta}) ->
     Timeout = case maps:get(idle_timeout, Meta, undefined) of
         undefined -> nkpacket_config_cache:sctp_timeout();
         Timeout0 -> Timeout0

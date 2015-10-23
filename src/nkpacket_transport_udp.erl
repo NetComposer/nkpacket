@@ -64,7 +64,7 @@ send_stun_async(Pid, Ip, Port) ->
     supervisor:child_spec().
 
 get_listener(NkPort) ->
-    #nkport{protocol=Proto, transp=udp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, transp=udp, listen_ip=Ip, listen_port=Port} = NkPort,
     {
         {{Proto, udp, Ip, Port}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
@@ -149,49 +149,49 @@ start_link(NkPort) ->
 init([NkPort]) ->
     #nkport{
         transp = udp,
-        local_ip = Ip, 
-        local_port = Port,
+        listen_ip = ListenIp, 
+        listen_port = ListenPort,
         protocol = Protocol, 
         meta = Meta
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
     try
-        ListenOpts = [binary, {reuseaddr, true}, {ip, Ip}, {active, once}],
+        ListenOpts = [binary, {reuseaddr, true}, {ip, ListenIp}, {active, once}],
         Socket = case nkpacket_transport:open_port(NkPort, ListenOpts) of
             {ok, Socket0}  -> Socket0;
             {error, Error} -> throw(Error) 
         end,
-        {ok, Port1} = inet:port(Socket),
+        {ok, {LocalIp, LocalPort}} = inet:sockname(Socket),
         Self = self(),
+        NkPort1 = NkPort#nkport{
+            local_ip = LocalIp,
+            local_port = LocalPort, 
+            listen_port = LocalPort,
+            pid = self(),
+            socket = Socket
+        },
         TcpPid = case Meta of
             #{udp_starts_tcp:=true} -> 
-                TcpNkPort = NkPort#nkport{transp=tcp, local_port=Port1},
+                TcpNkPort = NkPort1#nkport{transp=tcp},
                 case nkpacket_transport_tcp:start_link(TcpNkPort) of
                     {ok, TcpPid0} -> 
                         TcpPid0;
                     {error, TcpError} -> 
                         lager:warning("UDP transport could not open TCP port ~p: ~p",
-                                      [Port1, TcpError]),
+                                      [LocalPort, TcpError]),
                         throw(could_not_open_tcp)
                 end;
             _ ->
                 undefined
         end,
-        NkPort1 = NkPort#nkport{
-            local_port = Port1, 
-            listen_ip = Ip,
-            listen_port = Port1,
-            pid = self(),
-            socket = Socket
-        },
         Group = maps:get(group, Meta, none),
         nklib_proc:put(nkpacket_listeners, Group),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},
-        ListenType = case size(Ip) of
+        ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
-            8 -> nkpacket_listen8
+            8 -> nkpacket_listen6
         end,
         nklib_proc:put({ListenType, Group, Protocol, udp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
@@ -215,7 +215,7 @@ init([NkPort]) ->
     catch
         throw:Throw ->
             lager:error("could not start UDP transport on ~p:~p (~p)", 
-                        [Ip, Port, Throw]),
+                        [ListenIp, ListenPort, Throw]),
             {stop, Throw}
     end.
 
@@ -495,8 +495,6 @@ do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
                 undefined -> ListenMeta;
                 _ -> maps:merge(ListenMeta, Meta)
             end,
-            
-
             NkPort1 = NkPort#nkport{
                 remote_ip = Ip, 
                 remote_port = Port,
