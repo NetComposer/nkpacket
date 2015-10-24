@@ -60,25 +60,31 @@ get_connected({_Proto, Transp, _Ip, _Port}, _Opts) when Transp==http; Transp==ht
     [];
 
 get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==wss ->
-    Path = maps:get(path, Opts, <<"/">>),
-    Host = maps:get(host, Opts, all),
-    WsProto = maps:get(ws_proto, Opts, all),
+    Host = maps:get(host, Opts, any),
+    Path = maps:get(path, Opts, any),
+    WsProto = maps:get(ws_proto, Opts, any),
     Group = maps:get(group, Opts, none),
     nklib_util:filtermap(
         fun({Meta, Pid}) ->
-            Ok = 
-                maps:get(path, Meta, <<"/">>) == Path andalso
-                case maps:get(host, Meta, all) of
-                    all -> true;
+            HostOK = Host==any orelse 
+                case maps:get(host, Meta, any) of
+                    any -> true;
                     Host -> true;
                     _ -> false
-                end andalso
-                case maps:get(ws_proto, Meta, all) of
-                    all -> true;
+                end,
+            PathOK = Path==any orelse
+                case maps:get(path, Meta, any) of
+                    any -> true;
+                    Path -> true;
+                    _ -> false
+                end,
+            ProtoOK = WsProto==any orelse 
+                case maps:get(ws_proto, Meta, any) of
+                    any -> true;
                     WsProto -> true;
                     _ -> false
                 end,
-            case Ok of
+            case HostOK andalso PathOK andalso ProtoOK of
                 true -> {true, Pid};
                 false -> false
             end
@@ -114,6 +120,11 @@ send([#uri{}=Uri|Rest], Msg, Opts) ->
             lager:notice("Error sending to ~p: ~p", [Uri, Error]),
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
+
+% Used when we don't want to reuse the same exact connection (stateless proxies)
+send([#nkport{socket=undefined}=NkPort|Rest], Msg, Opts) ->
+    {ok, Conn} = nkpacket:get_remote(NkPort),
+    send([{current, Conn}|Rest], Msg, Opts);
 
 send([Port|Rest], Msg, Opts) when is_pid(Port); is_record(Port, nkport) ->
     lager:debug("transport send to nkport ~p", [Port]),
@@ -187,6 +198,12 @@ send([], _Msg, #{last_error:=Error}) ->
 
 send([], _, _) ->
     {error, no_transports}.
+
+
+% get_allc() ->
+%     [element(2, nkpacket:get_nkport(Pid)) ||
+%         Pid <- nkpacket_connection:get_all()].
+
 
 
 %% @private
@@ -283,18 +300,21 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
                 [] -> #nkport{}
             end
     end,
-    case BasePort#nkport.listen_ip of
+    #nkport{listen_ip=ListenIp, meta=Meta1} = BasePort,
+    case ListenIp of
         undefined when ListenOpt ->
             {error, no_listening_transport};
         _ ->
             lager:debug("transport base port: ~p", [BasePort]),
-            #nkport{meta=Meta} = BasePort,
+            % Our listening host and meta must not be used for the new connection
+            Meta2 = maps:remove(host, Meta1),
+            Meta3 = maps:remove(path, Meta2),
             ConnPort = BasePort#nkport{
                 transp = Transp, 
                 protocol = Protocol,
                 remote_ip = Ip, 
                 remote_port = Port,
-                meta = maps:merge(Meta, Opts)
+                meta = maps:merge(Meta3, Opts)
             },
             % If we found a listening transport, connection will monitor it
             nkpacket_connection:connect(ConnPort)

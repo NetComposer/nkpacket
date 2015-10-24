@@ -63,8 +63,11 @@ behavior_info(_) ->
 
 %% @doc If you implement this function, it must return, for any supported scheme,
 %% the list of supported transports. 
+%% If you supply a tuple, it means that the first element, if used, must be 
+%% converted to the second.
+%% The first element will be used by default, and MUST NOT be a tuple
 -spec transports(nklib:scheme()) ->
-    [nkpacket:transport()].
+    [nkpacket:transport() | {nkpacket:transport(), nkpacket:transport()}].
 
 transports(_) ->
 	[tcp, tls, udp, sctp, ws, wss].

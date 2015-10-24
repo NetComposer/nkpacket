@@ -309,8 +309,21 @@ init([NkPort]) ->
                 https -> nkpacket_config_cache:http_timeout()
             end
     end,
-    lager:debug("created ~p connection ~p to/from (~p, ~p) ~p", 
-           [Transp, {Ip, Port}, Protocol, self(), Meta]),
+    lager:info("created ~p connection to/from ~p:~p:~p (~p)", 
+               [Protocol, Transp, Ip, Port, self()]),
+    if
+        Transp==ws; Transp==wss ->
+            Host = maps:get(host, Meta, any),
+            Path = maps:get(path, Meta, any),
+            WsProto = maps:get(ws_proto, Meta, any),
+            lager:debug("Stored remote meta: ~p, ~p, ~p", [Host, Path, WsProto]);
+        Transp==http; Transp==https ->
+            Host = maps:get(host, Meta, any),
+            Path = maps:get(path, Meta, any),
+            lager:debug("Stored remote meta: ~p, ~p", [Host, Path]);
+        true ->
+            ok
+    end,
     ListenMonitor = case is_pid(ListenPid) of
         true -> erlang:monitor(process, ListenPid);
         _ -> undefined

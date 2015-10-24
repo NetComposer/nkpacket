@@ -427,8 +427,13 @@ get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
                     end;
                 _ ->
                     case lists:member(Transp, Valid) of
-                        true -> Transp;
-                        _ -> throw({invalid_transport, Transp})
+                        true -> 
+                            Transp;
+                        false -> 
+                            case lists:keyfind(Transp, 1, Valid) of
+                                {Transp, NewTransp} -> NewTransp;
+                                _ -> throw({invalid_transport, Transp})
+                            end
                     end
             end;
         false ->

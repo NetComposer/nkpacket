@@ -40,12 +40,12 @@
 -include("nkpacket.hrl").
 
 
--type filter() ::
+-type filter() :: 
     #{
         id => term(),           % Mandatory
         module => module(),     % Mandatory
         host => binary(),
-        path => binary(),
+        path => binary() | [binary()],
         ws_proto => binary()
     }.
 
@@ -85,9 +85,9 @@ do_start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
     #nkport{transp=Transp, listen_ip=Ip, listen_port=Port} = NkPort,
     case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
         [{_Servers, Listen}|_] ->
-            case catch gen_server:call(Listen, {start, Pid, Filter}, infinity) of
+            case nklib_util:call(Listen, {start, Pid, Filter}, #{timeout=>15000}) of
                 ok -> {ok, Listen};
-                _ -> {error, shared_failed}
+                Error -> {error, {shared_failed, Error}}
             end;
         [] ->
             gen_server:start(?MODULE, [NkPort, Filter], [])
@@ -111,7 +111,7 @@ get_all() ->
 
 get_servers(Transp, Ip, Port) -> 
     case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
-        [{L, _}|_] -> L;
+        [{Filter, _}|_] -> Filter;
         [] -> []
     end.
 
@@ -215,7 +215,7 @@ init([NkPort, Filter]) ->
                 nkport = Shared,
                 ranch_id = RanchId,
                 ranch_pid = RanchPid,
-                servers = [{Filter, ListenRef}]
+                servers = sort_filters([{Filter, ListenRef}])
             },
             {ok, register(State)};
         {error, Error} ->
@@ -231,7 +231,7 @@ init([NkPort, Filter]) ->
 
 handle_call({start, ListenPid, Filter}, _From, #state{servers=Servers}=State) ->
     ListenRef = erlang:monitor(process, ListenPid),
-    Servers1 = [{Filter, ListenRef}|Servers],
+    Servers1 = sort_filters([{Filter, ListenRef}|Servers]),
     {reply, ok, register(State#state{servers=Servers1})};
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
@@ -341,25 +341,25 @@ execute([], Req, _Env) ->
     {stop, reply(404, Req)};
 
 execute([Filter|Rest], Req, Env) ->
-    Host = maps:get(host, Filter, all),
-    Path = maps:get(path, Filter, all),
-    WsProto = maps:get(ws_proto, Filter, all),
+    Host = maps:get(host, Filter, any),
+    Paths = maps:get(path, Filter),
+    WsProto = maps:get(ws_proto, Filter, any),
     ReqHost = cowboy_req:host(Req),
-    ReqPath = cowboy_req:path(Req),
+    ReqPaths = nkpacket_util:norm_path(cowboy_req:path(Req)),
     ReqWsProto = case cowboy_req:parse_header(?WS_PROTO_HD, Req, []) of
         [ReqWsProto0] -> ReqWsProto0;
         _ -> none
     end,
     case
-        (Host==all orelse ReqHost==Host) andalso
-        (Path==all orelse nkpacket_util:check_paths(ReqPath, Path)) andalso
-        (WsProto==all orelse ReqWsProto==WsProto)
+        (Host==any orelse ReqHost==Host) andalso
+        check_paths(ReqPaths, Paths) andalso
+        (WsProto==any orelse ReqWsProto==WsProto)
     of
         true ->
-            lager:debug("TRUE: ~p (~p), ~p (~p), ~p (~p)", 
-                [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
+            lager:debug("Selected: ~p (~p), ~p (~p), ~p (~p)", 
+                [ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             Req1 = case WsProto of
-                all -> 
+                any -> 
                     Req;
                 _ -> 
                     cowboy_req:set_resp_header(?WS_PROTO_HD, WsProto, Req)
@@ -372,8 +372,8 @@ execute([Filter|Rest], Req, Env) ->
                     Result
             end;
         false ->
-            lager:debug("FALSE: ~p (~p), ~p (~p), ~p (~p)", 
-                [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
+            lager:debug("Skipping: ~p (~p), ~p (~p), ~p (~p)", 
+                [ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             execute(Rest, Req, Env)
     end.
 
@@ -412,6 +412,33 @@ register(#state{nkport=Shared, servers=Servers}=State) ->
     Filters = [Filter || {Filter, _Ref} <- Servers],
     nklib_proc:put({?MODULE, Transp, Ip, Port}, Filters),
     State.
+
+
+%% @private
+%% Put long paths before short paths
+sort_filters(Filters) ->
+    Filters1 = [
+        {nkpacket_util:norm_path(maps:get(path, Filter, any)), Filter, Ref}
+        || {Filter, Ref} <- Filters
+    ],
+    Filters2 = [
+        {Filter#{path=>Paths}, Ref} || {Paths, Filter, Ref} <- lists:sort(Filters1)
+    ],
+    lists:reverse(Filters2).
+
+
+%% @private
+check_paths([Part|Rest1], [Part|Rest2]) ->
+    check_paths(Rest1, Rest2);
+
+check_paths(_, []) ->
+    true;
+
+check_paths(_A, _B) ->
+    false.
+
+
+
 
 
 %% @private

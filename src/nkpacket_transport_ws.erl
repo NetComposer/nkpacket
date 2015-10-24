@@ -89,12 +89,12 @@ connect(NkPort) ->
             },
             case nkpacket_connection_ws:start_handshake(NkPort1) of
                 {ok, WsProto, Rest} -> 
-                    NkPort2 = case WsProto of
-                        undefined -> NkPort1;
-                        _ -> NkPort1#nkport{meta=Meta#{ws_proto=>WsProto}}
+                    Meta2 = case WsProto of
+                        undefined -> Meta1;
+                        _ -> Meta1#{ws_proto=>WsProto}
                     end,
                     TranspMod:setopts(Socket, [{active, once}]),
-                    {ok, NkPort2, Rest};
+                    {ok, NkPort1#nkport{meta=Meta2}, Rest};
                 {error, Error} ->
                     {error, Error}
             end;
@@ -167,6 +167,12 @@ init([NkPort]) ->
             _ -> 
                 undefined
         end,
+        Host = maps:get(host, Meta, any),
+        Path = maps:get(path, Meta, any),
+        WsProto = maps:get(ws_proto, Meta, any),
+        lager:info("created ~p listener for ~p:~p:~p (~p, ~p, ~p) (~p)", 
+                   [Protocol, Transp, LocalIp, LocalPort, 
+                    Host, Path, WsProto, self()]),
         State = #state{
             nkport = ConnPort,
             protocol = Protocol,
@@ -191,14 +197,19 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
+handle_call({start, Ip, Port, Pid}, _From, State) ->
     #state{nkport=#nkport{meta=Meta}=NkPort} = State,
     NkPort1 = NkPort#nkport{
         remote_ip = Ip,
         remote_port = Port,
         socket = Pid,
-        meta = Meta#{path=>Path}
+        meta = maps:without([host, path], Meta)
     },
+    % We remove host and path because the connection we are going to start
+    % is not related (from the remote point of view) of the local host and path
+    % In case to be reused, they should not be taken into account.
+    % Anycase, the reuse of ws connections at the server is nearly always going
+    % to be used based on the flow (the socket of #nkport{})
     % Connection will monitor listen process (unsing 'pid' and 
     % the cowboy process (using 'socket')
     case nkpacket_connection:start(NkPort1) of
@@ -284,8 +295,8 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 cowboy_init(Pid, Req, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, Path, self()}, infinity) of
+    % _Path = cowboy_req:path(Req),
+    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
         {ok, ConnPid} ->
             cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, infinity, run);
         next ->
