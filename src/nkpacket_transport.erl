@@ -300,18 +300,21 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
                 [] -> #nkport{}
             end
     end,
-    case BasePort#nkport.listen_ip of
+    #nkport{listen_ip=ListenIp, meta=Meta1} = BasePort,
+    case ListenIp of
         undefined when ListenOpt ->
             {error, no_listening_transport};
         _ ->
             lager:debug("transport base port: ~p", [BasePort]),
-            #nkport{meta=Meta} = BasePort,
+            % Our listening host and meta must not be used for the new connection
+            Meta2 = maps:remove(host, Meta1),
+            Meta3 = maps:remove(path, Meta2),
             ConnPort = BasePort#nkport{
                 transp = Transp, 
                 protocol = Protocol,
                 remote_ip = Ip, 
                 remote_port = Port,
-                meta = maps:merge(Meta, Opts)
+                meta = maps:merge(Meta3, Opts)
             },
             % If we found a listening transport, connection will monitor it
             nkpacket_connection:connect(ConnPort)
