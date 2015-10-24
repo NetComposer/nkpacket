@@ -151,15 +151,16 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
+handle_call({start, Ip, Port, Pid}, _From, State) ->
     #state{nkport=NkPort, http_proto=HttpProto} = State,
     #nkport{protocol=Protocol, meta=Meta} = NkPort,
     NkPort1 = NkPort#nkport{
         remote_ip = Ip,
         remote_port = Port,
         socket = Pid,
-        meta = Meta#{path=>Path}
+        meta = maps:without([host, path], Meta)
     },
+    % See comment on nkpacket_transport_ws for removal of host and path
     case erlang:function_exported(Protocol, http_init, 4) of
         true ->
             % Connection will monitor listen process (unsing 'pid' and 
@@ -251,8 +252,8 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 cowboy_init(Pid, Req, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, Path, self()}, infinity) of
+    % Path = cowboy_req:path(Req),
+    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
         {ok, Protocol, HttpProto, ConnPid} ->
             case Protocol:http_init(HttpProto, ConnPid, Req, Env) of
                 {ok, Req1, Env1, Middlewares1} ->

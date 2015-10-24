@@ -89,12 +89,12 @@ connect(NkPort) ->
             },
             case nkpacket_connection_ws:start_handshake(NkPort1) of
                 {ok, WsProto, Rest} -> 
-                    NkPort2 = case WsProto of
-                        undefined -> NkPort1;
-                        _ -> NkPort1#nkport{meta=Meta#{ws_proto=>WsProto}}
+                    Meta2 = case WsProto of
+                        undefined -> Meta1;
+                        _ -> Meta1#{ws_proto=>WsProto}
                     end,
                     TranspMod:setopts(Socket, [{active, once}]),
-                    {ok, NkPort2, Rest};
+                    {ok, NkPort1#nkport{meta=Meta2}, Rest};
                 {error, Error} ->
                     {error, Error}
             end;
@@ -295,8 +295,8 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 cowboy_init(Pid, Req, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, Path, self()}, infinity) of
+    % _Path = cowboy_req:path(Req),
+    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
         {ok, ConnPid} ->
             cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, infinity, run);
         next ->

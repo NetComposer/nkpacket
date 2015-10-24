@@ -121,6 +121,11 @@ send([#uri{}=Uri|Rest], Msg, Opts) ->
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
 
+% Used when we don't want to reuse the same exact connection (stateless proxies)
+send([#nkport{socket=undefined}=NkPort|Rest], Msg, Opts) ->
+    {ok, Conn} = nkpacket:get_remote(NkPort),
+    send([{current, Conn}|Rest], Msg, Opts);
+
 send([Port|Rest], Msg, Opts) when is_pid(Port); is_record(Port, nkport) ->
     lager:debug("transport send to nkport ~p", [Port]),
     case do_send(Msg, [Port], Opts#{udp_to_tcp=>false}) of
