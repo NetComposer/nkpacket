@@ -60,25 +60,31 @@ get_connected({_Proto, Transp, _Ip, _Port}, _Opts) when Transp==http; Transp==ht
     [];
 
 get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==wss ->
-    Path = maps:get(path, Opts, <<"/">>),
-    Host = maps:get(host, Opts, all),
-    WsProto = maps:get(ws_proto, Opts, all),
+    Host = maps:get(host, Opts, any),
+    Path = maps:get(path, Opts, any),
+    WsProto = maps:get(ws_proto, Opts, any),
     Group = maps:get(group, Opts, none),
     nklib_util:filtermap(
         fun({Meta, Pid}) ->
-            Ok = 
-                maps:get(path, Meta, <<"/">>) == Path andalso
-                case maps:get(host, Meta, all) of
-                    all -> true;
+            HostOK = Host==any orelse 
+                case maps:get(host, Meta, any) of
+                    any -> true;
                     Host -> true;
                     _ -> false
-                end andalso
-                case maps:get(ws_proto, Meta, all) of
-                    all -> true;
+                end,
+            PathOK = Path==any orelse
+                case maps:get(path, Meta, any) of
+                    any -> true;
+                    Path -> true;
+                    _ -> false
+                end,
+            ProtoOK = WsProto==any orelse 
+                case maps:get(ws_proto, Meta, any) of
+                    any -> true;
                     WsProto -> true;
                     _ -> false
                 end,
-            case Ok of
+            case HostOK andalso PathOK andalso ProtoOK of
                 true -> {true, Pid};
                 false -> false
             end

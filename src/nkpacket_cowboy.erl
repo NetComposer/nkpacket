@@ -341,9 +341,9 @@ execute([], Req, _Env) ->
     {stop, reply(404, Req)};
 
 execute([Filter|Rest], Req, Env) ->
-    Host = maps:get(host, Filter, all),
-    Path = maps:get(path, Filter, all),
-    WsProto = maps:get(ws_proto, Filter, all),
+    Host = maps:get(host, Filter, any),
+    Path = maps:get(path, Filter, any),
+    WsProto = maps:get(ws_proto, Filter, any),
     ReqHost = cowboy_req:host(Req),
     ReqPath = cowboy_req:path(Req),
     ReqWsProto = case cowboy_req:parse_header(?WS_PROTO_HD, Req, []) of
@@ -351,15 +351,15 @@ execute([Filter|Rest], Req, Env) ->
         _ -> none
     end,
     case
-        (Host==all orelse ReqHost==Host) andalso
-        (Path==all orelse nkpacket_util:check_paths(ReqPath, Path)) andalso
-        (WsProto==all orelse ReqWsProto==WsProto)
+        (Host==any orelse ReqHost==Host) andalso
+        (Path==any orelse nkpacket_util:check_paths(ReqPath, Path)) andalso
+        (WsProto==any orelse ReqWsProto==WsProto)
     of
         true ->
-            lager:debug("TRUE: ~p (~p), ~p (~p), ~p (~p)", 
-                [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
+            % lager:debug("TRUE: ~p (~p), ~p (~p), ~p (~p)", 
+            %     [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
             Req1 = case WsProto of
-                all -> 
+                any -> 
                     Req;
                 _ -> 
                     cowboy_req:set_resp_header(?WS_PROTO_HD, WsProto, Req)
@@ -372,8 +372,8 @@ execute([Filter|Rest], Req, Env) ->
                     Result
             end;
         false ->
-            lager:debug("FALSE: ~p (~p), ~p (~p), ~p (~p)", 
-                [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
+            % lager:debug("FALSE: ~p (~p), ~p (~p), ~p (~p)", 
+            %     [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
             execute(Rest, Req, Env)
     end.
 
