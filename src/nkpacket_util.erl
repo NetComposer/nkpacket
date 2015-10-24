@@ -27,7 +27,7 @@
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
--export([check_paths/2]).
+-export([norm_path/1]).
 -export([parse_opts/1]).
 
 -include("nkpacket.hrl").
@@ -281,30 +281,23 @@ remove_user(NkPort) ->
 
 
 %% @private
-check_paths(_, <<"/">>) ->
-    true;
+norm_path(any) ->
+    [];
 
- check_paths(ReqPath, BasePath) ->
-    ReqParts = binary:split(ReqPath, <<"/">>, [global]),
-    BaseParts = binary:split(BasePath, <<"/">>, [global]),
-    check_paths_iter(ReqParts, BaseParts).
-    
+norm_path(<<>>) ->
+    [];
 
-%% @private
-check_paths_iter([Part|Rest1], [Part|Rest2]) ->
-    check_paths_iter(Rest1, Rest2);
+norm_path(<<"/">>) ->
+    [];
 
-check_paths_iter(_, []) ->
-    true;
+norm_path(Path) when is_binary(Path) ->
+    case binary:split(nklib_util:to_binary(Path), <<"/">>, [global]) of
+        [<<>> | Rest] -> Rest;
+        Other -> Other
+    end;
 
-check_paths_iter(_A, _B) ->
-    % lager:warning("F: ~p, ~p", [_A, _B]),
-    false.
-
-
-%% ===================================================================
-%% Options Parser
-%% =================================================================
+norm_path(Other) ->
+    norm_path(nklib_util:to_binary(Other)).
 
 
 
@@ -314,29 +307,29 @@ check_paths_iter(_A, _B) ->
 %% =================================================================
 
   
-% -define(TEST, true).
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
+% % -define(TEST, true).
+% -ifdef(TEST).
+% -include_lib("eunit/include/eunit.hrl").
 
-path_test() ->
-    ?debugMsg("HTTP path test"),
-    true = test_path("/a/b/c", "/"),
-    true = test_path("/", "/"),
-    false = test_path("/", "/a"),
-    true = test_path("/a/b/c", "a"),
-    false = test_path("/a/b/c", "b"),
-    true = test_path("/a/b/c", "a/b/c"),
-    true = test_path("/a/b/c", "a/b/c/"),
-    true = test_path("/a/b/c", "/a/b/"),
-    false = test_path("/a/b/c", "a/b/c/d"),
-    ok.
-
-
-test_path(Req, Path) ->
-    check_paths(nklib_parse:path(Req), nklib_parse:path(Path)).
+% path_test() ->
+%     ?debugMsg("HTTP path test"),
+%     true = test_path("/a/b/c", "/"),
+%     true = test_path("/", "/"),
+%     false = test_path("/", "/a"),
+%     true = test_path("/a/b/c", "a"),
+%     false = test_path("/a/b/c", "b"),
+%     true = test_path("/a/b/c", "a/b/c"),
+%     true = test_path("/a/b/c", "a/b/c/"),
+%     true = test_path("/a/b/c", "/a/b/"),
+%     false = test_path("/a/b/c", "a/b/c/d"),
+%     ok.
 
 
--endif.
+% test_path(Req, Path) ->
+%     check_paths(nklib_parse:path(Req), nklib_parse:path(Path)).
+
+
+% -endif.
 
 
 
