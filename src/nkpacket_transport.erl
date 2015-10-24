@@ -200,6 +200,12 @@ send([], _, _) ->
     {error, no_transports}.
 
 
+% get_allc() ->
+%     [element(2, nkpacket:get_nkport(Pid)) ||
+%         Pid <- nkpacket_connection:get_all()].
+
+
+
 %% @private
 -spec do_send(term(), [#nkport{}|pid()], nkpacket:send_opts()) ->
     {ok, {pid(), term()}} | retry_tcp | {error, nkpacket:send_opts()}.

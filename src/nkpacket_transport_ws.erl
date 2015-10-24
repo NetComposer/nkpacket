@@ -170,7 +170,7 @@ init([NkPort]) ->
         Host = maps:get(host, Meta, any),
         Path = maps:get(path, Meta, any),
         WsProto = maps:get(ws_proto, Meta, any),
-        lager:warning("created ~p listener for ~p:~p:~p (~p, ~p, ~p) (~p)", 
+        lager:info("created ~p listener for ~p:~p:~p (~p, ~p, ~p) (~p)", 
                    [Protocol, Transp, LocalIp, LocalPort, 
                     Host, Path, WsProto, self()]),
         State = #state{
