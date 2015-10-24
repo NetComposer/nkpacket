@@ -157,9 +157,9 @@ conn_parse({pong, Payload}, _NkPort, State) ->
 	maybe_reply({pong, Payload}, State),
 	{ok, State};
 
-conn_parse(Data, #nkport{meta=#{group:=Group}}, State) ->
+conn_parse(Data, #nkport{srv_id=SrvId}, State) ->
 	Msg = erlang:binary_to_term(Data),
-	lager:debug("Parsing: ~p (~p)", [Msg, Group]),
+	lager:debug("Parsing: ~p (~p)", [Msg, SrvId]),
 	maybe_reply({parse, Msg}, State),
 	{ok, State}.
 

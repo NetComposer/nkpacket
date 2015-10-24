@@ -342,7 +342,7 @@ execute([], Req, _Env) ->
 
 execute([Filter|Rest], Req, Env) ->
     Host = maps:get(host, Filter, any),
-    Paths = maps:get(path, Filter),
+    Paths = maps:get(path_list, Filter),
     WsProto = maps:get(ws_proto, Filter, any),
     ReqHost = cowboy_req:host(Req),
     ReqPaths = nkpacket_util:norm_path(cowboy_req:path(Req)),
@@ -422,7 +422,7 @@ sort_filters(Filters) ->
         || {Filter, Ref} <- Filters
     ],
     Filters2 = [
-        {Filter#{path=>Paths}, Ref} || {Paths, Filter, Ref} <- lists:sort(Filters1)
+        {Filter#{path_list=>Paths}, Ref} || {Paths, Filter, Ref} <- lists:sort(Filters1)
     ],
     lists:reverse(Filters2).
 

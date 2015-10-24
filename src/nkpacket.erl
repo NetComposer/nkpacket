@@ -28,14 +28,14 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([start_listener/2, get_listener/2, stop_listener/1]).
--export([get_all/0, get_all/1, get_groups/0]).
+-export([get_all/0, get_all/1, get_srv_ids/0]).
 -export([stop_all/0, stop_all/1]).
 -export([send/2, send/3, connect/2]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
 -export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_meta/1, get_user/1]).
 -export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
 
--export_type([group/0, transport/0, protocol/0, nkport/0]).
+-export_type([srv_id/0, transport/0, protocol/0, nkport/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
@@ -48,15 +48,15 @@
 %% Types
 %% ===================================================================
 
-%% Connection Group
-%% Listeners and connections can have an associated group.
+%% Service id
+%% Listeners and connections have an associated service id.
 %% When sending a message, if a previous connection to the same remote
-%% and group exists, it will be reused.
+%% and service exists, it will be reused.
 %% When starting an outgoing connection, if a suitable listening transport 
-%% is found with the same group, some values from listener's metadata will 
+%% is found with the same service id, some values from listener's metadata will 
 %% be copied to the new connection: user, idle_timeout, host, path, ws_proto, 
 %% refresh_fun, tcp_packet, tls_opts
--type group() :: term().
+-type srv_id() :: term().
 
 %% Recognized transport schemes
 -type transport() :: udp | tcp | tls | sctp | ws | wss | http | https.
@@ -107,7 +107,7 @@
 -type listener_opts() ::
     #{
         % Common options
-        group => group(),                       % Connection group
+        srv_id => srv_id(),                     % Service Id
         user => term(),                         % User metadata
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
@@ -148,7 +148,7 @@
 -type connect_opts() ::
     #{
         % Common options
-        group => group(),                   % Connection group
+        srv_id => srv_id(),                     % Service Id
         user => term(),                     % User metadata
         monitor => atom() | pid(),          % Connection will monitor this
         connect_timeout => integer(),       % MSecs, default in config
@@ -258,10 +258,11 @@ get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
                     Opts1
             end,
             NkPort = #nkport{
+                srv_id = maps:get(srv_id, Opts, none),
+                protocol = Protocol,
                 transp = Transp,
                 listen_ip = Ip,
                 listen_port = Port,
-                protocol = Protocol,
                 meta = Opts2
             },
             nkpacket_transport:get_listener(NkPort);
@@ -297,30 +298,30 @@ stop_listener(#nkport{pid=Pid}) ->
     stop_listener(Pid).
 
 
-%% @doc Gets all registered transports in all Groups.
+%% @doc Gets all registered transports in all SrvIds.
 -spec get_all() -> 
     [pid()].
 
 get_all() ->
-    [Pid || {_Group, Pid} <- nklib_proc:values(nkpacket_listeners)].
+    [Pid || {_SrvId, Pid} <- nklib_proc:values(nkpacket_listeners)].
 
 
-%% @doc Gets all registered transports for a Group.
--spec get_all(group()) -> 
+%% @doc Gets all registered transports for a SrvId.
+-spec get_all(srv_id()) -> 
     [pid()].
 
-get_all(Group) ->
-    [Pid || {G, Pid} <- nklib_proc:values(nkpacket_listeners), G==Group].
+get_all(SrvId) ->
+    [Pid || {S, Pid} <- nklib_proc:values(nkpacket_listeners), S==SrvId].
 
 
-%% @doc Gets all groups having registered listeners
--spec get_groups() -> 
+%% @doc Gets all service ids having registered listeners
+-spec get_srv_ids() -> 
     map().
 
-get_groups() ->
+get_srv_ids() ->
     lists:foldl(
-        fun({Group, Pid}, Acc) ->
-            maps:put(Group, [Pid|maps:get(Group, Acc, [])], Acc) 
+        fun({SrvId, Pid}, Acc) ->
+            maps:put(SrvId, [Pid|maps:get(SrvId, Acc, [])], Acc) 
         end,
         #{},
         nklib_proc:values(nkpacket_listeners)).
@@ -333,11 +334,11 @@ stop_all() ->
         get_all()).
 
 
-%% @doc Stops all locally started listeners for a Group (only for standard supervisor)
-stop_all(Group) ->
+%% @doc Stops all locally started listeners for a SrvId (only for standard supervisor)
+stop_all(SrvId) ->
     lists:foreach(
         fun(Pid) -> stop_listener(Pid) end,
-        get_all(Group)).
+        get_all(SrvId)).
 
 
 
@@ -410,7 +411,7 @@ send(SendSpec, Msg) ->
 
 
 %% @doc Sends a message to a connection
-%% If a group is included, it will try to reuse any existing connection of the same group
+%% If a service is included, it will try to reuse any existing connection of the same service
 %% (except if force_new option is set)
 -spec send(send_spec() | [send_spec()], term(), send_opts()) ->
     {ok, pid()} | {error, term()}.
@@ -463,11 +464,11 @@ get_listening(Protocol, Transp) ->
 
 
 %% @private Finds a listening transport of Proto.
--spec get_listening(protocol(), transport(), #{group=>group(), ip=>4|6|tuple()}) -> 
+-spec get_listening(protocol(), transport(), #{srv_id=>srv_id(), ip=>4|6|tuple()}) -> 
     [nkport()].
 
 get_listening(Protocol, Transp, Opts) ->
-    Group = maps:get(group, Opts, none),
+    SrvId = maps:get(srv_id, Opts, none),
     Tag = case maps:get(ip, Opts, 4) of
         4 -> nkpacket_listen4;
         6 -> nkpacket_listen6;
@@ -477,7 +478,7 @@ get_listening(Protocol, Transp, Opts) ->
     [
         NkPort || 
         {NkPort, _Pid} 
-            <- nklib_proc:values({Tag, Group, Protocol, Transp})
+            <- nklib_proc:values({Tag, SrvId, Protocol, Transp})
     ].
 
 
@@ -492,7 +493,7 @@ is_local(Uri) ->
 
 %% @doc Checks if an `uri()' refers to a local started transport.
 %% For ws/wss, it does not check the path
--spec is_local(nklib:uri(), #{group=>group(), no_dns_cache=>boolean()}) -> 
+-spec is_local(nklib:uri(), #{srv_id=>srv_id(), no_dns_cache=>boolean()}) -> 
     boolean().
 
 is_local(#uri{}=Uri, Opts) ->
@@ -616,8 +617,8 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
                         ok
                 end,
                 Protocol = case Opts1 of
-                    #{group:=Group} -> 
-                        nkpacket_config:get_protocol(Group, Scheme);
+                    #{srv_id:=SrvId} -> 
+                        nkpacket_config:get_protocol(SrvId, Scheme);
                     _ -> 
                         nkpacket_config:get_protocol(Scheme)
                 end,

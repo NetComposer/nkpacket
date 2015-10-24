@@ -128,6 +128,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
+        srv_id = SrvId,
         transp = Transp, 
         listen_ip = ListenIp, 
         listen_port = ListenPort,
@@ -137,7 +138,7 @@ init([NkPort]) ->
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
         NkPort1 = NkPort#nkport{pid = self()},
-        Filter1 = maps:with([group, host, path, ws_proto], Meta),
+        Filter1 = maps:with([SrvId, host, path, ws_proto], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
         case nkpacket_cowboy:start(NkPort1, Filter2) of
             {ok, SharedPid} -> ok;
@@ -145,8 +146,7 @@ init([NkPort]) ->
         end,
         erlang:monitor(process, SharedPid),
         {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(SharedPid),
-        Group = maps:get(group, Meta, none),
-        nklib_proc:put(nkpacket_listeners, Group),
+        nklib_proc:put(nkpacket_listeners, SrvId),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
             local_ip = LocalIp,
@@ -159,7 +159,7 @@ init([NkPort]) ->
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
         end,
-        nklib_proc:put({ListenType, Group, Protocol, Transp}, ConnPort),
+        nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
         MonRef = case Meta of
             #{monitor:=UserRef} -> 

@@ -46,13 +46,13 @@ register_protocol(Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
     nklib_config:put(?MODULE, {protocol, Scheme}, Protocol).
 
 
-%% doc Registers a new protocol for an specific group
--spec register_protocol(nkpacket:group(), nklib:scheme(), nkpacket:protocol()) ->
+%% doc Registers a new protocol for an specific service
+-spec register_protocol(nkpacket:srv_id(), nklib:scheme(), nkpacket:protocol()) ->
     ok.
 
-register_protocol(Group, Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
+register_protocol(SrvId, Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
     {module, _} = code:ensure_loaded(Protocol),
-    nklib_config:put_domain(?MODULE, Group, {protocol, Scheme}, Protocol).
+    nklib_config:put_domain(?MODULE, SrvId, {protocol, Scheme}, Protocol).
 
 
 %% @doc
@@ -61,8 +61,8 @@ get_protocol(Scheme) ->
 
 
 %% @doc
-get_protocol(Group, Scheme) -> 
-    get_group(Group, {protocol, Scheme}).
+get_protocol(SrvId, Scheme) -> 
+    get_srv(SrvId, {protocol, Scheme}).
 
 
 %% @doc (hot compile does not support maps in R17)
@@ -95,8 +95,8 @@ get(Key) ->
 get(Key, Default) ->
     nklib_config:get(?MODULE, Key, Default).
 
-get_group(Group, Key) ->
-    nklib_config:get_domain(?MODULE, Group, Key).
+get_srv(SrvId, Key) ->
+    nklib_config:get_domain(?MODULE, SrvId, Key).
 
 put(Key, Val) ->
     nklib_config:put(?MODULE, Key, Val).

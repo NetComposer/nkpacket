@@ -110,11 +110,12 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
+        srv_id = SrvId,
+        protocol = Protocol,
         transp = Transp, 
         listen_ip = ListenIp, 
         listen_port = ListenPort,
-        meta = Meta,
-        protocol = Protocol
+        meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     ListenOpts = listen_opts(NkPort),
@@ -142,8 +143,7 @@ init([NkPort]) ->
                 ],
                 ?MODULE,
                 [RanchPort]),
-            Group = maps:get(group, Meta, none),
-            nklib_proc:put(nkpacket_listeners, Group),
+            nklib_proc:put(nkpacket_listeners, SrvId),
             ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
@@ -151,7 +151,7 @@ init([NkPort]) ->
                 4 -> nkpacket_listen4;
                 8 -> nkpacket_listen6
             end,
-            nklib_proc:put({ListenType, Group, Protocol, Transp}, ConnPort),
+            nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserRef} -> erlang:monitor(process, UserRef);

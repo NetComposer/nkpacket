@@ -63,7 +63,7 @@ get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==
     Host = maps:get(host, Opts, any),
     Path = maps:get(path, Opts, any),
     WsProto = maps:get(ws_proto, Opts, any),
-    Group = maps:get(group, Opts, none),
+    SrvId = maps:get(srv_id, Opts, none),
     nklib_util:filtermap(
         fun({Meta, Pid}) ->
             HostOK = Host==any orelse 
@@ -89,13 +89,13 @@ get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==
                 false -> false
             end
         end,
-        nklib_proc:values({nkpacket_connection, Group, Conn}));
+        nklib_proc:values({nkpacket_connection, SrvId, Conn}));
 
 get_connected({_, _, _, _}=Conn, Opts) ->
-    Group = maps:get(group, Opts, none),
+    SrvId = maps:get(srv_id, Opts, none),
     [
         Pid || 
-        {_Meta, Pid} <- nklib_proc:values({nkpacket_connection, Group, Conn})
+        {_Meta, Pid} <- nklib_proc:values({nkpacket_connection, SrvId, Conn})
     ].
 
 
@@ -168,7 +168,7 @@ send([{connect, Conn}|Rest], Msg, Opts) ->
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
 
-send([{_, _, _, _}=Conn|Rest], Msg, #{group:=_}=Opts) ->
+send([{_, _, _, _}=Conn|Rest], Msg, #{srv_id:=_}=Opts) ->
     Pids = case Opts of
         #{force_new:=true} -> [];
         _ -> get_connected(Conn, Opts)
@@ -185,7 +185,7 @@ send([{_, _, _, _}=Conn|Rest], Msg, #{group:=_}=Opts) ->
             send([{connect, Conn}|Rest], Msg, Opts1)
     end;
 
-% If we dont specify a group, do not reuse connections
+% If we dont specify a service, do not reuse connections
 send([{_, _, _, _}=Conn|Rest], Msg, Opts) ->
     send([{connect, Conn}|Rest], Msg, Opts);
 
@@ -310,11 +310,12 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
             Meta2 = maps:remove(host, Meta1),
             Meta3 = maps:remove(path, Meta2),
             ConnPort = BasePort#nkport{
+                srv_id = maps:get(srv_id, Opts, none),
                 transp = Transp, 
                 protocol = Protocol,
                 remote_ip = Ip, 
                 remote_port = Port,
-                meta = maps:merge(Meta3, Opts)
+                meta = maps:remove(srv_id, maps:merge(Meta3, Opts))
             },
             % If we found a listening transport, connection will monitor it
             nkpacket_connection:connect(ConnPort)

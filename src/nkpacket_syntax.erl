@@ -73,7 +73,7 @@ global_defaults() ->
 
 syntax() ->
     #{
-        group => any,
+        srv_id => any,
         user => any,
         monitor => proc,
         no_dns_cache => boolean,

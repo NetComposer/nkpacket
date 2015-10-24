@@ -27,7 +27,7 @@
 
 
 -export([reset_timeout/2, get_timeout/1, update_monitor/2]).
--export([get_all/0, get_all/1, get_all_groups/0, stop_all/0, stop_all/1]).
+-export([get_all/0, get_all/1, get_all_srv_ids/0, stop_all/0, stop_all/1]).
 -export([incoming/2, connect/1, conn_init/1]).
 -export([ranch_start_link/2, ranch_init/2]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3,   
@@ -146,25 +146,25 @@ stop(Conn, Reason) ->
     [pid()].
 
 get_all() ->
-    [Pid || {_Group, Pid} <- nklib_proc:values(nkpacket_connections)].
+    [Pid || {_SrvId, Pid} <- nklib_proc:values(nkpacket_connections)].
 
 
-%% @doc Gets all started connections for a Group.
--spec get_all(nkpacket:group()) -> 
+%% @doc Gets all started connections for a service.
+-spec get_all(nkpacket:srv_id()) -> 
     [pid()].
 
-get_all(Group) ->
-    [Pid || {G, Pid} <- nklib_proc:values(nkpacket_connections), G==Group].
+get_all(SrvId) ->
+    [Pid || {S, Pid} <- nklib_proc:values(nkpacket_connections), S==SrvId].
 
 
-%% @doc Gets all groups having started connections
--spec get_all_groups() -> 
+%% @doc Gets all serviced having started connections
+-spec get_all_srv_ids() -> 
     map().
 
-get_all_groups() ->
+get_all_srv_ids() ->
     lists:foldl(
-        fun({Group, Pid}, Acc) ->
-            maps:put(Group, [Pid|maps:get(Group, Acc, [])], Acc) 
+        fun({SrvId, Pid}, Acc) ->
+            maps:put(SrvId, [Pid|maps:get(SrvId, Acc, [])], Acc) 
         end,
         #{},
         nklib_proc:values(nkpacket_connections)).
@@ -178,12 +178,12 @@ stop_all() ->
     lists:foreach(fun(Pid) -> stop(Pid, normal) end, get_all()).
 
 
-%% @doc Stops all started connections for a Group
--spec stop_all(nkpacket:group()) ->
+%% @doc Stops all started connections for a service
+-spec stop_all(nkpacket:srv_id()) ->
     ok.
 
-stop_all(Group) ->
-    lists:foreach(fun(Pid) -> stop(Pid, normal) end, get_all(Group)).
+stop_all(SrvId) ->
+    lists:foreach(fun(Pid) -> stop(Pid, normal) end, get_all(SrvId)).
 
 
 %% @doc Re-start the idle timeout
@@ -272,18 +272,18 @@ ranch_start_link(NkPort, Ref) ->
 
 init([NkPort]) ->
     #nkport{
+        srv_id = SrvId,
+        protocol = Protocol,
         transp = Transp, 
         remote_ip = Ip, 
         remote_port = Port, 
-        protocol = Protocol,
         pid = ListenPid,
         socket = Socket,
         meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),          % Allow call to terminate/2
-    Group = maps:get(group, Meta, none),
-    nklib_proc:put(nkpacket_connections, Group),
-    nklib_counters:async([nkpacket_connections, {nkpacket_connections, Group}]),
+    nklib_proc:put(nkpacket_connections, SrvId),
+    nklib_counters:async([nkpacket_connections, {nkpacket_connections, SrvId}]),
     Conn = {Protocol, Transp, Ip, Port},
     StoredMeta = if
         Transp==http; Transp==https ->
@@ -293,7 +293,7 @@ init([NkPort]) ->
         true ->
             #{}
     end,
-    nklib_proc:put({nkpacket_connection, Group, Conn}, StoredMeta), 
+    nklib_proc:put({nkpacket_connection, SrvId, Conn}, StoredMeta), 
     Timeout = case maps:get(idle_timeout, Meta, undefined) of
         Timeout0 when is_integer(Timeout0) -> 
             Timeout0;
@@ -343,7 +343,7 @@ init([NkPort]) ->
     NkPort1 = NkPort#nkport{pid=self()},
     % We need to store some meta in case someone calls get_nkport
     StoredNkPort = NkPort1#nkport{
-                        meta=maps:with([group, host, path, ws_proto], Meta)},
+                        meta=maps:with([host, path, ws_proto], Meta)},
     State = #state{
         transp = Transp,
         nkport = StoredNkPort,

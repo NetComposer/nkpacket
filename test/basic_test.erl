@@ -52,15 +52,15 @@ config() ->
 	100 = nkpacket_config_cache:max_connections(),
 
 	nklib_config:del(nkpacket_config, {protocol, scheme}),
-	nklib_config:del_domain(nkpacket_config, group1, {protocol, scheme}),
+	nklib_config:del_domain(nkpacket_config, srv1, {protocol, scheme}),
 
 	undefined = nkpacket_config:get_protocol(scheme),
-	undefined = nkpacket_config:get_protocol(group1, scheme),
+	undefined = nkpacket_config:get_protocol(srv1, scheme),
 	ok = nkpacket_config:register_protocol(scheme, ?MODULE),
 	?MODULE = nkpacket_config:get_protocol(scheme),
-	?MODULE = nkpacket_config:get_protocol(group1, scheme),
-	ok = nkpacket_config:register_protocol(group1, scheme, test_protocol),
+	?MODULE = nkpacket_config:get_protocol(srv1, scheme),
+	ok = nkpacket_config:register_protocol(srv1, scheme, test_protocol),
 	?MODULE = nkpacket_config:get_protocol(scheme),
-	test_protocol = nkpacket_config:get_protocol(group1, scheme),
+	test_protocol = nkpacket_config:get_protocol(srv1, scheme),
 	ok.
 

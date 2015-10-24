@@ -96,6 +96,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
+        srv_id = SrvId,
         transp = sctp,
         listen_ip = Ip, 
         listen_port = Port,
@@ -117,15 +118,14 @@ init([NkPort]) ->
                 socket = {Socket, 0}
             },
             ok = gen_sctp:listen(Socket, true),
-            Group = maps:get(group, Meta, none),
-            nklib_proc:put(nkpacket_listeners, Group),
+            nklib_proc:put(nkpacket_listeners, SrvId),
             ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
             ListenType = case size(Ip) of
                 4 -> nkpacket_listen4;
                 8 -> nkpacket_listen6
             end,
-            nklib_proc:put({ListenType, Group, Protocol, sctp}, ConnPort),
+            nklib_proc:put({ListenType, SrvId, Protocol, sctp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserPid} -> erlang:monitor(process, UserPid);

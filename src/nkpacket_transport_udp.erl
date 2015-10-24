@@ -148,10 +148,11 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
+        srv_id = SrvId,
+        protocol = Protocol, 
         transp = udp,
         listen_ip = ListenIp, 
         listen_port = ListenPort,
-        protocol = Protocol, 
         meta = Meta
     } = NkPort,
     process_flag(priority, high),
@@ -185,15 +186,14 @@ init([NkPort]) ->
             _ ->
                 undefined
         end,
-        Group = maps:get(group, Meta, none),
-        nklib_proc:put(nkpacket_listeners, Group),
+        nklib_proc:put(nkpacket_listeners, SrvId),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
         end,
-        nklib_proc:put({ListenType, Group, Protocol, udp}, ConnPort),
+        nklib_proc:put({ListenType, SrvId, Protocol, udp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
         MonRef = case Meta of
             #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
