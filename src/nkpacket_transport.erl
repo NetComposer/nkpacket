@@ -393,7 +393,7 @@ open_port(NkPort, Opts) ->
     end,
     case Port of
         0 when is_integer(DefPort) ->
-            lager:debug("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
+            lager:info("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
             case Module:Fun(DefPort, Opts) of
                 {ok, Socket} ->
                     {ok, Socket};
@@ -411,7 +411,7 @@ open_port(NkPort, Opts) ->
     {ok, port()} | {error, term()}.
 
 open_port(Ip, Port, Module, Fun, Opts, Iter) ->
-    lager:debug("Opening ~p:~p (~p)", [Module, Port, Opts]),
+    lager:info("Opening ~p:~p (~p)", [Module, Port, Opts]),
     case Module:Fun(Port, Opts) of
         {ok, Socket} ->
             {ok, Socket};

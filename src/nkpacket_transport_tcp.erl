@@ -69,6 +69,7 @@ connect(NkPort) ->
         undefined -> nkpacket_config_cache:connect_timeout();
         Timeout0 -> Timeout0
     end,
+    lager:info("Connect to: ~p:~p:~p (~p)", [Transp, Ip, Port, SocketOpts]),
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} -> 
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
@@ -269,11 +270,16 @@ start_link(Ref, Socket, TranspModule, [#nkport{meta=Meta}=NkPort]) ->
         remote_port = RemotePort,
         socket = Socket
     },
-    Opts = lists:flatten([
-        case Meta of #{tcp_packet:=Packet} -> {packet, Packet}; _ -> [] end,
-        {keepalive, true}, {active, once}
-    ]),
-    TranspModule:setopts(Socket, Opts),
+    case TranspModule of
+        ranch_ssl ->
+            ok;
+        ranch_tcp ->
+            Opts = lists:flatten([
+                case Meta of #{tcp_packet:=Packet} -> {packet, Packet}; _ -> [] end,
+                {keepalive, true}, {active, once}
+            ]),
+            TranspModule:setopts(Socket, Opts)
+    end,
     nkpacket_connection:ranch_start_link(NkPort1, Ref).
 
 
@@ -315,7 +321,7 @@ listen_opts(#nkport{transp=tcp, listen_ip=Ip, meta=Opts}) ->
 listen_opts(#nkport{transp=tls, listen_ip=Ip, meta=Opts}) ->
     Base = [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
-        {ip, Ip}, {active, false}, binary,
+        {ip, Ip}, {active, once}, binary,
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
     ],
