@@ -49,7 +49,8 @@ send_stun_sync(Pid, Ip, Port, Timeout) ->
     end.
 
 
-%% @private Sends a STUN binding request
+%% @private Sends a STUN binding request, the response will be sent to the calling 
+%% process as {stun, {ok, Ip, Port}|error}.
 send_stun_async(Pid, Ip, Port) ->
     gen_server:cast(Pid, {send_stun, Ip, Port, self()}).
 
@@ -125,7 +126,7 @@ start_link(NkPort) ->
     packet :: binary(),
     retrans_timer :: reference(),
     next_retrans :: integer(),
-    from :: {call, {pid(), term()}} | {cast, pid()}
+    from :: {call, {pid(), term()}} | {msg, pid()}
 }).
 
 -record(state, {
@@ -255,7 +256,7 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast({send_stun, Ip, Port, Pid}, State) ->
-    {noreply, do_send_stun(Ip, Port, {cast, Pid}, State)};
+    {noreply, do_send_stun(Ip, Port, {msg, Pid}, State)};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
@@ -372,7 +373,7 @@ do_send_stun(Ip, Port, From, State) ->
                          [Ip, Port, Error]),
             case From of
                 {call, CallFrom} -> gen_server:reply(CallFrom, error);
-                {cast, CastPid} -> gen_server:cast(CastPid, {stun, error})
+                {msg, MsgPid} -> MsgPid ! {stun, error}
             end,
             State
     end.
@@ -408,7 +409,7 @@ do_stun_timeout(Stun, State) ->
     lager:notice("STUN request to ~p timeout", [{Ip, Port}]),
     case From of
         {call, CallFrom} -> gen_server:reply(CallFrom, error);
-        {cast, CastPid} -> gen_server:cast(CastPid, {stun, error})
+        {msg, MsgPid} -> MsgPid ! {stun, error}
     end,
     State.
         
@@ -431,7 +432,7 @@ do_stun_response(TransId, Attrs, State) ->
             Msg = {ok, StunIp, StunPort},
             case From of
                 {call, CallFrom} -> gen_server:reply(CallFrom, Msg);
-                {cast, CastPid} -> gen_server:cast(CastPid, {stun, Msg})
+                {msg, MsgPid} -> MsgPid ! {stun, Msg}
             end,
             State#state{stuns=Stuns1};
         false ->
