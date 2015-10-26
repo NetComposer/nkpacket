@@ -224,7 +224,8 @@ handle_cast(Msg, #state{nkport=NkPort}=State) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
-    #state{socket=Socket, nkport=#nkport{protocol=Proto, meta=ListenMeta}} = State,
+    #state{socket=Socket, nkport=NkPort} = State,
+    #nkport{srv_id=SrvId, protocol=Proto} = NkPort,
     State1 = case SAC of
         #sctp_assoc_change{state=comm_up, assoc_id=AssocId} ->
             % lager:error("COMM_UP: ~p", [AssocId]),
@@ -239,7 +240,8 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
             end;
         #sctp_assoc_change{state=shutdown_comp, assoc_id=_AssocId} ->
             % lager:error("COMM_DOWN: ~p", [AssocId]),
-            case nkpacket_transport:get_connected({Proto, sctp, Ip, Port}, ListenMeta) of
+            Conn = {Proto, sctp, Ip, Port},
+            case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
                 [Pid|_] -> nkpacket_connection:stop(Pid, normal);
                 _ -> ok
             end,
@@ -340,8 +342,9 @@ do_connect(Ip, Port, AssocId, State) ->
 %% @private
 do_connect(Ip, Port, AssocId, Meta, State) ->
     #state{nkport=NkPort, socket=Socket} = State,
-    #nkport{protocol=Proto, meta=ListenMeta} = NkPort,
-    case nkpacket_transport:get_connected({Proto, sctp, Ip, Port}, ListenMeta) of
+    #nkport{srv_id=SrvId, protocol=Proto, meta=ListenMeta} = NkPort,
+    Conn = {Proto, sctp, Ip, Port},
+    case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
         [Pid|_] -> 
             {ok, Pid};
         [] -> 

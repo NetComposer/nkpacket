@@ -486,8 +486,9 @@ do_connect(Ip, Port, State) ->
 
 %% @private
 do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
-    #nkport{protocol=Proto, meta=ListenMeta} = NkPort,
-    case nkpacket_transport:get_connected({Proto, udp, Ip, Port}, ListenMeta) of
+    #nkport{srv_id=SrvId, protocol=Proto, meta=ListenMeta} = NkPort,
+    Conn = {Proto, udp, Ip, Port},
+    case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
         [Pid|_] -> 
             {ok, Pid};
         [] ->

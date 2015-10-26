@@ -309,8 +309,8 @@ init([NkPort]) ->
                 https -> nkpacket_config_cache:http_timeout()
             end
     end,
-    lager:info("created ~p connection to/from ~p:~p:~p (~p)", 
-               [Protocol, Transp, Ip, Port, self()]),
+    lager:info("created ~p connection to/from ~p:~p:~p (~p, ~p)", 
+               [Protocol, Transp, Ip, Port, SrvId, self()]),
     if
         Transp==ws; Transp==wss ->
             Host = maps:get(host, Meta, any),
