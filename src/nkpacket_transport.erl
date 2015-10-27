@@ -288,7 +288,7 @@ connect([Conn|Rest], Opts) ->
     {ok, pid()} | {error, term()}.
          
 do_connect({Protocol, Transp, Ip, Port}, Opts) ->
-    ListenOpt = maps:get(listen_port, Opts, undefined),
+    ListenOpt = maps:get(base_nkport, Opts, undefined),
     BasePort = case ListenOpt of
         false ->
             #nkport{};

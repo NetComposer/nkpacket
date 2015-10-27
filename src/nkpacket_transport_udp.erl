@@ -67,7 +67,7 @@ send_stun_async(Pid, Ip, Port) ->
 get_listener(NkPort) ->
     #nkport{protocol=Proto, transp=udp, listen_ip=Ip, listen_port=Port} = NkPort,
     {
-        {{Proto, udp, Ip, Port}, make_ref()}, 
+        {{Proto, udp, Ip, Port, <<>>}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 

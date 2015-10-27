@@ -41,9 +41,10 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
-    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port} = NkPort,
+    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port, meta=Meta} = NkPort,
+    Path = maps:get(path, Meta, <<>>),
     {
-        {{Proto, Transp, Ip, Port}, make_ref()},
+        {{Proto, Transp, Ip, Port, Path}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,

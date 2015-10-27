@@ -43,7 +43,7 @@
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
     #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port} = NkPort,
     {
-        {{Proto, Transp, Ip, Port}, make_ref()}, 
+        {{Proto, Transp, Ip, Port, <<>>}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
