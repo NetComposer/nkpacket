@@ -30,8 +30,6 @@
 -include("nkpacket.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
 
--define(IN_STREAMS, 10).
--define(OUT_STREAMS, 10).
 
 %% ===================================================================
 %% Private
@@ -44,7 +42,7 @@
 get_listener(NkPort) ->
     #nkport{protocol=Proto, transp=sctp, listen_ip=Ip, listen_port=Port} = NkPort,
     {
-        {{Proto, sctp, Ip, Port}, make_ref()}, 
+        {{Proto, sctp, Ip, Port, <<>>}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -109,7 +107,6 @@ init([NkPort]) ->
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
             {ok, Port1} = inet:port(Socket),
-            % RemoveOpts = [sctp_out_streams, sctp_in_streams],
             NkPort1 = NkPort#nkport{
                 local_ip = Ip,
                 local_port = Port1, 
@@ -324,8 +321,14 @@ listen_opts(#nkport{listen_ip=Ip, meta=Meta}) ->
         undefined -> nkpacket_config_cache:sctp_timeout();
         Timeout0 -> Timeout0
     end,
-    OutStreams = maps:get(sctp_out_streams, Meta, ?OUT_STREAMS),
-    InStreams = maps:get(sctp_in_streams, Meta, ?IN_STREAMS),
+    OutStreams = case maps:get(sctp_out_streams, Meta, undefined) of
+        undefined -> nkpacket_config_cache:sctp_out_streams();
+        OS -> OS
+    end,
+    InStreams = case maps:get(sctp_in_streams, Meta, undefined) of
+        undefined -> nkpacket_config_cache:sctp_in_streams();
+        IS -> IS
+    end,
     [
         binary, {reuseaddr, true}, {ip, Ip}, {active, once},
         {sctp_initmsg, #sctp_initmsg{num_ostreams=OutStreams, max_instreams=InStreams}},

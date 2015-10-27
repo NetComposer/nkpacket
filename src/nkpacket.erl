@@ -27,6 +27,8 @@
 -module(nkpacket).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
+-export([register_protocol/2, register_protocol/3]).
+-export([get_protocol/1, get_protocol/2]).
 -export([start_listener/2, get_listener/2, stop_listener/1]).
 -export([get_all/0, get_all/1, get_srv_ids/0]).
 -export([stop_all/0, stop_all/1]).
@@ -155,7 +157,7 @@
         no_dns_cache => boolean(),          % Avoid DNS cache
         idle_timeout => integer(),          % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
-        listen_port => boolean()| nkport(), % Select (or disables auto) base NkPort
+        base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
 
         % TCP/TLS/WS/WSS options
@@ -229,6 +231,35 @@
 %% ===================================================================
 %% Public functions
 %% ===================================================================
+
+
+%% doc Registers a new 'default' protocol
+-spec register_protocol(nklib:scheme(), nkpacket:protocol()) ->
+    ok.
+
+register_protocol(Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
+    {module, _} = code:ensure_loaded(Protocol),
+    nklib_config:put(nkpacket, {protocol, Scheme}, Protocol).
+
+
+%% doc Registers a new protocol for an specific service
+-spec register_protocol(nkpacket:srv_id(), nklib:scheme(), nkpacket:protocol()) ->
+    ok.
+
+register_protocol(SrvId, Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
+    {module, _} = code:ensure_loaded(Protocol),
+    nklib_config:put_domain(nkpacket, SrvId, {protocol, Scheme}, Protocol).
+
+
+%% @doc
+get_protocol(Scheme) -> 
+    nkpacket_app:get({protocol, Scheme}).
+
+
+%% @doc
+get_protocol(SrvId, Scheme) -> 
+    nkpacket_app:get_srv(SrvId, {protocol, Scheme}).
+
 
 %% @doc Starts a new listening transport.
 -spec start_listener(user_connection(), listener_opts()) ->
@@ -618,9 +649,9 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
                 end,
                 Protocol = case Opts1 of
                     #{srv_id:=SrvId} -> 
-                        nkpacket_config:get_protocol(SrvId, Scheme);
+                        nkpacket:get_protocol(SrvId, Scheme);
                     _ -> 
-                        nkpacket_config:get_protocol(Scheme)
+                        nkpacket:get_protocol(Scheme)
                 end,
                 case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
                     {ok, Addrs} ->
