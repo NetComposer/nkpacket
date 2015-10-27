@@ -190,7 +190,7 @@ listen() ->
 stun() ->
 	Port1 = test_util:get_port(udp),
 	{Ref1, M1} = test_util:reset_1(),
-	ok = nkpacket_config:register_protocol(test, test_protocol),
+	ok = nkpacket:register_protocol(test, test_protocol),
 	{ok, Udp1} = nkpacket:start_listener( 
 					"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>",
 					M1#{udp_stun_reply=>true, udp_no_connections=>true}),

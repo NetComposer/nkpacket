@@ -27,7 +27,7 @@
 
 
 reset_1() ->
-	ok = nkpacket_config:register_protocol(test, test_protocol),
+	ok = nkpacket:register_protocol(test, test_protocol),
  	ok = nkpacket:stop_all(),
  	ok = nkpacket_connection:stop_all(),
  	timer:sleep(100),
@@ -38,7 +38,7 @@ reset_1() ->
 
 
 reset_2() ->
-	ok = nkpacket_config:register_protocol(test, test_protocol),
+	ok = nkpacket:register_protocol(test, test_protocol),
  	ok = nkpacket:stop_all(),
  	ok = nkpacket_connection:stop_all(),
  	timer:sleep(100),
@@ -51,7 +51,7 @@ reset_2() ->
 
 
 reset_3() ->
-	ok = nkpacket_config:register_protocol(test, test_protocol),
+	ok = nkpacket:register_protocol(test, test_protocol),
  	ok = nkpacket:stop_all(),
  	ok = nkpacket_connection:stop_all(),
  	timer:sleep(100),
@@ -66,7 +66,7 @@ reset_3() ->
 
 
 reset_4() ->
-	ok = nkpacket_config:register_protocol(test, test_protocol),
+	ok = nkpacket:register_protocol(test, test_protocol),
  	ok = nkpacket:stop_all(),
  	ok = nkpacket_connection:stop_all(),
  	timer:sleep(100),

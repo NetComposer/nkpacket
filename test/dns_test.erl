@@ -29,8 +29,8 @@ dns_test_() ->
   	{setup, spawn, 
     	fun() -> 
     		ok = nkpacket_app:start(),
-		    nkpacket_config:register_protocol(sip, ?MODULE),
-		    nkpacket_config:register_protocol(sips, ?MODULE),
+		    nkpacket:register_protocol(sip, ?MODULE),
+		    nkpacket:register_protocol(sips, ?MODULE),
 		    ?debugMsg("Starting DNS test")
 		end,
 		fun(_) -> 
@@ -48,8 +48,8 @@ dns_test_() ->
 
 start() ->
     nkpacket_app:start(),
-    nkpacket_config:register_protocol(sip, ?MODULE),
-    nkpacket_config:register_protocol(sips, ?MODULE).
+    nkpacket:register_protocol(sip, ?MODULE),
+    nkpacket:register_protocol(sips, ?MODULE).
 
 
 uris() ->

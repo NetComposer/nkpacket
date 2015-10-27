@@ -120,7 +120,7 @@ basic() ->
 
 tls() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	ok = nkpacket_config:register_protocol(test, test_protocol),
+	ok = nkpacket:register_protocol(test, test_protocol),
 	{ok, Tls1} = nkpacket:start_listener({test_protocol, tls, {0,0,0,0}, 0},
 						   			     M1#{srv_id=>dom1, tcp_listeners=>1}),
 	{ok, {_, _, _, ListenPort1}} = nkpacket:get_local(Tls1),	
@@ -190,7 +190,7 @@ tls() ->
 
 send() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	ok = nkpacket_config:register_protocol(test, test_protocol),
+	ok = nkpacket:register_protocol(test, test_protocol),
 	{ok, Udp1} = nkpacket:start_listener({test_protocol, udp, {0,0,0,0}, 0},
 						   			     M1#{srv_id=>dom1, udp_starts_tcp=>true}),
 	% Since '1234' is not available, a random one is used
