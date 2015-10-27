@@ -22,8 +22,8 @@
 -module(nkpacket_syntax).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([global_syntax/0, global_defaults/0]).
--export([syntax/0]).
+-export([app_syntax/0, app_defaults/0]).
+-export([syntax/0, tls_defaults/0]).
 
 
 %% ===================================================================
@@ -31,32 +31,29 @@
 %% ===================================================================
 
 
-global_syntax() ->
+app_syntax() ->
     #{
         max_connections => {integer, 1, 1000000},
         dns_cache_ttl => {integer, 0, none},
-        udp_timeout => nat_integer,
-        tcp_timeout => nat_integer,
-        sctp_timeout => nat_integer,
-        ws_timeout => nat_integer,
-        http_timeout => nat_integer,
+        udp_timeout => nat_integer,                 % Overrided by idle_timeout
+        tcp_timeout => nat_integer,                 % "
+        sctp_timeout => nat_integer,                % "
+        ws_timeout => nat_integer,                  % "
+        http_timeout => nat_integer,                % "
         connect_timeout => nat_integer,
-        local_host => [{enum, [auto]}, host],
-        local_host6 => [{enum, [auto]}, host6],
-        tls_opts => 
-            #{
-                certfile => string,
-                keyfile => string,
-                cacertfile => string,
-                password => string,
-                verify => boolean,
-                depth => {integer, 0, 16}
-            }
+        sctp_out_streams => nat_integer,
+        sctp_in_streams => nat_integer,
+        tls_certfile => string,
+        tls_keyfile => string,
+        tls_cacertfile => string,
+        tls_password => string,
+        tls_verify => boolean,
+        tls_depth => {integer, 0, 16}
     }.
 
 
 
-global_defaults() ->
+app_defaults() ->
     #{
         max_connections =>  1024,
         dns_cache_ttl => 30000,                 % msecs
@@ -66,64 +63,63 @@ global_defaults() ->
         ws_timeout => 180000,                   % 
         http_timeout => 180000,                 % 
         connect_timeout => 30000,               %
-        local_host => auto,
-        local_host6 => auto
+        sctp_out_streams => 10,
+        sctp_in_streams => 10
     }.
 
 
 syntax() ->
     #{
         srv_id => any,
-        user => any,
         monitor => proc,
-        no_dns_cache => boolean,
         idle_timeout => pos_integer,
+        connect_timeout => nat_integer,
+        sctp_out_streams => nat_integer,
+        sctp_in_streams => nat_integer,
+        no_dns_cache => boolean,
         refresh_fun => {function, 1},
         valid_schemes => {list, atom},
         udp_starts_tcp => boolean,
+        udp_to_tcp => boolean,
         udp_no_connections => boolean,
         udp_stun_reply => boolean,
         udp_stun_t1 => nat_integer,
-        sctp_out_streams => nat_integer,
-        sctp_in_streams => nat_integer,
         tcp_packet => [{enum, [raw]}, {integer, [1, 2, 4]}],
         tcp_max_connections => nat_integer,
         tcp_listeners => nat_integer,
-        tls_opts => tls_syntax(),
         host => host,
         path => path,
         cowboy_opts => list,
         ws_proto => lower,
         http_proto => fun spec_http_proto/3,
-        connect_timeout => nat_integer,
-        listen_port => [boolean, {record, nkport}],
         force_new => boolean,
-        udp_to_tcp => boolean,
         pre_send_fun => {function, 2},
         resolve_type => {enum, [listen, connect]},
+        base_nkport => [boolean, {record, nkport}],
+        tls_certfile => string,
+        tls_keyfile => string,
+        tls_cacertfile => string,
+        tls_password => string,
+        tls_verify => boolean,
+        tls_depth => {integer, 0, 16},
 
-        tls_certfile => {update, map, tls_opts, certfile, string},
-        tls_keyfile => {update, map, tls_opts, keyfile, string},
-        tls_cacertfile => {update, map, tls_opts, cacertfile, string},
-        tls_password => {update, map, tls_opts, password, string},
-        tls_verify => {update, map, tls_opts, verify, boolean},
-        tls_depth => {update, map, tls_opts, depth, {integer, 0, 16}},
-
-        password => binary      % Not used by nkpacket, for users
-
-
+        user => any
     }.
 
 
-tls_syntax() -> 
-    #{
-        certfile => string,
-        keyfile => string,
-        cacertfile => string,
-        password => string,
-        verify => boolean,
-        depth => {integer, 0, 16}
-    }.
+tls_defaults() ->
+    Base = case code:priv_dir(nkpacket) of
+        PrivDir when is_list(PrivDir) ->
+            #{
+                certfile => filename:join(PrivDir, "cert.pem"),
+                keyfile => filename:join(PrivDir, "key.pem")
+            };
+        _ ->
+            #{}
+    end,
+    %% Avoid SSLv3
+    Base#{versions => ['tlsv1.2', 'tlsv1.1', 'tlsv1']}.
+    
 
 
 %% @private

@@ -398,12 +398,12 @@ listen_opts(#nkport{transp=Transp, listen_ip=Ip})
 
 listen_opts(#nkport{transp=Transp, listen_ip=Ip, meta=Opts}) 
         when Transp==wss; Transp==https ->
-    Base = [
+    [
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
-    ],
-    nkpacket_config:add_tls_opts(Base, Opts).
+    ]
+    ++ nkpacket_util:make_tls_opts(Opts).
 
 
 %% @private

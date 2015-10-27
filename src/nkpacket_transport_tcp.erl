@@ -145,7 +145,8 @@ init([NkPort]) ->
                 ?MODULE,
                 [RanchPort]),
             nklib_proc:put(nkpacket_listeners, SrvId),
-            ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
+            ConnMetaOpts = [tcp_packet | ?CONN_LISTEN_OPTS],
+            % ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
             ListenType = case size(ListenIp) of
@@ -299,11 +300,11 @@ outbound_opts(#nkport{transp=tcp, meta=Opts}) ->
     ];
 
 outbound_opts(#nkport{transp=tls, meta=Opts}) ->
-    Base = [
+    [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         binary, {active, false}, {nodelay, true}, {keepalive, true}
-    ],
-    nkpacket_config:add_tls_opts(Base, Opts).
+    ]
+    ++ nkpacket_util:make_tls_opts(Opts).
 
 
 %% @private Gets socket options for listening connections
@@ -319,13 +320,13 @@ listen_opts(#nkport{transp=tcp, listen_ip=Ip, meta=Opts}) ->
     ];
 
 listen_opts(#nkport{transp=tls, listen_ip=Ip, meta=Opts}) ->
-    Base = [
+    [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, once}, binary,
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
-    ],
-    nkpacket_config:add_tls_opts(Base, Opts).
+    ]
+    ++ nkpacket_util:make_tls_opts(Opts).
 
 
 %% @private

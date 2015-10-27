@@ -23,6 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([console_loglevel/1, make_web_proto/1]).
+-export([make_cache/0, make_tls_opts/1]).
 -export([debug/0, info/0, notice/0, warning/0, error/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
@@ -53,6 +54,33 @@ error() -> console_loglevel(error).
 
 console_loglevel(Level) -> 
     lager:set_loglevel(lager_console_backend, Level).
+
+
+%% @doc Adds SSL options
+-spec make_tls_opts(list()|map()) ->
+    list().
+
+make_tls_opts(Opts) ->
+    Opts1 = nklib_util:filtermap(
+        fun(Term) ->
+            case Term of
+                {tls_certfile, Val} -> {true, {certfile, Val}};
+                {tls_keyfile, Val} -> {true, {keyfile, Val}};
+                {tls_cacertfile, Val} -> {true, {cacertfile, Val}};
+                {tls_password, Val} -> {true, {password, Val}};
+                {tls_verify, Val} -> {true, {verify, Val}};
+                {tls_depth, Val} -> {true, {depth, Val}};
+                _ -> false
+            end
+        end,
+        nklib_util:to_list(Opts)),
+    Opts2 = maps:merge(nkpacket_app:get(tls_defaults), maps:from_list(Opts1)),
+    Opts3 = case Opts2 of
+        #{verify:=true} -> Opts2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
+        #{verify:=false} -> maps:remove(verify, Opts2);
+        _ -> Opts2
+    end,
+    maps:to_list(Opts3).
 
 
 %% @private
@@ -97,6 +125,14 @@ parse_opts(Opts) ->
         {error, Error} ->
             {error, Error}
     end.
+
+
+%% @private
+make_cache() ->
+    Defaults = nkpacket_syntax:app_defaults(),
+    Keys = [local_ips, main_ip, main_ip6 | maps:keys(Defaults)],
+    nklib_config:make_cache(Keys, nkpacket, none, nkpacket_config_cache, none).
+
 
 
 %% @doc Get all local network ips.

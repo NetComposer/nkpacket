@@ -389,8 +389,8 @@ outbound_opts(#nkport{transp=ws}) ->
     [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}];
 
 outbound_opts(#nkport{transp=wss, meta=Opts}) ->
-    Base = [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}],
-    nkpacket_config:add_tls_opts(Base, Opts).
+    [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}]
+    ++ nkpacket_util:make_tls_opts(Opts).
 
 
 
