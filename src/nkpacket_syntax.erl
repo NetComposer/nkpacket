@@ -23,8 +23,9 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([app_syntax/0, app_defaults/0]).
--export([syntax/0, tls_defaults/0]).
+-export([syntax/0, tls_syntax/0, tls_defaults/0]).
 
+-include("nkpacket.hrl").
 
 %% ===================================================================
 %% Public
@@ -43,12 +44,7 @@ app_syntax() ->
         connect_timeout => nat_integer,
         sctp_out_streams => nat_integer,
         sctp_in_streams => nat_integer,
-        tls_certfile => string,
-        tls_keyfile => string,
-        tls_cacertfile => string,
-        tls_password => string,
-        tls_verify => boolean,
-        tls_depth => {integer, 0, 16}
+        ?TLS_SYNTAX
     }.
 
 
@@ -96,14 +92,14 @@ syntax() ->
         pre_send_fun => {function, 2},
         resolve_type => {enum, [listen, connect]},
         base_nkport => [boolean, {record, nkport}],
-        tls_certfile => string,
-        tls_keyfile => string,
-        tls_cacertfile => string,
-        tls_password => string,
-        tls_verify => boolean,
-        tls_depth => {integer, 0, 16},
-
+        ?TLS_SYNTAX,
         user => any
+    }.
+
+
+tls_syntax() ->
+    #{
+        ?TLS_SYNTAX
     }.
 
 

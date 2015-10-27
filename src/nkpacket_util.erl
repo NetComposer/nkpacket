@@ -70,6 +70,7 @@ make_tls_opts(Opts) ->
                 {tls_password, Val} -> {true, {password, Val}};
                 {tls_verify, Val} -> {true, {verify, Val}};
                 {tls_depth, Val} -> {true, {depth, Val}};
+                {tls_versions, Val} -> {true, {versions, Val}};
                 _ -> false
             end
         end,

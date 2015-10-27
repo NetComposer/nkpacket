@@ -50,6 +50,16 @@
     ?DO_LOG(error, Domain, Text, List)).
 
 
+-define(TLS_SYNTAX,
+    tls_certfile => string,
+    tls_keyfile => string,
+    tls_cacertfile => string,
+    tls_password => string,
+    tls_verify => boolean,
+    tls_depth => {integer, 0, 16},
+    tls_versions => {list, atom}
+).
+
 
 %% ===================================================================
 %% Records
