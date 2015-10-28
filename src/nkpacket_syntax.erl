@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([app_syntax/0, app_defaults/0]).
--export([syntax/0, tls_syntax/0, tls_defaults/0]).
+-export([syntax/0, uri_syntax/0, tls_syntax/0, tls_defaults/0]).
 
 -include("nkpacket.hrl").
 
@@ -94,6 +94,18 @@ syntax() ->
         base_nkport => [boolean, {record, nkport}],
         ?TLS_SYNTAX,
         user => any
+    }.
+
+
+uri_syntax() ->
+    #{
+        idle_timeout => pos_integer,
+        connect_timeout => nat_integer,
+        sctp_out_streams => nat_integer,
+        sctp_in_streams => nat_integer,
+        no_dns_cache => boolean,
+        tcp_listeners => nat_integer,
+        ?TLS_SYNTAX
     }.
 
 
