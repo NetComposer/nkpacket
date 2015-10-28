@@ -40,12 +40,12 @@
 -include("nkpacket.hrl").
 
 
--type filter() ::
+-type filter() :: 
     #{
         id => term(),           % Mandatory
         module => module(),     % Mandatory
         host => binary(),
-        path => binary(),
+        path => binary() | [binary()],
         ws_proto => binary()
     }.
 
@@ -69,7 +69,7 @@
 
 start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
     Fun = fun() -> do_start(NkPort, Filter) end,
-    #nkport{local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{listen_ip=Ip, listen_port=Port} = NkPort,
     try 
         nklib_proc:try_call(Fun, {?MODULE, Ip, Port}, 100, 50)
     catch
@@ -82,12 +82,12 @@ start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
     {ok, pid()} | {error, term()}.
 
 do_start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
-    #nkport{transp=Transp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{transp=Transp, listen_ip=Ip, listen_port=Port} = NkPort,
     case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
         [{_Servers, Listen}|_] ->
-            case catch gen_server:call(Listen, {start, Pid, Filter}, infinity) of
+            case nklib_util:call(Listen, {start, Pid, Filter}, #{timeout=>15000}) of
                 ok -> {ok, Listen};
-                _ -> {error, shared_failed}
+                Error -> {error, {shared_failed, Error}}
             end;
         [] ->
             gen_server:start(?MODULE, [NkPort, Filter], [])
@@ -111,7 +111,7 @@ get_all() ->
 
 get_servers(Transp, Ip, Port) -> 
     case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
-        [{L, _}|_] -> L;
+        [{Filter, _}|_] -> Filter;
         [] -> []
     end.
 
@@ -161,8 +161,8 @@ reply(Code, Hds, Body, Req) ->
 init([NkPort, Filter]) ->
     #nkport{
         transp = Transp, 
-        local_ip = Ip, 
-        local_port = Port,
+        listen_ip = ListenIp, 
+        listen_port = ListenPort,
         pid = ListenPid,
         meta = Meta
     } = NkPort,
@@ -171,24 +171,24 @@ init([NkPort, Filter]) ->
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
-            {ok, {_, Port1}} = InetMod:sockname(Socket),
+            {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
             Shared = NkPort#nkport{
-                local_port = Port1, 
-                listen_ip = Ip,
-                listen_port = Port1,
+                local_ip = LocalIp,
+                local_port = LocalPort, 
+                listen_port = LocalPort,
                 pid = self(),
                 protocol = undefined,
                 socket = Socket,
                 meta = #{}
             },
-            RanchId = {Transp, Ip, Port1},
+            RanchId = {Transp, ListenIp, LocalPort},
             Timeout = case Meta of
                 #{idle_timeout:=Timeout0} -> 
                     Timeout0;
                 _ when Transp==ws; Transp==wss -> 
-                    nkpacket_config:ws_timeout();
+                    nkpacket_config_cache:ws_timeout();
                 _ when Transp==http; Transp==https -> 
-                    nkpacket_config:http_timeout()
+                    nkpacket_config_cache:http_timeout()
             end,
             CowboyOpts1 = maps:get(cowboy_opts, Meta, []),
             CowboyOpts2 = nklib_util:store_values(
@@ -209,18 +209,18 @@ init([NkPort, Filter]) ->
                 ],
                 ?MODULE,
                 CowboyOpts2),
-            nklib_proc:put(?MODULE, {Transp, Ip, Port1}),
+            nklib_proc:put(?MODULE, {Transp, ListenIp, LocalPort}),
             ListenRef = monitor(process, ListenPid),
             State = #state{
                 nkport = Shared,
                 ranch_id = RanchId,
                 ranch_pid = RanchPid,
-                servers = [{Filter, ListenRef}]
+                servers = sort_filters([{Filter, ListenRef}])
             },
             {ok, register(State)};
         {error, Error} ->
             lager:error("could not start ~p transport on ~p:~p (~p)", 
-                   [Transp, Ip, Port, Error]),
+                   [Transp, ListenIp, ListenPort, Error]),
             {stop, Error}
     end.
 
@@ -231,7 +231,7 @@ init([NkPort, Filter]) ->
 
 handle_call({start, ListenPid, Filter}, _From, #state{servers=Servers}=State) ->
     ListenRef = erlang:monitor(process, ListenPid),
-    Servers1 = [{Filter, ListenRef}|Servers],
+    Servers1 = sort_filters([{Filter, ListenRef}|Servers]),
     {reply, ok, register(State#state{servers=Servers1})};
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
@@ -341,25 +341,25 @@ execute([], Req, _Env) ->
     {stop, reply(404, Req)};
 
 execute([Filter|Rest], Req, Env) ->
-    Host = maps:get(host, Filter, all),
-    Path = maps:get(path, Filter, all),
-    WsProto = maps:get(ws_proto, Filter, all),
+    Host = maps:get(host, Filter, any),
+    Paths = maps:get(path_list, Filter),
+    WsProto = maps:get(ws_proto, Filter, any),
     ReqHost = cowboy_req:host(Req),
-    ReqPath = cowboy_req:path(Req),
+    ReqPaths = nkpacket_util:norm_path(cowboy_req:path(Req)),
     ReqWsProto = case cowboy_req:parse_header(?WS_PROTO_HD, Req, []) of
         [ReqWsProto0] -> ReqWsProto0;
         _ -> none
     end,
     case
-        (Host==all orelse ReqHost==Host) andalso
-        (Path==all orelse nkpacket_util:check_paths(ReqPath, Path)) andalso
-        (WsProto==all orelse ReqWsProto==WsProto)
+        (Host==any orelse ReqHost==Host) andalso
+        check_paths(ReqPaths, Paths) andalso
+        (WsProto==any orelse ReqWsProto==WsProto)
     of
         true ->
-            lager:debug("TRUE: ~p (~p), ~p (~p), ~p (~p)", 
-                [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
+            lager:debug("Selected: ~p (~p), ~p (~p), ~p (~p)", 
+                [ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             Req1 = case WsProto of
-                all -> 
+                any -> 
                     Req;
                 _ -> 
                     cowboy_req:set_resp_header(?WS_PROTO_HD, WsProto, Req)
@@ -372,8 +372,8 @@ execute([Filter|Rest], Req, Env) ->
                     Result
             end;
         false ->
-            lager:debug("FALSE: ~p (~p), ~p (~p), ~p (~p)", 
-                [ReqHost, Host, ReqPath, Path, ReqWsProto, WsProto]),
+            lager:debug("Skipping: ~p (~p), ~p (~p), ~p (~p)", 
+                [ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             execute(Rest, Req, Env)
     end.
 
@@ -388,7 +388,7 @@ execute([Filter|Rest], Req, Env) ->
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{transp=Transp, local_ip=Ip}) 
+listen_opts(#nkport{transp=Transp, listen_ip=Ip}) 
         when Transp==ws; Transp==http ->
     [
         {ip, Ip}, {active, false}, binary,
@@ -396,22 +396,49 @@ listen_opts(#nkport{transp=Transp, local_ip=Ip})
         {reuseaddr, true}, {backlog, 1024}
     ];
 
-listen_opts(#nkport{transp=Transp, local_ip=Ip, meta=Opts}) 
+listen_opts(#nkport{transp=Transp, listen_ip=Ip, meta=Opts}) 
         when Transp==wss; Transp==https ->
-    Base = [
+    [
         {ip, Ip}, {active, false}, binary,
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
-    ],
-    nkpacket_config:add_tls_opts(Base, Opts).
+    ]
+    ++ nkpacket_util:make_tls_opts(Opts).
 
 
 %% @private
 register(#state{nkport=Shared, servers=Servers}=State) ->
-    #nkport{transp=Transp, local_ip=Ip, local_port=Port} = Shared,
+    #nkport{transp=Transp, listen_ip=Ip, listen_port=Port} = Shared,
     Filters = [Filter || {Filter, _Ref} <- Servers],
     nklib_proc:put({?MODULE, Transp, Ip, Port}, Filters),
     State.
+
+
+%% @private
+%% Put long paths before short paths
+sort_filters(Filters) ->
+    Filters1 = [
+        {nkpacket_util:norm_path(maps:get(path, Filter, any)), Filter, Ref}
+        || {Filter, Ref} <- Filters
+    ],
+    Filters2 = [
+        {Filter#{path_list=>Paths}, Ref} || {Paths, Filter, Ref} <- lists:sort(Filters1)
+    ],
+    lists:reverse(Filters2).
+
+
+%% @private
+check_paths([Part|Rest1], [Part|Rest2]) ->
+    check_paths(Rest1, Rest2);
+
+check_paths(_, []) ->
+    true;
+
+check_paths(_A, _B) ->
+    false.
+
+
+
 
 
 %% @private

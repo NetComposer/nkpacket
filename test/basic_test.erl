@@ -44,22 +44,23 @@ basic_test_() ->
 
 
 config() ->
-	1024 = nkpacket_config:max_connections(),
-	30000 = nkpacket_config:udp_timeout(),
-	1024 = nkpacket_config:max_connections(),
-	nklib_config:put(nkpacket_config, max_connections, 100),
-	100 = nkpacket_config:max_connections(),
+	1024 = nkpacket_config_cache:max_connections(),
+	30000 = nkpacket_config_cache:udp_timeout(),
+	nkpacket_app:put(max_connections, 100),
+	1024 = nkpacket_config_cache:max_connections(),
+	nkpacket_util:make_cache(),
+	100 = nkpacket_config_cache:max_connections(),
 
-	nklib_config:del(nkpacket_config, {protocol, scheme}),
-	nklib_config:del_domain(nkpacket_config, group1, {protocol, scheme}),
+	nklib_config:del(nkpacket, {protocol, scheme}),
+	nklib_config:del_domain(nkpacket, srv1, {protocol, scheme}),
 
-	undefined = nkpacket_config:get_protocol(scheme),
-	undefined = nkpacket_config:get_protocol(group1, scheme),
-	ok = nkpacket_config:register_protocol(scheme, ?MODULE),
-	?MODULE = nkpacket_config:get_protocol(scheme),
-	?MODULE = nkpacket_config:get_protocol(group1, scheme),
-	ok = nkpacket_config:register_protocol(group1, scheme, test_protocol),
-	?MODULE = nkpacket_config:get_protocol(scheme),
-	test_protocol = nkpacket_config:get_protocol(group1, scheme),
+	undefined = nkpacket:get_protocol(scheme),
+	undefined = nkpacket:get_protocol(srv1, scheme),
+	ok = nkpacket:register_protocol(scheme, ?MODULE),
+	?MODULE = nkpacket:get_protocol(scheme),
+	?MODULE = nkpacket:get_protocol(srv1, scheme),
+	ok = nkpacket:register_protocol(srv1, scheme, test_protocol),
+	?MODULE = nkpacket:get_protocol(scheme),
+	test_protocol = nkpacket:get_protocol(srv1, scheme),
 	ok.
 

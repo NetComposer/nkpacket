@@ -1,6 +1,6 @@
 {application, nkpacket, [
     {description, "NkPACKET"},
-    {vsn, "0.4.0"},
+    {vsn, "0.5.0"},
     {modules, []},
     {registered, []},
     {mod, {nkpacket_app, []}},
@@ -19,13 +19,5 @@
         nklib
     ]},
     {env, [
-        {max_connections, 1024},  
-        {dns_cache_ttl, 30000}, 
-        {udp_timeout, 30000},
-        {tcp_timeout, 180000},
-        {sctp_timeout, 180000},               
-        {ws_timeout, 180000},                 
-        {http_timeout, 180000},               
-        {connect_timeout, 30000}
     ]}
 ]}.

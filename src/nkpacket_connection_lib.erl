@@ -40,7 +40,7 @@
     boolean().
 
 is_max() ->
-    Max = nkpacket_config:max_connections(),
+    Max = nkpacket_config_cache:max_connections(),
     case nklib_counters:value(nkpacket_connections) of
         Current when Current > Max -> 
             true;

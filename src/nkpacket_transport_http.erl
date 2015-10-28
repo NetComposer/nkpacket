@@ -41,9 +41,10 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
-    #nkport{local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port, meta=Meta} = NkPort,
+    Path = maps:get(path, Meta, <<>>),
     {
-        {Transp, Ip, Port, make_ref()},
+        {{Proto, Transp, Ip, Port, Path}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -77,17 +78,18 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
+        srv_id = SrvId,
+        protocol = Protocol,
         transp = Transp, 
-        local_ip = Ip, 
-        local_port = Port,
-        meta = Meta,
-        protocol = Protocol
+        listen_ip = Ip, 
+        listen_port = Port,
+        meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
         NkPort1 = NkPort#nkport{
-            listen_ip = Ip,
-            listen_port = Port,
+            % listen_ip = Ip,
+            % listen_port = Port,
             pid = self()
         },
         Filter1 = maps:with([host, path], Meta),
@@ -99,21 +101,25 @@ init([NkPort]) ->
         erlang:monitor(process, SharedPid),
         case Port of
             0 -> 
-                {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
+                {ok, {_, _, _, Port1}} = nkpacket:get_local(SharedPid);
             _ -> 
                 Port1 = Port
         end,
-        Group = maps:get(group, Meta, none),
-        nklib_proc:put(nkpacket_listeners, Group),
+        nklib_proc:put(nkpacket_listeners, SrvId),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
+            local_ip = Ip,
             local_port = Port1,
             listen_port = Port1,
             socket = SharedPid,
             meta = ConnMeta
         },   
         % We don't yet support HTTP outgoing connections, but for the future...
-        nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
+        ListenType = case size(Ip) of
+            4 -> nkpacket_listen4;
+            8 -> nkpacket_listen6
+        end,
+        nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
         MonRef = case Meta of
             #{monitor:=UserRef} -> 
@@ -146,15 +152,16 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
+handle_call({start, Ip, Port, Pid}, _From, State) ->
     #state{nkport=NkPort, http_proto=HttpProto} = State,
     #nkport{protocol=Protocol, meta=Meta} = NkPort,
     NkPort1 = NkPort#nkport{
         remote_ip = Ip,
         remote_port = Port,
         socket = Pid,
-        meta = Meta#{path=>Path}
+        meta = maps:without([host, path], Meta)
     },
+    % See comment on nkpacket_transport_ws for removal of host and path
     case erlang:function_exported(Protocol, http_init, 4) of
         true ->
             % Connection will monitor listen process (unsing 'pid' and 
@@ -174,8 +181,8 @@ handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
             {reply, next, State}
     end;
 
-handle_call(Msg, From, State) ->
-    case call_protocol(listen_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -189,8 +196,8 @@ handle_call(Msg, From, State) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
-handle_cast(Msg, State) ->
-    case call_protocol(listen_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -208,8 +215,8 @@ handle_info({'DOWN', _MRef, process, Pid, Reason}, #state{shared=Pid}=State) ->
     % lager:warning("WS received SHARED stop"),
     {stop, Reason, State};
 
-handle_info(Msg, State) ->
-    case call_protocol(listen_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -228,8 +235,8 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(Reason, State) ->  
-    catch call_protocol(listen_stop, [Reason], State),
+terminate(Reason, #state{nkport=NkPort}=State) ->  
+    catch call_protocol(listen_stop, [Reason, NkPort], State),
     ok.
 
 
@@ -246,8 +253,8 @@ terminate(Reason, State) ->
 
 cowboy_init(Pid, Req, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, Path, self()}, infinity) of
+    % Path = cowboy_req:path(Req),
+    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
         {ok, Protocol, HttpProto, ConnPid} ->
             case Protocol:http_init(HttpProto, ConnPid, Req, Env) of
                 {ok, Req1, Env1, Middlewares1} ->

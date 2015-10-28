@@ -39,7 +39,8 @@
 -type opts() :: 
     #{
         no_dns_cache => boolean(),
-        protocol => nkpacket:protocol()
+        protocol => nkpacket:protocol(),
+        resolve_type => listen | connect
     }.
 
 -type uri_transp() :: nkpacket:transport()|undefined|binary().
@@ -126,6 +127,16 @@ resolve([Uri|Rest], Opts, Acc) ->
 
 
 %% @private
+resolve(Scheme, Host, 0, Transp, #{resolve_type:=listen}=Opts) ->
+    Transp1 = get_transp(Scheme, Transp, Opts),
+    case is_tuple(Host) of
+        true -> 
+            [{Transp1, Host, 0}];
+        false ->
+            Addrs = ips(Host, Opts),
+            [{Transp1, Addr, 0} || Addr <- Addrs]
+    end;
+
 resolve(Scheme, Ip, Port, Transp, Opts) when is_tuple(Ip) ->
     Transp1 = get_transp(Scheme, Transp, Opts),
     Port1 = get_port(Port, Transp1, Opts),
@@ -416,8 +427,13 @@ get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
                     end;
                 _ ->
                     case lists:member(Transp, Valid) of
-                        true -> Transp;
-                        _ -> throw({invalid_transport, Transp})
+                        true -> 
+                            Transp;
+                        false -> 
+                            case lists:keyfind(Transp, 1, Valid) of
+                                {Transp, NewTransp} -> NewTransp;
+                                _ -> throw({invalid_transport, Transp})
+                            end
                     end
             end;
         false ->
@@ -483,7 +499,7 @@ get_cache(Key, _Opts) ->
     ok.
 
 save_cache(Key, Value) ->
-    case nkpacket_config:dns_cache_ttl() of
+    case nkpacket_config_cache:dns_cache_ttl() of
         TTL when is_integer(TTL), TTL > 0 ->
             Now = nklib_util:timestamp(),
             Secs = TTL div 1000,

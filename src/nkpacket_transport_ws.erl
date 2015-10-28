@@ -49,9 +49,10 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
-    #nkport{local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port, meta=Meta} = NkPort,
+    Path = maps:get(path, Meta, <<>>),
     {
-        {Transp, Ip, Port, make_ref()},
+        {{Proto, Transp, Ip, Port, Path}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -74,7 +75,7 @@ connect(NkPort) ->
     SocketOpts = outbound_opts(NkPort),
     TranspMod = case Transp of ws -> tcp, ranch_tcp; wss -> ranch_ssl end,
     ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config:connect_timeout();
+        undefined -> nkpacket_config_cache:connect_timeout();
         Timeout0 -> Timeout0
     end,
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
@@ -89,12 +90,12 @@ connect(NkPort) ->
             },
             case nkpacket_connection_ws:start_handshake(NkPort1) of
                 {ok, WsProto, Rest} -> 
-                    NkPort2 = case WsProto of
-                        undefined -> NkPort1;
-                        _ -> NkPort1#nkport{meta=Meta#{ws_proto=>WsProto}}
+                    Meta2 = case WsProto of
+                        undefined -> Meta1;
+                        _ -> Meta1#{ws_proto=>WsProto}
                     end,
                     TranspMod:setopts(Socket, [{active, once}]),
-                    {ok, NkPort2, Rest};
+                    {ok, NkPort1#nkport{meta=Meta2}, Rest};
                 {error, Error} ->
                     {error, Error}
             end;
@@ -128,42 +129,38 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
+        srv_id = SrvId,
         transp = Transp, 
-        local_ip = Ip, 
-        local_port = Port,
+        listen_ip = ListenIp, 
+        listen_port = ListenPort,
         meta = Meta,
         protocol = Protocol
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
-        NkPort1 = NkPort#nkport{
-            listen_ip = Ip,
-            listen_port = Port,
-            pid = self()
-        },
-        Filter1 = maps:with([group, host, path, ws_proto], Meta),
+        NkPort1 = NkPort#nkport{pid = self()},
+        Filter1 = maps:with([SrvId, host, path, ws_proto], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
         case nkpacket_cowboy:start(NkPort1, Filter2) of
             {ok, SharedPid} -> ok;
             {error, Error} -> SharedPid = throw(Error)
         end,
         erlang:monitor(process, SharedPid),
-        case Port of
-            0 -> 
-                {ok, {_, _, Port1}} = nkpacket:get_local(SharedPid);
-            _ -> 
-                Port1 = Port
-        end,
-        Group = maps:get(group, Meta, none),
-        nklib_proc:put(nkpacket_listeners, Group),
+        {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(SharedPid),
+        nklib_proc:put(nkpacket_listeners, SrvId),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
-            local_port = Port1,
-            listen_port = Port1,
+            local_ip = LocalIp,
+            local_port = LocalPort,
+            listen_port = LocalPort,
             socket = SharedPid,
-            meta = maps:with(?CONN_LISTEN_OPTS, Meta)        
+            meta = ConnMeta        
         },   
-        nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
+        ListenType = case size(ListenIp) of
+            4 -> nkpacket_listen4;
+            8 -> nkpacket_listen6
+        end,
+        nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
         MonRef = case Meta of
             #{monitor:=UserRef} -> 
@@ -171,6 +168,12 @@ init([NkPort]) ->
             _ -> 
                 undefined
         end,
+        Host = maps:get(host, Meta, any),
+        Path = maps:get(path, Meta, any),
+        WsProto = maps:get(ws_proto, Meta, any),
+        lager:info("created ~p listener for ~p:~p:~p (~p, ~p, ~p) (~p)", 
+                   [Protocol, Transp, LocalIp, LocalPort, 
+                    Host, Path, WsProto, self()]),
         State = #state{
             nkport = ConnPort,
             protocol = Protocol,
@@ -182,7 +185,7 @@ init([NkPort]) ->
     catch
         throw:TError -> 
             lager:error("could not start ~p transport on ~p:~p (~p)", 
-                   [Transp, Ip, Port, TError]),
+                   [Transp, ListenIp, ListenPort, TError]),
         {stop, TError}
     end.
 
@@ -195,14 +198,19 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
+handle_call({start, Ip, Port, Pid}, _From, State) ->
     #state{nkport=#nkport{meta=Meta}=NkPort} = State,
     NkPort1 = NkPort#nkport{
         remote_ip = Ip,
         remote_port = Port,
         socket = Pid,
-        meta = Meta#{path=>Path}
+        meta = maps:without([host, path], Meta)
     },
+    % We remove host and path because the connection we are going to start
+    % is not related (from the remote point of view) of the local host and path
+    % In case to be reused, they should not be taken into account.
+    % Anycase, the reuse of ws connections at the server is nearly always going
+    % to be used based on the flow (the socket of #nkport{})
     % Connection will monitor listen process (unsing 'pid' and 
     % the cowboy process (using 'socket')
     case nkpacket_connection:start(NkPort1) of
@@ -216,8 +224,8 @@ handle_call({start, Ip, Port, Path, Pid}, _From, State) ->
             {reply, next, State}
     end;
 
-handle_call(Msg, From, State) ->
-    case call_protocol(listen_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -231,8 +239,8 @@ handle_call(Msg, From, State) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
-handle_cast(Msg, State) ->
-    case call_protocol(listen_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -250,8 +258,8 @@ handle_info({'DOWN', _MRef, process, Pid, Reason}, #state{shared=Pid}=State) ->
     % lager:warning("WS received SHARED stop"),
     {stop, Reason, State};
 
-handle_info(Msg, State) ->
-    case call_protocol(listen_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -270,8 +278,8 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(Reason, State) ->  
-    catch call_protocol(listen_stop, [Reason], State),
+terminate(Reason, #state{nkport=NkPort}=State) ->  
+    catch call_protocol(listen_stop, [Reason, NkPort], State),
     ok.
 
 
@@ -288,8 +296,8 @@ terminate(Reason, State) ->
 
 cowboy_init(Pid, Req, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, Path, self()}, infinity) of
+    % _Path = cowboy_req:path(Req),
+    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
         {ok, ConnPid} ->
             cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, infinity, run);
         next ->
@@ -382,8 +390,8 @@ outbound_opts(#nkport{transp=ws}) ->
     [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}];
 
 outbound_opts(#nkport{transp=wss, meta=Opts}) ->
-    Base = [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}],
-    nkpacket_config:add_tls_opts(Base, Opts).
+    [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}]
+    ++ nkpacket_util:make_tls_opts(Opts).
 
 
 

@@ -27,18 +27,20 @@
 -module(nkpacket).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
+-export([register_protocol/2, register_protocol/3]).
+-export([get_protocol/1, get_protocol/2]).
 -export([start_listener/2, get_listener/2, stop_listener/1]).
--export([get_all/0, get_all/1, get_groups/0]).
+-export([get_all/0, get_all/1, get_srv_ids/0]).
 -export([stop_all/0, stop_all/1]).
 -export([send/2, send/3, connect/2]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
--export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_user/1]).
+-export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_meta/1, get_user/1]).
 -export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
 
--export_type([group/0, transport/0, protocol/0, nkport/0]).
--export_type([listener_opts/0, connect_opts/0, send_opts/0]).
+-export_type([srv_id/0, transport/0, protocol/0, nkport/0]).
+-export_type([listener_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
--export_type([http_proto/0, incoming/0, outcoming/0]).
+-export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -48,15 +50,15 @@
 %% Types
 %% ===================================================================
 
-%% Connection Group
-%% Listeners and connections can have an associated group.
+%% Service id
+%% Listeners and connections have an associated service id.
 %% When sending a message, if a previous connection to the same remote
-%% and group exists, it will be reused.
+%% and service exists, it will be reused.
 %% When starting an outgoing connection, if a suitable listening transport 
-%% is found with the same group, some values from listener's metadata will 
+%% is found with the same service id, some values from listener's metadata will 
 %% be copied to the new connection: user, idle_timeout, host, path, ws_proto, 
 %% refresh_fun, tcp_packet, tls_opts
--type group() :: term().
+-type srv_id() :: term().
 
 %% Recognized transport schemes
 -type transport() :: udp | tcp | tls | sctp | ws | wss | http | https.
@@ -107,7 +109,7 @@
 -type listener_opts() ::
     #{
         % Common options
-        group => group(),                       % Connection group
+        srv_id => srv_id(),                     % Service Id
         user => term(),                         % User metadata
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
@@ -148,14 +150,14 @@
 -type connect_opts() ::
     #{
         % Common options
-        group => group(),                   % Connection group
+        srv_id => srv_id(),                     % Service Id
         user => term(),                     % User metadata
         monitor => atom() | pid(),          % Connection will monitor this
         connect_timeout => integer(),       % MSecs, default in config
         no_dns_cache => boolean(),          % Avoid DNS cache
         idle_timeout => integer(),          % MSecs, default in config
-        refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
-        listen_nkport => none | nkport(),   % Select (or disables auto) base NkPort
+        refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
+        base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
 
         % TCP/TLS/WS/WSS options
@@ -175,8 +177,18 @@
     #{
         % Specific options
         force_new => boolean(),             % Forces a new connection
-        udp_to_tcp => boolean()             % Change to TCP for large packets
+        udp_to_tcp => boolean(),            % Change to TCP for large packets
+        pre_send_fun => pre_send_fun()
     }.
+
+
+%% Options for resolving
+-type resolve_opts() ::
+    #{
+        resolve_type => listen | connect
+    }
+    | listener_opts()
+    | send_opts().
 
 
 %% Connection specification
@@ -211,9 +223,43 @@
     cow_ws:frame().                 % Only WS
 
 
+%% See send
+-type pre_send_fun() ::
+    fun((term(), nkport()) -> term()).
+
+
 %% ===================================================================
 %% Public functions
 %% ===================================================================
+
+
+%% doc Registers a new 'default' protocol
+-spec register_protocol(nklib:scheme(), nkpacket:protocol()) ->
+    ok.
+
+register_protocol(Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
+    {module, _} = code:ensure_loaded(Protocol),
+    nklib_config:put(nkpacket, {protocol, Scheme}, Protocol).
+
+
+%% doc Registers a new protocol for an specific service
+-spec register_protocol(nkpacket:srv_id(), nklib:scheme(), nkpacket:protocol()) ->
+    ok.
+
+register_protocol(SrvId, Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
+    {module, _} = code:ensure_loaded(Protocol),
+    nklib_config:put_domain(nkpacket, SrvId, {protocol, Scheme}, Protocol).
+
+
+%% @doc
+get_protocol(Scheme) -> 
+    nkpacket_app:get({protocol, Scheme}).
+
+
+%% @doc
+get_protocol(SrvId, Scheme) -> 
+    nkpacket_app:get_srv(SrvId, {protocol, Scheme}).
+
 
 %% @doc Starts a new listening transport.
 -spec start_listener(user_connection(), listener_opts()) ->
@@ -243,10 +289,11 @@ get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
                     Opts1
             end,
             NkPort = #nkport{
-                transp = Transp,
-                local_ip = Ip,
-                local_port = Port,
+                srv_id = maps:get(srv_id, Opts, none),
                 protocol = Protocol,
+                transp = Transp,
+                listen_ip = Ip,
+                listen_port = Port,
                 meta = Opts2
             },
             nkpacket_transport:get_listener(NkPort);
@@ -255,7 +302,7 @@ get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
     end;
 
 get_listener(Uri, Opts) when is_map(Opts) ->
-    case resolve(Uri, Opts) of
+    case resolve(Uri, Opts#{resolve_type=>listen}) of
         {ok, [Conn], Opts1} ->
             get_listener(Conn, Opts1);
         {ok, _, _} ->
@@ -282,30 +329,30 @@ stop_listener(#nkport{pid=Pid}) ->
     stop_listener(Pid).
 
 
-%% @doc Gets all registered transports in all Groups.
+%% @doc Gets all registered transports in all SrvIds.
 -spec get_all() -> 
     [pid()].
 
 get_all() ->
-    [Pid || {_Group, Pid} <- nklib_proc:values(nkpacket_listeners)].
+    [Pid || {_SrvId, Pid} <- nklib_proc:values(nkpacket_listeners)].
 
 
-%% @doc Gets all registered transports for a Group.
--spec get_all(group()) -> 
+%% @doc Gets all registered transports for a SrvId.
+-spec get_all(srv_id()) -> 
     [pid()].
 
-get_all(Group) ->
-    [Pid || {G, Pid} <- nklib_proc:values(nkpacket_listeners), G==Group].
+get_all(SrvId) ->
+    [Pid || {S, Pid} <- nklib_proc:values(nkpacket_listeners), S==SrvId].
 
 
-%% @doc Gets all groups having registered listeners
--spec get_groups() -> 
+%% @doc Gets all service ids having registered listeners
+-spec get_srv_ids() -> 
     map().
 
-get_groups() ->
+get_srv_ids() ->
     lists:foldl(
-        fun({Group, Pid}, Acc) ->
-            maps:put(Group, [Pid|maps:get(Group, Acc, [])], Acc) 
+        fun({SrvId, Pid}, Acc) ->
+            maps:put(SrvId, [Pid|maps:get(SrvId, Acc, [])], Acc) 
         end,
         #{},
         nklib_proc:values(nkpacket_listeners)).
@@ -318,11 +365,11 @@ stop_all() ->
         get_all()).
 
 
-%% @doc Stops all locally started listeners for a Group (only for standard supervisor)
-stop_all(Group) ->
+%% @doc Stops all locally started listeners for a SrvId (only for standard supervisor)
+stop_all(SrvId) ->
     lists:foreach(
         fun(Pid) -> stop_listener(Pid) end,
-        get_all(Group)).
+        get_all(SrvId)).
 
 
 
@@ -338,22 +385,32 @@ get_nkport(Pid) when is_pid(Pid) ->
 
 %% @doc Gets the current port number of a listener or connection
 -spec get_local(pid()|nkport()) ->
-    {ok, {transport(), inet:ip_address(), inet:port_number()}} | error.
+    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
 
-get_local(#nkport{transp=Transp, local_ip=Ip, local_port=Port}) ->
-    {ok, {Transp, Ip, Port}};
+get_local(#nkport{protocol=Proto, transp=Transp, local_ip=Ip, local_port=Port}) ->
+    {ok, {Proto, Transp, Ip, Port}};
 get_local(Pid) when is_pid(Pid) ->
     apply_nkport(Pid, fun get_local/1).
 
 
 %% @doc Gets the current remote peer address and port
 -spec get_remote(pid()|nkport()) ->
-    {ok, {transport(), inet:ip_address(), inet:port_number()}} | error.
+    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
 
-get_remote(#nkport{transp=Transp, remote_ip=Ip, remote_port=Port}) ->
-    {ok, {Transp, Ip, Port}};
+get_remote(#nkport{protocol=Proto, transp=Transp, remote_ip=Ip, remote_port=Port}) ->
+    {ok, {Proto, Transp, Ip, Port}};
 get_remote(Pid) when is_pid(Pid) ->
     apply_nkport(Pid, fun get_remote/1).
+
+
+%% @doc Gets the user metadata of a listener or connection
+-spec get_meta(pid()|nkport()) ->
+    {ok, map()} | error.
+
+get_meta(#nkport{meta=Meta}) ->
+    {ok, Meta};
+get_meta(Pid) when is_pid(Pid) ->
+    apply_nkport(Pid, fun get_meta/1).
 
 
 %% @doc Gets the user metadata of a listener or connection
@@ -385,7 +442,7 @@ send(SendSpec, Msg) ->
 
 
 %% @doc Sends a message to a connection
-%% If a group is included, it will try to reuse any existing connection of the same group
+%% If a service is included, it will try to reuse any existing connection of the same service
 %% (except if force_new option is set)
 -spec send(send_spec() | [send_spec()], term(), send_opts()) ->
     {ok, pid()} | {error, term()}.
@@ -393,7 +450,10 @@ send(SendSpec, Msg) ->
 send(SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
-            nkpacket_transport:send(SendSpec, Msg, Opts1);
+            case nkpacket_transport:send(SendSpec, Msg, Opts1) of
+                {ok, {Pid, _Msg1}} -> {ok, Pid};
+                {error, Error} -> {error, Error}
+            end;
         {error, Error} ->
             {error, Error}
     end;
@@ -435,15 +495,21 @@ get_listening(Protocol, Transp) ->
 
 
 %% @private Finds a listening transport of Proto.
--spec get_listening(protocol(), transport(), #{group=>group()}) -> 
+-spec get_listening(protocol(), transport(), #{srv_id=>srv_id(), ip=>4|6|tuple()}) -> 
     [nkport()].
 
 get_listening(Protocol, Transp, Opts) ->
-    Group = maps:get(group, Opts, none),
+    SrvId = maps:get(srv_id, Opts, none),
+    Tag = case maps:get(ip, Opts, 4) of
+        4 -> nkpacket_listen4;
+        6 -> nkpacket_listen6;
+        Ip when is_tuple(Ip), size(Ip)==4 -> nkpacket_listen4;
+        Ip when is_tuple(Ip), size(Ip)==8 -> nkpacket_listen6
+    end,
     [
         NkPort || 
         {NkPort, _Pid} 
-            <- nklib_proc:values({nkpacket_listen, Group, Protocol, Transp})
+            <- nklib_proc:values({Tag, SrvId, Protocol, Transp})
     ].
 
 
@@ -458,18 +524,18 @@ is_local(Uri) ->
 
 %% @doc Checks if an `uri()' refers to a local started transport.
 %% For ws/wss, it does not check the path
--spec is_local(nklib:uri(), #{group=>group(), no_dns_cache=>boolean()}) -> 
+-spec is_local(nklib:uri(), #{srv_id=>srv_id(), no_dns_cache=>boolean()}) -> 
     boolean().
 
 is_local(#uri{}=Uri, Opts) ->
     case resolve(Uri, Opts) of
-        {ok, [{Protocol, Transp, _Ip, _Port}|_]=Conns, _Opts1} ->
+        {ok, [{Protocol, Transp, Ip, _Port}|_]=Conns, _Opts1} ->
+            List = get_listening(Protocol, Transp, Opts#{ip=>Ip}),
             Listen = [
-                {Transp, Ip, Port} ||
-                #nkport{local_ip=Ip, local_port=Port}
-                    <- get_listening(Protocol, Transp, Opts)
+                {Transp, LIp, LPort} ||
+                    #nkport{local_ip=LIp, local_port=LPort} <- List
             ],
-            LocalIps = nkpacket_config:get_local_ips(),
+            LocalIps = nkpacket_config_cache:local_ips(),
             is_local(Listen, Conns, LocalIps);
         _ ->
             false
@@ -526,7 +592,7 @@ is_local_ip({0,0,0,0}) ->
 is_local_ip({0,0,0,0,0,0,0,0}) ->
     true;
 is_local_ip(Ip) ->
-    lists:member(Ip, nkpacket_config:get_local_ips()).
+    lists:member(Ip, nkpacket_config_cache:local_ips()).
 
 
 
@@ -547,7 +613,7 @@ resolve(Uri) ->
 
 
 %% @private
--spec resolve(nklib:user_uri(), map()) -> 
+-spec resolve(nklib:user_uri(), resolve_opts()) -> 
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
@@ -570,34 +636,37 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
         _ -> [{user, Headers}|UriOpts3]
     end,
     try
-        case nkpacket_util:parse_opts(UriOpts4 ++ maps:to_list(Opts)) of
-            {ok, Opts1} -> 
-                case Opts1 of
-                    #{valid_schemes:=ValidSchemes} ->
-                        case lists:member(Scheme, ValidSchemes) of
-                            true -> ok;
-                            false -> throw({invalid_scheme, Scheme})
-                        end;
-                    _ ->
-                        ok
-                end,
-                Protocol = case Opts1 of
-                    #{group:=Group} -> 
-                        nkpacket_config:get_protocol(Group, Scheme);
-                    _ -> 
-                        nkpacket_config:get_protocol(Scheme)
-                end,
-                case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
-                    {ok, Addrs} ->
-                        Conns = [ 
-                            {Protocol, Transp, Addr, Port} 
-                            || {Transp, Addr, Port} <- Addrs
-                        ],
-                        {ok, Conns, Opts1};
-                    {error, Error} ->
-                        {error, Error}
+        UriOpts5 = case nkpacket_util:parse_uri_opts(UriOpts4) of
+            {ok, ParsedUriOpts} -> ParsedUriOpts;
+            {error, Error1} -> throw(Error1) 
+        end,
+        Opts1 = case nkpacket_util:parse_opts(Opts) of
+            {ok, CoreOpts} -> maps:merge(UriOpts5, CoreOpts);
+            {error, Error2} -> throw(Error2) 
+        end,
+        case Opts1 of
+            #{valid_schemes:=ValidSchemes} ->
+                case lists:member(Scheme, ValidSchemes) of
+                    true -> ok;
+                    false -> throw({invalid_scheme, Scheme})
                 end;
-            {error, Error} -> 
+            _ ->
+                ok
+        end,
+        Protocol = case Opts1 of
+            #{srv_id:=SrvId} -> 
+                nkpacket:get_protocol(SrvId, Scheme);
+            _ -> 
+                nkpacket:get_protocol(Scheme)
+        end,
+        case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
+            {ok, Addrs} ->
+                Conns = [ 
+                    {Protocol, Transp, Addr, Port} 
+                    || {Transp, Addr, Port} <- Addrs
+                ],
+                {ok, Conns, Opts1};
+            {error, Error} ->
                 {error, Error}
         end
     catch
@@ -623,8 +692,8 @@ multi_resolve(Uri) ->
 
 
 %% @private
--spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], map()) -> 
-    {ok, [raw_connection()], map()} |
+-spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], resolve_opts()) -> 
+    {ok, [{[raw_connection()], map()}]} |
     {error, term()}.
    
 multi_resolve([], _Opts) ->
@@ -667,4 +736,8 @@ apply_nkport(Pid, Fun) when is_pid(Pid) ->
         {'EXIT', _} -> error;
         Other -> Other
     end.
+
+
+
+
 

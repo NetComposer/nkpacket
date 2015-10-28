@@ -27,10 +27,10 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([transports/1, default_port/1, encode/2, naptr/2]).
--export([conn_init/1, conn_parse/2, conn_encode/2, conn_bridge/3, conn_handle_call/3,
-		 conn_handle_cast/2, conn_handle_info/2, conn_stop/2]).
--export([listen_init/1, listen_parse/4, listen_handle_call/3,
-		 listen_handle_cast/2, listen_handle_info/2, listen_stop/2]).
+-export([conn_init/1, conn_parse/3, conn_encode/3, conn_bridge/4, conn_handle_call/4,
+		 conn_handle_cast/3, conn_handle_info/3, conn_stop/3]).
+-export([listen_init/1, listen_parse/5, listen_handle_call/4,
+		 listen_handle_cast/3, listen_handle_info/3, listen_stop/3]).
 -export([http_init/4]).
 -export([behavior_info/1]).
 
@@ -63,8 +63,11 @@ behavior_info(_) ->
 
 %% @doc If you implement this function, it must return, for any supported scheme,
 %% the list of supported transports. 
+%% If you supply a tuple, it means that the first element, if used, must be 
+%% converted to the second.
+%% The first element will be used by default, and MUST NOT be a tuple
 -spec transports(nklib:scheme()) ->
-    [nkpacket:transport()].
+    [nkpacket:transport() | {nkpacket:transport(), nkpacket:transport()}].
 
 transports(_) ->
 	[tcp, tls, udp, sctp, ws, wss].
@@ -128,60 +131,60 @@ conn_init(_) ->
 
 
 %% @doc This function is called when a new message arrives to the connection
--spec conn_parse(nkpacket:incoming(), conn_state()) ->
+-spec conn_parse(nkpacket:incoming(), nkpacket:nkport(), conn_state()) ->
 	{ok, conn_state()} | {bridge, nkpacket:nkport()} | 
 	{stop, Reason::term(), conn_state()}.
 
-conn_parse(_Msg, ConnState) ->
+conn_parse(_Msg, _NkPort, ConnState) ->
 	{ok, ConnState}.
 
 
 %% @doc This function is called when a new message must be send to the connection
--spec conn_encode(term(), conn_state()) ->
+-spec conn_encode(term(), nkpacket:nkport(), conn_state()) ->
 	{ok, nkpacket:outcoming(), conn_state()} | {error, term(), conn_state()} |
 	{stop, Reason::term(), conn_state()}.
 
-conn_encode(_Term, ConnState) ->
+conn_encode(_Term, _NkPort, ConnState) ->
 	{error, not_defined, ConnState}.
 
 
 %% @doc This function is called on incoming data for bridged connections
--spec conn_bridge(nkpacket:incoming(), up|down, conn_state()) ->
+-spec conn_bridge(nkpacket:incoming(), up|down, nkpacket:nkport(), conn_state()) ->
 	{ok, nkpacket:incoming(), conn_state()} | {skip, conn_state()} | 
 	{stop, term(), conn_state()}.
 
-conn_bridge(Data, _Type, ConnState) ->
+conn_bridge(Data, _Type, _NkPort, ConnState) ->
 	{ok, Data, ConnState}.
 
 
 %% @doc Called when the connection received a gen_server:call/2,3
--spec conn_handle_call(term(), {pid(), term()}, conn_state()) ->
+-spec conn_handle_call(term(), {pid(), term()}, nkpacket:nkport(), conn_state()) ->
 	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
-conn_handle_call(_Msg, _From, ListenState) ->
-	{stop, not_defined, ListenState}.
+conn_handle_call(_Msg, _From, _NkPort, ConnState) ->
+	{stop, not_defined, ConnState}.
 
 
 %% @doc Called when the connection received a gen_server:cast/2
--spec conn_handle_cast(term(), conn_state()) ->
+-spec conn_handle_cast(term(), nkpacket:nkport(), conn_state()) ->
 	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
-conn_handle_cast(_Msg, ListenState) ->
-	{stop, not_defined, ListenState}.
+conn_handle_cast(_Msg, _NkPort, ConnState) ->
+	{stop, not_defined, ConnState}.
 
 
 %% @doc Called when the connection received an erlang message
--spec conn_handle_info(term(), conn_state()) ->
+-spec conn_handle_info(term(), nkpacket:nkport(), conn_state()) ->
 	{ok, conn_state()} | {stop, Reason::term(), conn_state()}.
 
-conn_handle_info(_Msg, ListenState) ->
-	{stop, not_defined, ListenState}.
+conn_handle_info(_Msg, _NkPort, ConnState) ->
+	{stop, not_defined, ConnState}.
 
 %% @doc Called when the connection stops
--spec conn_stop(Reason::term(), conn_state()) ->
+-spec conn_stop(Reason::term(), nkpacket:nkport(), conn_state()) ->
 	ok.
 
-conn_stop(_Reason, _State) ->
+conn_stop(_Reason, _NkPort, _ConnState) ->
 	ok.
 
 
@@ -202,42 +205,43 @@ listen_init(_) ->
 
 
 %% @doc This function is called only for UDP transports using no_connections=>true
--spec listen_parse(inet:ip_address(), inet:port_number(), binary(), listen_state()) ->
+-spec listen_parse(inet:ip_address(), inet:port_number(), binary(), nkpacket:nkport(), 
+				   listen_state()) ->
     {ok, listen_state()} | {stop, Reason::term(), listen_state()}.
 
-listen_parse(_Ip, _Port, _Msg, ListenState) ->
+listen_parse(_Ip, _Port, _Msg, _NkPort, ListenState) ->
 	{stop, not_defined, ListenState}.
 
 
 %% @doc Called when the listening transport received a gen_server:call/2,3
--spec listen_handle_call(term(), {pid(), term()}, listen_state()) ->
+-spec listen_handle_call(term(), {pid(), term()}, nkpacket:nkport(), listen_state()) ->
 	{ok, listen_state()} | {stop, Reason::term(), listen_state()}.
 
-listen_handle_call(_Msg, _From, ListenState) ->
+listen_handle_call(_Msg, _From, _NkPort, ListenState) ->
 	{stop, not_defined, ListenState}.
 
 
 %% @doc Called when the listening transport received a gen_server:cast/2
--spec listen_handle_cast(term(), listen_state()) ->
+-spec listen_handle_cast(term(), nkpacket:nkport(), listen_state()) ->
 	{ok, listen_state()} | {stop, Reason::term(), listen_state()}.
 
-listen_handle_cast(_Msg, ListenState) ->
+listen_handle_cast(_Msg, _NkPort, ListenState) ->
 	{stop, not_defined, ListenState}.
 
 
 %% @doc Called when the listening transport received an erlang message
--spec listen_handle_info(term(), listen_state()) ->
+-spec listen_handle_info(term(), nkpacket:nkport(), listen_state()) ->
 	{ok, listen_state()} | {stop, Reason::term(), listen_state()}.
 
-listen_handle_info(_Msg, ListenState) ->
+listen_handle_info(_Msg, _NkPort, ListenState) ->
 	{stop, not_defined, ListenState}.
 
 
 %% @doc Called when the listening transport stops
--spec listen_stop(Reason::term(), listen_state()) ->
+-spec listen_stop(Reason::term(), nkpacket:nkport(), listen_state()) ->
 	ok.
 
-listen_stop(_Reason, _State) ->
+listen_stop(_Reason, _NkPort, _State) ->
 	ok.
 
 

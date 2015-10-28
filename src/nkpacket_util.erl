@@ -23,12 +23,13 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([console_loglevel/1, make_web_proto/1]).
+-export([make_cache/0, make_tls_opts/1]).
 -export([debug/0, info/0, notice/0, warning/0, error/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
--export([check_paths/2]).
--export([parse_opts/1, spec/0, tls_spec/0]).
+-export([norm_path/1]).
+-export([parse_opts/1, parse_uri_opts/1]).
 
 -include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
@@ -53,6 +54,34 @@ error() -> console_loglevel(error).
 
 console_loglevel(Level) -> 
     lager:set_loglevel(lager_console_backend, Level).
+
+
+%% @doc Adds SSL options
+-spec make_tls_opts(list()|map()) ->
+    list().
+
+make_tls_opts(Opts) ->
+    Opts1 = nklib_util:filtermap(
+        fun(Term) ->
+            case Term of
+                {tls_certfile, Val} -> {true, {certfile, Val}};
+                {tls_keyfile, Val} -> {true, {keyfile, Val}};
+                {tls_cacertfile, Val} -> {true, {cacertfile, Val}};
+                {tls_password, Val} -> {true, {password, Val}};
+                {tls_verify, Val} -> {true, {verify, Val}};
+                {tls_depth, Val} -> {true, {depth, Val}};
+                {tls_versions, Val} -> {true, {versions, Val}};
+                _ -> false
+            end
+        end,
+        nklib_util:to_list(Opts)),
+    Opts2 = maps:merge(nkpacket_app:get(tls_defaults), maps:from_list(Opts1)),
+    Opts3 = case Opts2 of
+        #{verify:=true} -> Opts2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
+        #{verify:=false} -> maps:remove(verify, Opts2);
+        _ -> Opts2
+    end,
+    maps:to_list(Opts3).
 
 
 %% @private
@@ -90,12 +119,35 @@ make_web_proto(O) ->
     {ok, map()} | {error, term()}.
 
 parse_opts(Opts) ->
-    case nklib_config:parse_config(Opts, spec(), #{return=>map}) of
+    Syntax = nkpacket_syntax:syntax(),
+    case nklib_config:parse_config(Opts, Syntax, #{return=>map}) of
         {ok, Map, _} ->
             {ok, Map};
         {error, Error} ->
             {error, Error}
     end.
+
+
+%% @private
+-spec parse_uri_opts(map()|list()) ->
+    {ok, map()} | {error, term()}.
+
+parse_uri_opts(Opts) ->
+    Syntax = nkpacket_syntax:uri_syntax(),
+    case nklib_config:parse_config(Opts, Syntax, #{return=>map}) of
+        {ok, Map, _} ->
+            {ok, Map};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
+%% @private
+make_cache() ->
+    Defaults = nkpacket_syntax:app_defaults(),
+    Keys = [local_ips, main_ip, main_ip6 | maps:keys(Defaults)],
+    nklib_config:make_cache(Keys, nkpacket, none, nkpacket_config_cache, none).
+
 
 
 %% @doc Get all local network ips.
@@ -280,91 +332,25 @@ remove_user(NkPort) ->
 
 
 %% @private
-check_paths(_, <<"/">>) ->
-    true;
+norm_path(any) ->
+    [];
 
- check_paths(ReqPath, BasePath) ->
-    ReqParts = binary:split(ReqPath, <<"/">>, [global]),
-    BaseParts = binary:split(BasePath, <<"/">>, [global]),
-    check_paths_iter(ReqParts, BaseParts).
-    
+norm_path(<<>>) ->
+    [];
 
-%% @private
-check_paths_iter([Part|Rest1], [Part|Rest2]) ->
-    check_paths_iter(Rest1, Rest2);
+norm_path(<<"/">>) ->
+    [];
 
-check_paths_iter(_, []) ->
-    true;
+norm_path(Path) when is_binary(Path) ->
+    case binary:split(nklib_util:to_binary(Path), <<"/">>, [global]) of
+        [<<>> | Rest] -> Rest;
+        Other -> Other
+    end;
 
-check_paths_iter(_A, _B) ->
-    % lager:warning("F: ~p, ~p", [_A, _B]),
-    false.
+norm_path(Other) ->
+    norm_path(nklib_util:to_binary(Other)).
 
 
-%% ===================================================================
-%% Options Parser
-%% =================================================================
-
-
-%% @private
-spec() ->
-    #{
-        group => any,
-        user => any,
-        monitor => proc,
-        no_dns_cache => boolean,
-        idle_timeout => pos_integer,
-        refresh_fun => {function, 1},
-        valid_schemes => {list, atom},
-        udp_starts_tcp => boolean,
-        udp_no_connections => boolean,
-        udp_stun_reply => boolean,
-        udp_stun_t1 => nat_integer,
-        sctp_out_streams => nat_integer,
-        sctp_in_streams => nat_integer,
-        tcp_packet => [{enum, [raw]}, {integer, [1, 2, 4]}],
-        tcp_max_connections => nat_integer,
-        tcp_listeners => nat_integer,
-        tls_opts => tls_spec(),
-        host => host,
-        path => path,
-        cowboy_opts => list,
-        ws_proto => lower,
-        http_proto => fun spec_http_proto/3,
-        connect_timeout => nat_integer,
-        listen_port => [{enum, [none]}, {record, nkport}],
-        force_new => boolean,
-        udp_to_tcp => boolean,
-
-        tls_certfile => {update, map, tls_opts, certfile, string},
-        tls_keyfile => {update, map, tls_opts, keyfile, string},
-        tls_cacertfile => {update, map, tls_opts, cacertfile, string},
-        tls_password => {update, map, tls_opts, password, string},
-        tls_verify => {update, map, tls_opts, verify, boolean},
-        tls_depth => {update, map, tls_opts, depth, {integer, 0, 16}},
-
-        password => binary      % Not used by nkpacket, for users
-
-
-    }.
-
-
-tls_spec() -> 
-    #{
-        certfile => string,
-        keyfile => string,
-        cacertfile => string,
-        password => string,
-        verify => boolean,
-        depth => {integer, 0, 16}
-    }.
-
-
-%% @private
-spec_http_proto(_, {static, #{path:=_}}, _) -> ok;
-spec_http_proto(_, {dispatch, #{routes:=_}}, _) -> ok;
-spec_http_proto(_, {custom, #{env:=_, middlewares:=_}}, _) -> ok;
-spec_http_proto(_, _, _) -> error.
 
 
 %% ===================================================================
@@ -372,29 +358,29 @@ spec_http_proto(_, _, _) -> error.
 %% =================================================================
 
   
-% -define(TEST, true).
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
+% % -define(TEST, true).
+% -ifdef(TEST).
+% -include_lib("eunit/include/eunit.hrl").
 
-path_test() ->
-    ?debugMsg("HTTP path test"),
-    true = test_path("/a/b/c", "/"),
-    true = test_path("/", "/"),
-    false = test_path("/", "/a"),
-    true = test_path("/a/b/c", "a"),
-    false = test_path("/a/b/c", "b"),
-    true = test_path("/a/b/c", "a/b/c"),
-    true = test_path("/a/b/c", "a/b/c/"),
-    true = test_path("/a/b/c", "/a/b/"),
-    false = test_path("/a/b/c", "a/b/c/d"),
-    ok.
-
-
-test_path(Req, Path) ->
-    check_paths(nklib_parse:path(Req), nklib_parse:path(Path)).
+% path_test() ->
+%     ?debugMsg("HTTP path test"),
+%     true = test_path("/a/b/c", "/"),
+%     true = test_path("/", "/"),
+%     false = test_path("/", "/a"),
+%     true = test_path("/a/b/c", "a"),
+%     false = test_path("/a/b/c", "b"),
+%     true = test_path("/a/b/c", "a/b/c"),
+%     true = test_path("/a/b/c", "a/b/c/"),
+%     true = test_path("/a/b/c", "/a/b/"),
+%     false = test_path("/a/b/c", "a/b/c/d"),
+%     ok.
 
 
--endif.
+% test_path(Req, Path) ->
+%     check_paths(nklib_parse:path(Req), nklib_parse:path(Path)).
+
+
+% -endif.
 
 
 

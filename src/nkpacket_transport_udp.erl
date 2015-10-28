@@ -49,7 +49,8 @@ send_stun_sync(Pid, Ip, Port, Timeout) ->
     end.
 
 
-%% @private Sends a STUN binding request
+%% @private Sends a STUN binding request, the response will be sent to the calling 
+%% process as {stun, {ok, Ip, Port}|error}.
 send_stun_async(Pid, Ip, Port) ->
     gen_server:cast(Pid, {send_stun, Ip, Port, self()}).
 
@@ -64,9 +65,9 @@ send_stun_async(Pid, Ip, Port) ->
     supervisor:child_spec().
 
 get_listener(NkPort) ->
-    #nkport{transp=udp, local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, transp=udp, listen_ip=Ip, listen_port=Port} = NkPort,
     {
-        {udp, Ip, Port, make_ref()}, 
+        {{Proto, udp, Ip, Port, <<>>}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -125,7 +126,7 @@ start_link(NkPort) ->
     packet :: binary(),
     retrans_timer :: reference(),
     next_retrans :: integer(),
-    from :: {call, {pid(), term()}} | {cast, pid()}
+    from :: {call, {pid(), term()}} | {msg, pid()}
 }).
 
 -record(state, {
@@ -148,48 +149,52 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        transp = udp,
-        local_ip = Ip, 
-        local_port = Port,
+        srv_id = SrvId,
         protocol = Protocol, 
+        transp = udp,
+        listen_ip = ListenIp, 
+        listen_port = ListenPort,
         meta = Meta
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
     try
-        ListenOpts = [binary, {reuseaddr, true}, {ip, Ip}, {active, once}],
+        ListenOpts = [binary, {reuseaddr, true}, {ip, ListenIp}, {active, once}],
         Socket = case nkpacket_transport:open_port(NkPort, ListenOpts) of
             {ok, Socket0}  -> Socket0;
             {error, Error} -> throw(Error) 
         end,
-        {ok, Port1} = inet:port(Socket),
+        {ok, {LocalIp, LocalPort}} = inet:sockname(Socket),
         Self = self(),
+        NkPort1 = NkPort#nkport{
+            local_ip = LocalIp,
+            local_port = LocalPort, 
+            listen_port = LocalPort,
+            pid = self(),
+            socket = Socket
+        },
         TcpPid = case Meta of
             #{udp_starts_tcp:=true} -> 
-                TcpNkPort = NkPort#nkport{transp=tcp, local_port=Port1},
+                TcpNkPort = NkPort1#nkport{transp=tcp},
                 case nkpacket_transport_tcp:start_link(TcpNkPort) of
                     {ok, TcpPid0} -> 
                         TcpPid0;
                     {error, TcpError} -> 
                         lager:warning("UDP transport could not open TCP port ~p: ~p",
-                                      [Port1, TcpError]),
+                                      [LocalPort, TcpError]),
                         throw(could_not_open_tcp)
                 end;
             _ ->
                 undefined
         end,
-        NkPort1 = NkPort#nkport{
-            local_port = Port1, 
-            listen_ip = Ip,
-            listen_port = Port1,
-            pid = self(),
-            socket = Socket
-        },
-        Group = maps:get(group, Meta, none),
-        nklib_proc:put(nkpacket_listeners, Group),
+        nklib_proc:put(nkpacket_listeners, SrvId),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},
-        nklib_proc:put({nkpacket_listen, Group, Protocol, udp}, ConnPort),
+        ListenType = case size(ListenIp) of
+            4 -> nkpacket_listen4;
+            8 -> nkpacket_listen6
+        end,
+        nklib_proc:put({ListenType, SrvId, Protocol, udp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
         MonRef = case Meta of
             #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
@@ -211,7 +216,7 @@ init([NkPort]) ->
     catch
         throw:Throw ->
             lager:error("could not start UDP transport on ~p:~p (~p)", 
-                        [Ip, Port, Throw]),
+                        [ListenIp, ListenPort, Throw]),
             {stop, Throw}
     end.
 
@@ -238,8 +243,8 @@ handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
 handle_call(get_socket, _From, #state{socket=Socket}=State) ->
     {reply, {ok, Socket}, State};
 
-handle_call(Msg, From, State) ->
-    case call_protocol(listen_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -251,10 +256,10 @@ handle_call(Msg, From, State) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast({send_stun, Ip, Port, Pid}, State) ->
-    {noreply, do_send_stun(Ip, Port, {cast, Pid}, State)};
+    {noreply, do_send_stun(Ip, Port, {msg, Pid}, State)};
 
-handle_cast(Msg, State) ->
-    case call_protocol(listen_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -314,8 +319,8 @@ handle_info({'EXIT', _Pid, normal}, State) ->
 handle_info(killme, _State) ->
     error(killme);
 
-handle_info(Msg, State) ->
-    case call_protocol(listen_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -334,14 +339,14 @@ code_change(_OldVsn, State, _Extra) ->
     ok.
 
 terminate(Reason, State) ->  
-    #state{tcp_pid = Pid} = State,
+    #state{nkport=NkPort, tcp_pid=Pid} = State,
     case is_pid(Pid) of
         true ->
             exit(Pid, shutdown);
         false ->
             ok
     end,
-    catch call_protocol(listen_stop, [Reason], State).
+    catch call_protocol(listen_stop, [Reason, NkPort], State).
 
 
 
@@ -368,7 +373,7 @@ do_send_stun(Ip, Port, From, State) ->
                          [Ip, Port, Error]),
             case From of
                 {call, CallFrom} -> gen_server:reply(CallFrom, error);
-                {cast, CastPid} -> gen_server:cast(CastPid, {stun, error})
+                {msg, MsgPid} -> MsgPid ! {stun, error}
             end,
             State
     end.
@@ -404,7 +409,7 @@ do_stun_timeout(Stun, State) ->
     lager:notice("STUN request to ~p timeout", [{Ip, Port}]),
     case From of
         {call, CallFrom} -> gen_server:reply(CallFrom, error);
-        {cast, CastPid} -> gen_server:cast(CastPid, {stun, error})
+        {msg, MsgPid} -> MsgPid ! {stun, error}
     end,
     State.
         
@@ -427,7 +432,7 @@ do_stun_response(TransId, Attrs, State) ->
             Msg = {ok, StunIp, StunPort},
             case From of
                 {call, CallFrom} -> gen_server:reply(CallFrom, Msg);
-                {cast, CastPid} -> gen_server:cast(CastPid, {stun, Msg})
+                {msg, MsgPid} -> MsgPid ! {stun, Msg}
             end,
             State#state{stuns=Stuns1};
         false ->
@@ -443,9 +448,9 @@ do_stun_response(TransId, Attrs, State) ->
 
 
 %% @private 
-read_packets(Ip, Port, Packet, #state{no_connections=true}=State, N) ->
+read_packets(Ip, Port, Packet, #state{no_connections=true, nkport=NkPort}=State, N) ->
     #state{socket=Socket} = State,
-    case call_protocol(listen_parse, [Ip, Port, Packet], State) of
+    case call_protocol(listen_parse, [Ip, Port, Packet, NkPort], State) of
         undefined -> 
             lager:warning("Received data for uknown protocol", []),
             {ok, State};
@@ -482,8 +487,9 @@ do_connect(Ip, Port, State) ->
 
 %% @private
 do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
-    #nkport{protocol=Proto, meta=ListenMeta} = NkPort,
-    case nkpacket_transport:get_connected({Proto, udp, Ip, Port}, ListenMeta) of
+    #nkport{srv_id=SrvId, protocol=Proto, meta=ListenMeta} = NkPort,
+    Conn = {Proto, udp, Ip, Port},
+    case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
         [Pid|_] -> 
             {ok, Pid};
         [] ->
@@ -491,8 +497,6 @@ do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
                 undefined -> ListenMeta;
                 _ -> maps:merge(ListenMeta, Meta)
             end,
-            
-
             NkPort1 = NkPort#nkport{
                 remote_ip = Ip, 
                 remote_port = Port,

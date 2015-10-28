@@ -50,6 +50,16 @@
     ?DO_LOG(error, Domain, Text, List)).
 
 
+-define(TLS_SYNTAX,
+    tls_certfile => string,
+    tls_keyfile => string,
+    tls_cacertfile => string,
+    tls_password => string,
+    tls_verify => boolean,
+    tls_depth => {integer, 0, 16},
+    tls_versions => {list, atom}
+).
+
 
 %% ===================================================================
 %% Records
@@ -58,6 +68,8 @@
 %% Meta can contain most values from listener_opts and connect_opts
 
 -record(nkport, {
+    srv_id :: term(),
+    protocol :: nkpacket:protocol(),
     transp :: nkpacket:transport(),
     local_ip :: inet:ip_address(),
     local_port :: inet:port_number(),
@@ -65,7 +77,6 @@
     remote_port :: inet:port_number(),
     listen_ip :: inet:ip_address(),
     listen_port :: inet:port_number(),
-    protocol :: nkpacket:protocol(),
     pid :: pid(),
     socket :: nkpacket_transport:socket(),
     meta = #{} :: map()

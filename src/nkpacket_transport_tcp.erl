@@ -41,9 +41,9 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
-    #nkport{local_ip=Ip, local_port=Port} = NkPort,
+    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port} = NkPort,
     {
-        {Transp, Ip, Port, make_ref()}, 
+        {{Proto, Transp, Ip, Port, <<>>}, make_ref()}, 
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -66,9 +66,10 @@ connect(NkPort) ->
     SocketOpts = outbound_opts(NkPort),
     {InetMod, TranspMod, _} = get_modules(Transp),
     ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config:connect_timeout();
+        undefined -> nkpacket_config_cache:connect_timeout();
         Timeout0 -> Timeout0
     end,
+    lager:info("Connect to: ~p:~p:~p (~p)", [Transp, Ip, Port, SocketOpts]),
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} -> 
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
@@ -110,26 +111,28 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
+        srv_id = SrvId,
+        protocol = Protocol,
         transp = Transp, 
-        local_ip = Ip, 
-        local_port = Port,
-        meta = Meta,
-        protocol = Protocol
+        listen_ip = ListenIp, 
+        listen_port = ListenPort,
+        meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     ListenOpts = listen_opts(NkPort),
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
-            {ok, {_, Port1}} = InetMod:sockname(Socket),
+            {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
             NkPort1 = NkPort#nkport{
-                local_port = Port1, 
-                listen_ip = Ip,
-                listen_port = Port1,
+                local_ip = LocalIp,
+                local_port = LocalPort, 
+                listen_ip = ListenIp,
+                listen_port = LocalPort,
                 pid = self(),
                 socket = Socket
             },
-            RanchId = {Transp, Ip, Port1},
+            RanchId = {Transp, ListenIp, LocalPort},
             RanchPort = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)},
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
@@ -141,12 +144,16 @@ init([NkPort]) ->
                 ],
                 ?MODULE,
                 [RanchPort]),
-            Group = maps:get(group, Meta, none),
-            nklib_proc:put(nkpacket_listeners, Group),
-            ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
+            nklib_proc:put(nkpacket_listeners, SrvId),
+            ConnMetaOpts = [tcp_packet | ?CONN_LISTEN_OPTS],
+            % ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
-            nklib_proc:put({nkpacket_listen, Group, Protocol, Transp}, ConnPort),
+            ListenType = case size(ListenIp) of
+                4 -> nkpacket_listen4;
+                8 -> nkpacket_listen6
+            end,
+            nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
@@ -163,7 +170,7 @@ init([NkPort]) ->
             {ok, State};
         {error, Error} ->
             lager:error("could not start ~p transport on ~p:~p (~p)", 
-                   [Transp, Ip, Port, Error]),
+                   [Transp, ListenIp, ListenPort, Error]),
             {stop, Error}
     end.
 
@@ -179,8 +186,8 @@ handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
 handle_call(get_state, _From, State) ->
     {reply, State, State};
 
-handle_call(Msg, From, State) ->
-    case call_protocol(listen_handle_call, [Msg, From], State) of
+handle_call(Msg, From, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -191,8 +198,8 @@ handle_call(Msg, From, State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast(Msg, State) ->
-    case call_protocol(listen_handle_cast, [Msg], State) of
+handle_cast(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -209,8 +216,8 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=Sta
 handle_info({'EXIT', Pid, Reason}, #state{ranch_pid=Pid}=State) ->
     {stop, {ranch_stop, Reason}, State};
 
-handle_info(Msg, State) ->
-    case call_protocol(listen_handle_info, [Msg], State) of
+handle_info(Msg, #state{nkport=NkPort}=State) ->
+    case call_protocol(listen_handle_info, [Msg, NkPort], State) of
         undefined -> {noreply, State};
         {ok, State1} -> {noreply, State1};
         {stop, Reason, State1} -> {stop, Reason, State1}
@@ -232,10 +239,10 @@ terminate(Reason, State) ->
     #state{
         ranch_id = RanchId,
         ranch_pid = RanchPid,
-        nkport = #nkport{transp=Transp, socket=Socket}
+        nkport = #nkport{transp=Transp, socket=Socket} = NkPort
     } = State,
     lager:debug("TCP/TLS listener stop: ~p", [Reason]),
-    catch call_protocol(listen_stop, [Reason], State),
+    catch call_protocol(listen_stop, [Reason, NkPort], State),
     exit(RanchPid, shutdown),
     timer:sleep(100),   %% Give time to ranch to close acceptors
     catch ranch_server:cleanup_listener_opts(RanchId),
@@ -264,11 +271,16 @@ start_link(Ref, Socket, TranspModule, [#nkport{meta=Meta}=NkPort]) ->
         remote_port = RemotePort,
         socket = Socket
     },
-    Opts = lists:flatten([
-        case Meta of #{tcp_packet:=Packet} -> {packet, Packet}; _ -> [] end,
-        {keepalive, true}, {active, once}
-    ]),
-    TranspModule:setopts(Socket, Opts),
+    case TranspModule of
+        ranch_ssl ->
+            ok;
+        ranch_tcp ->
+            Opts = lists:flatten([
+                case Meta of #{tcp_packet:=Packet} -> {packet, Packet}; _ -> [] end,
+                {keepalive, true}, {active, once}
+            ]),
+            TranspModule:setopts(Socket, Opts)
+    end,
     nkpacket_connection:ranch_start_link(NkPort1, Ref).
 
 
@@ -288,18 +300,18 @@ outbound_opts(#nkport{transp=tcp, meta=Opts}) ->
     ];
 
 outbound_opts(#nkport{transp=tls, meta=Opts}) ->
-    Base = [
+    [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         binary, {active, false}, {nodelay, true}, {keepalive, true}
-    ],
-    nkpacket_config:add_tls_opts(Base, Opts).
+    ]
+    ++ nkpacket_util:make_tls_opts(Opts).
 
 
 %% @private Gets socket options for listening connections
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{transp=tcp, local_ip=Ip, meta=Opts}) ->
+listen_opts(#nkport{transp=tcp, listen_ip=Ip, meta=Opts}) ->
     [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,
@@ -307,14 +319,14 @@ listen_opts(#nkport{transp=tcp, local_ip=Ip, meta=Opts}) ->
         {reuseaddr, true}, {backlog, 1024}
     ];
 
-listen_opts(#nkport{transp=tls, local_ip=Ip, meta=Opts}) ->
-    Base = [
+listen_opts(#nkport{transp=tls, listen_ip=Ip, meta=Opts}) ->
+    [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
-        {ip, Ip}, {active, false}, binary,
+        {ip, Ip}, {active, once}, binary,
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
-    ],
-    nkpacket_config:add_tls_opts(Base, Opts).
+    ]
+    ++ nkpacket_util:make_tls_opts(Opts).
 
 
 %% @private

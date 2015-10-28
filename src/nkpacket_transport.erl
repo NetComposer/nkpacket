@@ -60,42 +60,48 @@ get_connected({_Proto, Transp, _Ip, _Port}, _Opts) when Transp==http; Transp==ht
     [];
 
 get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==wss ->
-    Path = maps:get(path, Opts, <<"/">>),
-    Host = maps:get(host, Opts, all),
-    WsProto = maps:get(ws_proto, Opts, all),
-    Group = maps:get(group, Opts, none),
+    Host = maps:get(host, Opts, any),
+    Path = maps:get(path, Opts, any),
+    WsProto = maps:get(ws_proto, Opts, any),
+    SrvId = maps:get(srv_id, Opts, none),
     nklib_util:filtermap(
-        fun({#{path:=ConnPath}=Meta, Pid}) ->
-            Ok = 
-                ConnPath==Path andalso
-                case maps:get(host, Meta, all) of
-                    all -> true;
+        fun({Meta, Pid}) ->
+            HostOK = Host==any orelse 
+                case maps:get(host, Meta, any) of
+                    any -> true;
                     Host -> true;
                     _ -> false
-                end andalso
-                case maps:get(ws_proto, Meta, all) of
-                    all -> true;
+                end,
+            PathOK = Path==any orelse
+                case maps:get(path, Meta, any) of
+                    any -> true;
+                    Path -> true;
+                    _ -> false
+                end,
+            ProtoOK = WsProto==any orelse 
+                case maps:get(ws_proto, Meta, any) of
+                    any -> true;
                     WsProto -> true;
                     _ -> false
                 end,
-            case Ok of
+            case HostOK andalso PathOK andalso ProtoOK of
                 true -> {true, Pid};
                 false -> false
             end
         end,
-        nklib_proc:values({nkpacket_connection, Group, Conn}));
+        nklib_proc:values({nkpacket_connection, SrvId, Conn}));
 
 get_connected({_, _, _, _}=Conn, Opts) ->
-    Group = maps:get(group, Opts, none),
+    SrvId = maps:get(srv_id, Opts, none),
     [
         Pid || 
-        {_Meta, Pid} <- nklib_proc:values({nkpacket_connection, Group, Conn})
+        {_Meta, Pid} <- nklib_proc:values({nkpacket_connection, SrvId, Conn})
     ].
 
 
 %% @private
 -spec send([nkpacket:send_spec()], term(), nkpacket:send_opts()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, {pid(), term()}} | {error, term()}.
 
 send([Uri|Rest], Msg, Opts) when is_binary(Uri); is_list(Uri) ->
     case nklib_parse:uris(Uri) of
@@ -108,17 +114,22 @@ send([Uri|Rest], Msg, Opts) when is_binary(Uri); is_list(Uri) ->
 send([#uri{}=Uri|Rest], Msg, Opts) ->
     case nkpacket:resolve(Uri, Opts) of
         {ok, RawConns, Opts1} ->
-            lager:debug("Transport send to ~p (~p)", [RawConns, Rest]),
+            lager:debug("transport send to ~p (~p)", [RawConns, Rest]),
             send(RawConns++Rest, Msg, Opts1);
         {error, Error} ->
             lager:notice("Error sending to ~p: ~p", [Uri, Error]),
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
 
+% Used when we don't want to reuse the same exact connection (stateless proxies)
+send([#nkport{socket=undefined}=NkPort|Rest], Msg, Opts) ->
+    {ok, Conn} = nkpacket:get_remote(NkPort),
+    send([{current, Conn}|Rest], Msg, Opts);
+
 send([Port|Rest], Msg, Opts) when is_pid(Port); is_record(Port, nkport) ->
-    lager:debug("Transport send to nkport ~p", [Port]),
+    lager:debug("transport send to nkport ~p", [Port]),
     case do_send(Msg, [Port], Opts#{udp_to_tcp=>false}) of
-        {ok, Pid} -> {ok, Pid};
+        {ok, Res} -> {ok, Res};
         {error, Opts1} -> send(Rest, Msg, Opts1)
     end;
 
@@ -140,12 +151,12 @@ send([{Protocol, Transp, Ip, 0}|Rest], Msg, Opts) ->
 send([{connect, Conn}|Rest], Msg, Opts) ->
     RemoveOpts = [udp_to_tcp, last_error],
     ConnOpts = maps:without(RemoveOpts, Opts),
-    lager:debug("Transport connecting to ~p (~p)", [Conn, ConnOpts]),
+    lager:debug("transport connecting to ~p (~p)", [Conn, ConnOpts]),
     case connect([Conn], ConnOpts) of
         {ok, Pid} ->
             case do_send(Msg, [Pid], Opts) of
-                {ok, Pid} ->
-                    {ok, Pid};
+                {ok, Res} ->
+                    {ok, Res};
                 retry_tcp ->
                     Conn1 = setelement(2, Conn, tcp), 
                     send([Conn1|Rest], Msg, Opts);
@@ -157,24 +168,24 @@ send([{connect, Conn}|Rest], Msg, Opts) ->
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
 
-send([{_, _, _, _}=Conn|Rest], Msg, #{group:=_}=Opts) ->
+send([{_, _, _, _}=Conn|Rest], Msg, #{srv_id:=_}=Opts) ->
     Pids = case Opts of
         #{force_new:=true} -> [];
         _ -> get_connected(Conn, Opts)
     end,
     case do_send(Msg, Pids, Opts) of
-        {ok, Pid} -> 
-            lager:debug("Transport used previous connection to ~p (~p)", [Conn, Opts]),
-            {ok, Pid};
+        {ok, Res} -> 
+            lager:debug("transport used previous connection to ~p (~p)", [Conn, Opts]),
+            {ok, Res};
         retry_tcp ->
             Conn1 = setelement(2, Conn, tcp), 
-            lager:debug("Transport retrying with tcp", []),
+            lager:debug("transport retrying with tcp", []),
             send([Conn1|Rest], Msg, Opts);
         {error, Opts1} -> 
             send([{connect, Conn}|Rest], Msg, Opts1)
     end;
 
-% If we dont specify a group, do not reuse connections
+% If we dont specify a service, do not reuse connections
 send([{_, _, _, _}=Conn|Rest], Msg, Opts) ->
     send([{connect, Conn}|Rest], Msg, Opts);
 
@@ -189,19 +200,29 @@ send([], _, _) ->
     {error, no_transports}.
 
 
+% get_allc() ->
+%     [element(2, nkpacket:get_nkport(Pid)) ||
+%         Pid <- nkpacket_connection:get_all()].
+
+
+
 %% @private
 -spec do_send(term(), [#nkport{}|pid()], nkpacket:send_opts()) ->
-    {ok, #nkport{}} | retry_tcp | {error, nkpacket:send_opts()}.
+    {ok, {pid(), term()}} | retry_tcp | {error, nkpacket:send_opts()}.
 
 do_send(_Msg, [], Opts) ->
     {error, Opts};
 
+do_send(Msg, [Port|Rest], #{pre_send_fun:=Fun}=Opts) ->
+    Msg1 = get_msg_fun(Fun, Msg, Port),
+    do_send(Msg1, [Port|Rest], maps:remove(pre_send_fun, Opts));
+
 do_send(Msg, [Port|Rest], Opts) ->
     case nkpacket_connection:send(Port, Msg) of
         ok when is_pid(Port) ->
-            {ok, Port};
+            {ok, {Port, Msg}};
         ok ->
-            {ok, Port#nkport.pid};
+            {ok, {Port#nkport.pid, Msg}};
         {error, udp_too_large} ->
             case Opts of
                 #{udp_to_tcp:=true} ->
@@ -216,6 +237,20 @@ do_send(Msg, [Port|Rest], Opts) ->
     end.
 
         
+%% @private
+-spec get_msg_fun(fun((#nkport{}) -> binary()), term(), #nkport{}|pid()) ->
+    {ok, binary()} | {error, invalid_nkport}.
+
+get_msg_fun(Fun, Msg, #nkport{}=NkPort) ->
+    Fun(Msg, NkPort);
+
+get_msg_fun(Fun, Msg, Pid) when is_pid(Pid) ->
+    case nkpacket:get_nkport(Pid) of
+        {ok, NkPort} -> get_msg_fun(Fun, Msg, NkPort);
+        _ -> {error, invalid_nkport}
+    end.
+
+
 %% @private Starts a new outbound connection.
 -spec connect([nkpacket:raw_connection()], nkpacket:connect_opts()) ->
     {ok, pid()} | {error, term()}.
@@ -253,35 +288,38 @@ connect([Conn|Rest], Opts) ->
     {ok, pid()} | {error, term()}.
          
 do_connect({Protocol, Transp, Ip, Port}, Opts) ->
-    BasePort = case Opts of
-        #{listen_nkport:=none} ->
+    ListenOpt = maps:get(base_nkport, Opts, undefined),
+    BasePort = case ListenOpt of
+        false ->
             #nkport{};
-        #{listen_nkport:=ListenPort} when is_record(ListenPort, nkport) ->
+        #nkport{}=ListenPort ->
             ListenPort;
-        _ ->
-            Listening = nkpacket:get_listening(Protocol, Transp, Opts),
-            IpSize = size(Ip),
-            case
-                [
-                    NkPort || #nkport{listen_ip=LIp}=NkPort <- Listening, 
-                              size(LIp)==IpSize
-                ]
-            of
+        _ ->    % undefined or true
+            case nkpacket:get_listening(Protocol, Transp, Opts#{ip=>Ip}) of
                 [NkPort|_] -> NkPort;
                 [] -> #nkport{}
             end
     end,
-    lager:debug("Base port: ~p", [BasePort]),
-    #nkport{meta=Meta} = BasePort,
-    ConnPort = BasePort#nkport{
-        transp = Transp, 
-        protocol = Protocol,
-        remote_ip = Ip, 
-        remote_port = Port,
-        meta = maps:merge(Meta, Opts)
-    },
-    % If we found a listening transport, connection will monitor it
-    nkpacket_connection:connect(ConnPort).
+    #nkport{listen_ip=ListenIp, meta=Meta1} = BasePort,
+    case ListenIp of
+        undefined when ListenOpt ->
+            {error, no_listening_transport};
+        _ ->
+            lager:debug("transport base port: ~p", [BasePort]),
+            % Our listening host and meta must not be used for the new connection
+            Meta2 = maps:remove(host, Meta1),
+            Meta3 = maps:remove(path, Meta2),
+            ConnPort = BasePort#nkport{
+                srv_id = maps:get(srv_id, Opts, none),
+                transp = Transp, 
+                protocol = Protocol,
+                remote_ip = Ip, 
+                remote_port = Port,
+                meta = maps:remove(srv_id, maps:merge(Meta3, Opts))
+            },
+            % If we found a listening transport, connection will monitor it
+            nkpacket_connection:connect(ConnPort)
+    end.
 
 
 -spec get_listener(nkpacket:nkport()) ->
@@ -335,8 +373,8 @@ get_defport(Protocol, Transp) ->
 open_port(NkPort, Opts) ->
     #nkport{
         transp = Transp,
-        local_ip = Ip, 
-        local_port = Port, 
+        listen_ip = Ip, 
+        listen_port = Port, 
         protocol = Protocol
     } = NkPort,
     {Module, Fun} = case Transp of
@@ -355,7 +393,7 @@ open_port(NkPort, Opts) ->
     end,
     case Port of
         0 when is_integer(DefPort) ->
-            lager:debug("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
+            lager:info("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
             case Module:Fun(DefPort, Opts) of
                 {ok, Socket} ->
                     {ok, Socket};
@@ -373,13 +411,13 @@ open_port(NkPort, Opts) ->
     {ok, port()} | {error, term()}.
 
 open_port(Ip, Port, Module, Fun, Opts, Iter) ->
-    lager:debug("Opening ~p:~p (~p)", [Module, Port, Opts]),
+    lager:info("Opening ~p:~p (~p)", [Module, Port, Opts]),
     case Module:Fun(Port, Opts) of
         {ok, Socket} ->
             {ok, Socket};
         {error, eaddrinuse} when Iter > 0 ->
-            lager:warning("~p port ~p is in use, waiting (~p)", 
-                     [Module, Port, Iter]),
+            lager:notice("~p port ~p is in use, waiting (~p)", 
+                         [Module, Port, Iter]),
             timer:sleep(1000),
             open_port(Ip, Port, Module, Fun, Opts, Iter-1);
         {error, Error} ->
