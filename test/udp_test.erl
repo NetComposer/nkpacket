@@ -119,7 +119,8 @@ listen() ->
 	Port1 = test_util:get_port(udp),
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	{ok, Udp1} = nkpacket:start_listener( 
-		"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>;srv_id=dom1", M1),
+		"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>",
+		M1#{srv_id=><<"dom1">>}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, Socket} = gen_udp:open(0, [binary, {active, false}]),

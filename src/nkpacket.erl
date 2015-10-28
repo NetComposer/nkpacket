@@ -636,34 +636,37 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
         _ -> [{user, Headers}|UriOpts3]
     end,
     try
-        case nkpacket_util:parse_opts(UriOpts4 ++ maps:to_list(Opts)) of
-            {ok, Opts1} -> 
-                case Opts1 of
-                    #{valid_schemes:=ValidSchemes} ->
-                        case lists:member(Scheme, ValidSchemes) of
-                            true -> ok;
-                            false -> throw({invalid_scheme, Scheme})
-                        end;
-                    _ ->
-                        ok
-                end,
-                Protocol = case Opts1 of
-                    #{srv_id:=SrvId} -> 
-                        nkpacket:get_protocol(SrvId, Scheme);
-                    _ -> 
-                        nkpacket:get_protocol(Scheme)
-                end,
-                case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
-                    {ok, Addrs} ->
-                        Conns = [ 
-                            {Protocol, Transp, Addr, Port} 
-                            || {Transp, Addr, Port} <- Addrs
-                        ],
-                        {ok, Conns, Opts1};
-                    {error, Error} ->
-                        {error, Error}
+        UriOpts5 = case nkpacket_util:parse_uri_opts(UriOpts4) of
+            {ok, ParsedUriOpts} -> ParsedUriOpts;
+            {error, Error1} -> throw(Error1) 
+        end,
+        Opts1 = case nkpacket_util:parse_opts(Opts) of
+            {ok, CoreOpts} -> maps:merge(UriOpts5, CoreOpts);
+            {error, Error2} -> throw(Error2) 
+        end,
+        case Opts1 of
+            #{valid_schemes:=ValidSchemes} ->
+                case lists:member(Scheme, ValidSchemes) of
+                    true -> ok;
+                    false -> throw({invalid_scheme, Scheme})
                 end;
-            {error, Error} -> 
+            _ ->
+                ok
+        end,
+        Protocol = case Opts1 of
+            #{srv_id:=SrvId} -> 
+                nkpacket:get_protocol(SrvId, Scheme);
+            _ -> 
+                nkpacket:get_protocol(Scheme)
+        end,
+        case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
+            {ok, Addrs} ->
+                Conns = [ 
+                    {Protocol, Transp, Addr, Port} 
+                    || {Transp, Addr, Port} <- Addrs
+                ],
+                {ok, Conns, Opts1};
+            {error, Error} ->
                 {error, Error}
         end
     catch
@@ -690,7 +693,7 @@ multi_resolve(Uri) ->
 
 %% @private
 -spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], resolve_opts()) -> 
-    {ok, [raw_connection()], map()} |
+    {ok, [{[raw_connection()], map()}]} |
     {error, term()}.
    
 multi_resolve([], _Opts) ->
@@ -733,4 +736,8 @@ apply_nkport(Pid, Fun) when is_pid(Pid) ->
         {'EXIT', _} -> error;
         Other -> Other
     end.
+
+
+
+
 

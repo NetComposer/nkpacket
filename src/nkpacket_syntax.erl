@@ -105,6 +105,9 @@ uri_syntax() ->
         sctp_in_streams => nat_integer,
         no_dns_cache => boolean,
         tcp_listeners => nat_integer,
+        host => host,
+        path => path,
+        ws_proto => lower,
         ?TLS_SYNTAX
     }.
 
