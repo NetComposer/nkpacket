@@ -19,10 +19,10 @@ Listeners and connections can belong to a _group_, and can then be managed toget
 
 ## Registering the protocol
 
-If you want to use a _scheme_ associated with your protocol (like in  `my_scheme://0.0.0.0:5315;transport=wss`) you must _register_ your protocol with NkPACKET calling `nkpacket_config:register_protocol/2,3`. Different goups can have different protocol implementations for the same scheme:
+If you want to use a _scheme_ associated with your protocol (like in  `my_scheme://0.0.0.0:5315;transport=wss`) you must _register_ your protocol with NkPACKET calling `nkpacket:register_protocol/2,3`. Different goups can have different protocol implementations for the same scheme:
 
 ```erlang
-nkpacket_config:register_protocol(my_scheme, my_protocol)
+nkpacket:register_protocol(my_scheme, my_protocol)
 ```
 In this example, the module `my_protocol.erl` must exist.
 
@@ -45,7 +45,7 @@ or even
 nkpacket:start_listener(my_domain, "my_scheme://0.0.0.0:5315;transport=wss;tcp_listeners=100;idle_timeout=5000")
 ```
 
-There are many available options, like setting connection timeouts, start STUN servers fot UDP, TLS parameters, maximum number of connections, etc. (See `nkpacket:listener_opts()`) 
+There are many available options, like setting connection timeouts, start STUN servers fot UDP, TLS parameters, maximum number of connections, etc. (See `nkpacket:listener_opts()`). The following options are allowed in urls: idle_timeout, connect_timeout, sctp_out_streams, sctp_in_streams, no_dns_cache, tcp_listeners, host, path, ws_proto, tls_certfile, tls_keyfile, tls_cacertfile, tls_password, tls_verify, tls_depth.
 
 NkPACKET will then start the indicated transport. When a new connection arrives, a new _connection process_ will be started, and the `conn_init/0` callback function in your protocol callback function will be called.
 Incoming data will be _parsed_ and sent to your protocol module.
@@ -65,7 +65,6 @@ nkpacket:start_listener(my_domain, "my_scheme://0.0.0.0:5315;transport=wss?key1=
 You can send packets over the started connection calling `nkpacket:send/2,3`. Packets will be _encoded_ calling the corresponding function in the callback module.
 
 After a configurable timeout, if no packets are sent or received, the connection is dropped. 
-
 Incoming UDP packets will also (by default) generate a new _connection_, associated to that remote _ip_ and _port_. New packets to/from the same ip and port will be sent/received through the same _connection process_. You can disable this behaviour.
 
 
@@ -92,7 +91,7 @@ NkPACKET registers on start the included protocol [nkpacket_protocol_http](src/n
 
 NkPACKET allows several different domains to share the same web server. You must use the options `host` and/or `path` to filter and select the right domain to send the request to (see `nkpacket:listener_opts()`). You must also use `cowboy_dispatch` to process the request as an standard _Cowboy_ request.
 
-For more specific behaviours, use `cowboy_opts` instead of `cowbow_dispath`, including any supported Cowboy middlewares and environment.
+For more specific behaviours, use `cowboy_opts` instead of `cowbow_dispatch`, including any supported Cowboy middlewares and environment.
 
 You can of course register your own protocol using tranports `http` and `https` (using schemas `http` and `https` or not), implementing the callback function `http_init/3` (see [nkpacket_protocol_http](src/nkpacket_protocol_http.erl) for an example).
 
@@ -111,7 +110,15 @@ sctp_timeout|`integer()`|180000|(msecs)
 ws_timeout|`integer()`|180000|(msecs)
 http_timeout|`integer()`|180000|(msecs)
 connect_timeout|`integer()`|30000|(msecs)
-tls_opts|`nkpacket:tls_opts()`|#{}|See nkpacket.erl
+sctp_out_streams|`integer()`|10|Default SCTP out streams
+sctp_in_streams|`integer()`|10|Default SCTP in streams
+tcp_listeners|`integer()`|10|Default number of TCP listenersº
+tls_certfile|`string()`|-|Custom certificate file
+tls_keyfile|`string()`|-|Custom key file
+tls_cacertfile|`string()`|-|Custom CA certificate file
+tls_password|`string()`|-|Password fort the certificate
+tls_verify|`boolean()`|false|If we must check certificate
+tls_depth|`integer()`|0|TLS check depth
 
 NkPACKET uses [lager](https://github.com/basho/lager) for log management. 
 
