@@ -94,17 +94,6 @@
             middlewares => [module()]
         }}.
 
--type tls_opts() ::
-    #{
-        certfile => string(),                   % Path to CertFile
-        keyfile => string(),                    % Path to KeyFile
-        cacertfile => string(),                 % Path to CA CertFile
-        password => string(),                   % Password for the certificate
-        verify => boolean(),                    % Client must have valid certificate
-        depth => 0..2                           % 0:Trusted CA, 1:Peer, CA, Trusted CA
-    }.
-
-
 %% Options for listeners
 -type listener_opts() ::
     #{
@@ -130,7 +119,13 @@
         tcp_packet => 1 | 2 | 4 | raw,          %
         tcp_max_connections => integer(),       % Default 1024
         tcp_listeners => integer(),             % Default 100
-        tls_opts => tls_opts(),
+        tls_certfile => string(),
+        tls_keyfile => string(),
+        tls_cacertfile => string(),
+        tls_password => string(),
+        tls_verify => boolean(),
+        tls_depth => 0..16,
+        tls_versions => [atom()],
 
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
@@ -162,7 +157,13 @@
 
         % TCP/TLS/WS/WSS options
         tcp_packet => 1 | 2 | 4 | raw,    
-        tls_opts => tls_opts(),  
+        tls_certfile => string(),
+        tls_keyfile => string(),
+        tls_cacertfile => string(),
+        tls_password => string(),
+        tls_verify => boolean(),
+        tls_depth => 0..16,
+        tls_versions => [atom()],
 
         % WS/WSS
         host => string() | binary(),        % Host header to use
