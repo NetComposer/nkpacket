@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([console_loglevel/1, make_web_proto/1]).
--export([make_cache/0, make_tls_opts/1]).
+-export([make_cache/0, make_tls_opts/1, tls_keys/0]).
 -export([debug/0, info/0, notice/0, warning/0, error/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
@@ -83,6 +83,9 @@ make_tls_opts(Opts) ->
     end,
     maps:to_list(Opts3).
 
+
+tls_keys() ->
+    maps:keys(#{?TLS_SYNTAX}).
 
 %% @private
 -spec make_web_proto(nkpacket:listener_opts()) ->
