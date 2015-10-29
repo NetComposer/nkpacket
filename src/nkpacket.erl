@@ -119,13 +119,7 @@
         tcp_packet => 1 | 2 | 4 | raw,          %
         tcp_max_connections => integer(),       % Default 1024
         tcp_listeners => integer(),             % Default 100
-        tls_certfile => string(),
-        tls_keyfile => string(),
-        tls_cacertfile => string(),
-        tls_password => string(),
-        tls_verify => boolean(),
-        tls_depth => 0..16,
-        tls_versions => [atom()],
+        ?TLS_TYPES,
 
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
@@ -157,13 +151,7 @@
 
         % TCP/TLS/WS/WSS options
         tcp_packet => 1 | 2 | 4 | raw,    
-        tls_certfile => string(),
-        tls_keyfile => string(),
-        tls_cacertfile => string(),
-        tls_password => string(),
-        tls_verify => boolean(),
-        tls_depth => 0..16,
-        tls_versions => [atom()],
+        ?TLS_TYPES,
 
         % WS/WSS
         host => string() | binary(),        % Host header to use

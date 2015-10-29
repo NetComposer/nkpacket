@@ -60,6 +60,17 @@
     tls_versions => {list, atom}
 ).
 
+-define(TLS_TYPES,
+    tls_certfile => string(),
+    tls_keyfile => string(),
+    tls_cacertfile => string(),
+    tls_password => string(),
+    tls_verify => boolean(),
+    tls_depth => 0..16,
+    tls_versions => [atom()]
+).
+
+
 
 %% ===================================================================
 %% Records
