@@ -69,7 +69,7 @@ connect(NkPort) ->
         undefined -> nkpacket_config_cache:connect_timeout();
         Timeout0 -> Timeout0
     end,
-    lager:info("Connect to: ~p:~p:~p (~p)", [Transp, Ip, Port, SocketOpts]),
+    lager:debug("TCP connect to: ~p:~p:~p (~p)", [Transp, Ip, Port, SocketOpts]),
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} -> 
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
