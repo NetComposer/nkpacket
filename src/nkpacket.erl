@@ -174,7 +174,8 @@
 %% Options for resolving
 -type resolve_opts() ::
     #{
-        resolve_type => listen | connect
+        resolve_type => listen | connect,
+        syntax => map()                    % For parsing
     }
     | listener_opts()
     | send_opts().
@@ -625,7 +626,7 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
         _ -> [{user, Headers}|UriOpts3]
     end,
     try
-        UriOpts5 = case nkpacket_util:parse_uri_opts(UriOpts4) of
+        UriOpts5 = case nkpacket_util:parse_uri_opts(UriOpts4, Opts) of
             {ok, ParsedUriOpts} -> ParsedUriOpts;
             {error, Error1} -> throw(Error1) 
         end,

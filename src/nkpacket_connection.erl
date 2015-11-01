@@ -309,7 +309,7 @@ init([NkPort]) ->
                 https -> nkpacket_config_cache:http_timeout()
             end
     end,
-    lager:info("created ~p connection to/from ~p:~p:~p (~p, ~p)", 
+    lager:info("Created ~p connection to/from ~p:~p:~p (~p, ~p)", 
                [Protocol, Transp, Ip, Port, SrvId, self()]),
     if
         Transp==ws; Transp==wss ->
@@ -695,8 +695,10 @@ do_parse(Data, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
         {bridge, Bridge, State1} ->
             State2 = start_bridge(Bridge, up, State1),
             do_parse(Data, State2);
+        {stop, normal, State1} ->
+            {stop, normal, State1};
         {stop, Reason, State1} ->
-            lager:info("Error response from conn_parse: ~p", [Reason]),
+            lager:info("Stop response from conn_parse: ~p", [Reason]),
             {stop, normal, State1}
     end.
 

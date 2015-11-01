@@ -29,7 +29,7 @@
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
 -export([norm_path/1]).
--export([parse_opts/1, parse_uri_opts/1]).
+-export([parse_opts/1, parse_uri_opts/2]).
 
 -include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
@@ -122,7 +122,12 @@ make_web_proto(O) ->
     {ok, map()} | {error, term()}.
 
 parse_opts(Opts) ->
-    Syntax = nkpacket_syntax:syntax(),
+    Syntax = case Opts of
+        #{syntax:=UserSyntax} -> 
+            maps:merge(UserSyntax, nkpacket_syntax:syntax());
+        _ ->
+            nkpacket_syntax:syntax()
+    end,
     case nklib_config:parse_config(Opts, Syntax, #{return=>map}) of
         {ok, Map, _} ->
             {ok, Map};
@@ -132,12 +137,17 @@ parse_opts(Opts) ->
 
 
 %% @private
--spec parse_uri_opts(map()|list()) ->
+-spec parse_uri_opts(map()|list(), map()|list()) ->
     {ok, map()} | {error, term()}.
 
-parse_uri_opts(Opts) ->
-    Syntax = nkpacket_syntax:uri_syntax(),
-    case nklib_config:parse_config(Opts, Syntax, #{return=>map}) of
+parse_uri_opts(UriOpts, Opts) ->
+    Syntax = case Opts of
+        #{syntax:=UserSyntax} -> 
+            maps:merge(UserSyntax, nkpacket_syntax:uri_syntax());
+        _ ->
+            nkpacket_syntax:uri_syntax()
+    end,
+    case nklib_config:parse_config(UriOpts, Syntax, #{return=>map}) of
         {ok, Map, _} ->
             {ok, Map};
         {error, Error} ->

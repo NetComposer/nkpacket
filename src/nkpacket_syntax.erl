@@ -93,7 +93,8 @@ syntax() ->
         resolve_type => {enum, [listen, connect]},
         base_nkport => [boolean, {record, nkport}],
         ?TLS_SYNTAX,
-        user => any
+        user => any,
+        syntax => ignore
     }.
 
 
