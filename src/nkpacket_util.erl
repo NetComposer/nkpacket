@@ -75,7 +75,12 @@ make_tls_opts(Opts) ->
             end
         end,
         nklib_util:to_list(Opts)),
-    Opts2 = maps:merge(nkpacket_app:get(tls_defaults), maps:from_list(Opts1)),
+    Defaults1 = nkpacket_app:get(tls_defaults),
+    Defaults2 = case lists:keymember(certfile, 1, Opts1) of
+        true -> maps:remove(keyfile, Defaults1);
+        false -> Defaults1
+    end,
+    Opts2 = maps:merge(Defaults2, maps:from_list(Opts1)),
     Opts3 = case Opts2 of
         #{verify:=true} -> Opts2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
         #{verify:=false} -> maps:remove(verify, Opts2);
