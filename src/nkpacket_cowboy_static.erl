@@ -54,19 +54,22 @@ init(Req, #{path:=DirPath}=Opts) ->
 	{cowboy_rest, cowboy_req:req(), state()}.
 
 init_file(Req, Opts, FilePath) ->
-	lager:debug("Static web server looking for ~s", [FilePath]),
 	case file:read_file_info(FilePath, [{time, universal}]) of
 		{ok, #file_info{type=directory}} ->
 			case maps:get(index_file, Opts, undefined) of
 				undefined -> 
+					lager:debug("Static web server forbidden ~s", 
+								[FilePath]),
 					{cowboy_rest, Req, {error, forbidden}};
 				Index ->
 					FilePath1 = filename:join(FilePath, Index),
 					init_file(Req, Opts#{index_file:=undefined}, FilePath1)
 			end;
 		{ok, Info} ->
+			lager:debug("Static web server found ~s", [FilePath]),
 			{cowboy_rest, Req, {Opts#{path:=FilePath}, Info}};
 		{error, enoent} ->
+			lager:notice("Static web server NOT found ~s", [FilePath]),
 			{cowboy_rest, Req, {error, not_found}};
 		_ ->
 			{cowboy_rest, Req, {error, forbidden}}

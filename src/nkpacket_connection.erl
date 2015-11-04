@@ -312,15 +312,15 @@ init([NkPort]) ->
     lager:info("Created ~p connection to/from ~p:~p:~p (~p, ~p)", 
                [Protocol, Transp, Ip, Port, SrvId, self()]),
     if
-        Transp==ws; Transp==wss ->
-            Host = maps:get(host, Meta, any),
-            Path = maps:get(path, Meta, any),
-            WsProto = maps:get(ws_proto, Meta, any),
-            lager:debug("Stored remote meta: ~p, ~p, ~p", [Host, Path, WsProto]);
-        Transp==http; Transp==https ->
-            Host = maps:get(host, Meta, any),
-            Path = maps:get(path, Meta, any),
-            lager:debug("Stored remote meta: ~p, ~p", [Host, Path]);
+        % Transp==ws; Transp==wss ->
+        %     Host = maps:get(host, Meta, any),
+        %     Path = maps:get(path, Meta, any),
+        %     WsProto = maps:get(ws_proto, Meta, any),
+        %     lager:debug("Stored remote meta: ~p, ~p, ~p", [Host, Path, WsProto]);
+        % Transp==http; Transp==https ->
+        %     Host = maps:get(host, Meta, any),
+        %     Path = maps:get(path, Meta, any),
+        %     lager:debug("Stored remote meta: ~p, ~p", [Host, Path]);
         true ->
             ok
     end,
