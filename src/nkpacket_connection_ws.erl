@@ -92,11 +92,11 @@ get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
     Path = maps:get(path, Meta),
     Key = cow_ws:key(),
     Headers2 = [
-        {<<"connection">>, <<"upgrade">>},
-        {<<"upgrade">>, <<"websocket">>},
-        {<<"sec-websocket-version">>, <<"13">>},
-        {<<"sec-websocket-key">>, Key},
-        {<<"host">>, [Host, $:, integer_to_binary(Port)]}
+        {<<"Host">>, [Host, $:, integer_to_binary(Port)]},
+        {<<"Connection">>, <<"Upgrade">>},
+        {<<"Upgrade">>, <<"websocket">>},
+        {<<"Sec-WebSocket-Version">>, <<"13">>},
+        {<<"Sec-WebSocket-Key">>, Key}
     ],
     Headers3 = case maps:get(ws_proto, Meta, undefined) of
         undefined -> 
