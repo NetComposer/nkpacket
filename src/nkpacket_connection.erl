@@ -368,7 +368,7 @@ init([NkPort]) ->
             State2 = start_bridge(Bridge, up, State1),
             {ok, restart_timer(State2)};
         {stop, Reason} ->
-            gen_server:cast(self(), {stop, Reason}),
+            gen_server:cast(self(), {nkpacket_stop, Reason}),
             {ok, State}
     end.
 
