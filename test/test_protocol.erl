@@ -72,7 +72,7 @@ default_port(_) -> invalid.
 listen_init(NkPort) ->
 	lager:notice("Protocol LISTEN init: ~p (~p)", [NkPort, self()]),
 	State = case nkpacket:get_user(NkPort) of
-		{ok, {Pid, Ref}} -> #listen_state{pid=Pid, ref=Ref};
+		{ok, _SrvId, {Pid, Ref}} -> #listen_state{pid=Pid, ref=Ref};
 		_ -> #listen_state{}
 	end,
 	maybe_reply(listen_init, State),
@@ -123,7 +123,7 @@ listen_stop(Reason, _NkPort, State) ->
 conn_init(NkPort) ->
 	lager:notice("Protocol CONN init: ~p (~p)", [NkPort, self()]),
 	State = case nkpacket:get_user(NkPort) of
-		{ok, {Pid, Ref}} -> #conn_state{pid=Pid, ref=Ref};
+		{ok, _SrvId, {Pid, Ref}} -> #conn_state{pid=Pid, ref=Ref};
 		_ -> #conn_state{}
 	end,
 	maybe_reply(conn_init, State),

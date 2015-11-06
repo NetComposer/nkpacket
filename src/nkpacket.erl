@@ -405,10 +405,10 @@ get_meta(Pid) when is_pid(Pid) ->
 
 %% @doc Gets the user metadata of a listener or connection
 -spec get_user(pid()|nkport()) ->
-    {ok, term()} | error.
+    {ok, term(), term()} | error.
 
-get_user(#nkport{meta=Meta}) ->
-    {ok, maps:get(user, Meta, undefined)};
+get_user(#nkport{srv_id=SrvId, meta=Meta}) ->
+    {ok, SrvId, maps:get(user, Meta, undefined)};
 get_user(Pid) when is_pid(Pid) ->
     apply_nkport(Pid, fun get_user/1).
 
