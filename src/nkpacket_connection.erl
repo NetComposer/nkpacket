@@ -96,9 +96,9 @@ connect(#nkport{}=NkPort) ->
     ok | {error, term()}.
 
 send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
-    case erlang:function_exported(Protocol, encode, 2) of
+    case erlang:function_exported(Protocol, conn_encode, 2) of
         true ->
-            case Protocol:encode(Msg, NkPort) of
+            case Protocol:conn_encode(Msg, NkPort) of
                 {ok, OutMsg} ->
                     lager:debug("transport quick encode: ~p", [OutMsg]),
                     case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
@@ -694,6 +694,20 @@ do_parse(Data, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
             {ok, State};
         {ok, State1} ->
             {ok, State1};
+        {reply, Msg, State1} ->
+            case encode(Msg, State1) of
+                {ok, OutMsg, State2} ->
+                    case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
+                        ok ->
+                            {ok, State2};
+                        {error, Error} ->
+                            {stop, {reply_error, Error}, State2}
+                    end;
+                {error, Error, State2} ->
+                    {stop, {encode_error, Error}, State2};
+                {stop, Reason, State2} ->
+                    {stop, Reason, State2}
+            end;
         {bridge, Bridge, State1} ->
             State2 = start_bridge(Bridge, up, State1),
             do_parse(Data, State2);
@@ -753,9 +767,9 @@ restart_timer(#state{timeout=Timeout, timeout_timer=Ref}=State) ->
 
 %% @private
 encode(Msg, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) -> 
-    case erlang:function_exported(Protocol, encode, 2) of
+    case erlang:function_exported(Protocol, conn_encode, 2) of
         true ->
-            case Protocol:encode(Msg, NkPort) of
+            case Protocol:conn_encode(Msg, NkPort) of
                 {ok, OutMsg} ->
                     {ok, OutMsg, State};
                 continue ->
