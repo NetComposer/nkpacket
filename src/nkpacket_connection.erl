@@ -509,13 +509,15 @@ handle_info({ssl, Socket, Data}, #state{socket=Socket}=State) ->
     parse(Data, restart_timer(State));
 
 handle_info({tcp_closed, _Socket}, #state{nkport=NkPort}=State) ->
-    case call_protocol(conn_parse, [close, NkPort], State) of
+    case catch call_protocol(conn_parse, [close, NkPort], State) of
         undefined -> 
             {stop, normal, State};
         {ok, State1} ->
             {stop, normal, State1};
         {stop, _, State1} ->
-            {stop, normal, State1}
+            {stop, normal, State1};
+        _ ->
+            {stop, normal, State}
     end;
     
 handle_info({tcp_error, _Socket}, State) ->
