@@ -642,7 +642,7 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
                     false -> throw({invalid_scheme, Scheme})
                 end;
             _ ->
-                ok
+                Opts1
         end,
         Protocol = case Opts2 of
             #{srv_id:=SrvId} -> 
@@ -656,7 +656,7 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
                     {Protocol, Transp, Addr, Port} 
                     || {Transp, Addr, Port} <- Addrs
                 ],
-                {ok, Conns, Opts3};
+                {ok, Conns, maps:remove(resolve_type, Opts2)};
             {error, Error} ->
                 {error, Error}
         end
