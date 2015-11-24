@@ -118,6 +118,9 @@ send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
             send(Pid, Msg)
     end;
 
+send(Pid, _Msg) when Pid==self() ->
+    {error, same_process};
+
 send(Pid, Msg) when is_pid(Pid) ->
     case catch gen_server:call(Pid, {nkpacket_send, Msg}, 180000) of
         {'EXIT', _} -> {error, no_process};
