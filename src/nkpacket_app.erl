@@ -84,8 +84,8 @@ get(Key) ->
 get(Key, Default) ->
     nklib_config:get(nkpacket, Key, Default).
 
-get_srv(SrvId, Key) ->
-    nklib_config:get_domain(nkpacket, SrvId, Key).
+get_srv(Class, Key) ->
+    nklib_config:get_domain(nkpacket, Class, Key).
 
 put(Key, Val) ->
     nklib_config:put(nkpacket, Key, Val).

@@ -66,7 +66,7 @@ app_defaults() ->
 
 syntax() ->
     #{
-        srv_id => any,
+        class => any,
         monitor => proc,
         idle_timeout => pos_integer,
         connect_timeout => nat_integer,

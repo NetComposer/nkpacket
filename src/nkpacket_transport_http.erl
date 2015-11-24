@@ -78,7 +78,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        srv_id = SrvId,
+        class = Class,
         protocol = Protocol,
         transp = Transp, 
         listen_ip = Ip, 
@@ -105,7 +105,7 @@ init([NkPort]) ->
             _ -> 
                 Port1 = Port
         end,
-        nklib_proc:put(nkpacket_listeners, SrvId),
+        nklib_proc:put(nkpacket_listeners, Class),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
             local_ip = Ip,
@@ -119,7 +119,7 @@ init([NkPort]) ->
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
         end,
-        nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
+        nklib_proc:put({ListenType, Class, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
         MonRef = case Meta of
             #{monitor:=UserRef} -> 

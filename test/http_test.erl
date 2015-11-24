@@ -52,11 +52,11 @@ basic() ->
  	
  	Url1 = "<http://all:"++integer_to_list(Port)++"/test1>",
 	Proto1 = {dispatch, #{routes => [{'_', [{"/test1", test_cowboy_handler, [M1]}]}]}},
-	{ok, Http1} = nkpacket:start_listener(Url1, M1#{srv_id=>dom1, http_proto=>Proto1}),
+	{ok, Http1} = nkpacket:start_listener(Url1, M1#{class=>dom1, http_proto=>Proto1}),
  	
  	Url2 = "<http://all:"++integer_to_list(Port)++"/test2/>",
 	Proto2 = {dispatch, #{routes => [{'_', [{"/test2", test_cowboy_handler, [M2]}]}]}},
-	{ok, Http2} = nkpacket:start_listener(Url2, M2#{srv_id=>dom2, http_proto=>Proto2}),
+	{ok, Http2} = nkpacket:start_listener(Url2, M2#{class=>dom2, http_proto=>Proto2}),
 
  	Url3 = "<http://0.0.0.0:"++integer_to_list(Port)++">",
 	Proto3 = {dispatch, #{routes => 
@@ -66,7 +66,7 @@ basic() ->
 
 		]}},
 	{ok, Http3} = nkpacket:start_listener(Url3, M3#{
-		srv_id => dom3,
+		class => dom3,
 		host => "localhost",
 		path => "/test3/a",
 		http_proto => Proto3
@@ -75,7 +75,7 @@ basic() ->
 
 	[Listen1] = nkpacket:get_all(dom1),
 	{ok, #nkport{
-			srv_id = dom1,
+			class = dom1,
 			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
@@ -84,7 +84,7 @@ basic() ->
 	}} = nkpacket:get_nkport(Listen1),
 	[Listen2] = nkpacket:get_all(dom2),
 	{ok, #nkport{
-			srv_id = dom2,
+			class = dom2,
  			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
@@ -93,7 +93,7 @@ basic() ->
 	}} = nkpacket:get_nkport(Listen2),
 	[Listen3] = nkpacket:get_all(dom3),
 	{ok, #nkport{
-			srv_id = dom3,
+			class = dom3,
 			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,

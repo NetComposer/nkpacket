@@ -94,7 +94,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        srv_id = SrvId,
+        class = Class,
         transp = sctp,
         listen_ip = Ip, 
         listen_port = Port,
@@ -115,14 +115,14 @@ init([NkPort]) ->
                 socket = {Socket, 0}
             },
             ok = gen_sctp:listen(Socket, true),
-            nklib_proc:put(nkpacket_listeners, SrvId),
+            nklib_proc:put(nkpacket_listeners, Class),
             ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
             ListenType = case size(Ip) of
                 4 -> nkpacket_listen4;
                 8 -> nkpacket_listen6
             end,
-            nklib_proc:put({ListenType, SrvId, Protocol, sctp}, ConnPort),
+            nklib_proc:put({ListenType, Class, Protocol, sctp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserPid} -> erlang:monitor(process, UserPid);
@@ -222,7 +222,7 @@ handle_cast(Msg, #state{nkport=NkPort}=State) ->
 
 handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
     #state{socket=Socket, nkport=NkPort} = State,
-    #nkport{srv_id=SrvId, protocol=Proto} = NkPort,
+    #nkport{class=Class, protocol=Proto} = NkPort,
     State1 = case SAC of
         #sctp_assoc_change{state=comm_up, assoc_id=AssocId} ->
             % lager:error("COMM_UP: ~p", [AssocId]),
@@ -238,7 +238,7 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
         #sctp_assoc_change{state=shutdown_comp, assoc_id=_AssocId} ->
             % lager:error("COMM_DOWN: ~p", [AssocId]),
             Conn = {Proto, sctp, Ip, Port},
-            case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
+            case nkpacket_transport:get_connected(Conn, #{class=>Class}) of
                 [Pid|_] -> nkpacket_connection:stop(Pid, normal);
                 _ -> ok
             end,
@@ -345,9 +345,9 @@ do_connect(Ip, Port, AssocId, State) ->
 %% @private
 do_connect(Ip, Port, AssocId, Meta, State) ->
     #state{nkport=NkPort, socket=Socket} = State,
-    #nkport{srv_id=SrvId, protocol=Proto, meta=ListenMeta} = NkPort,
+    #nkport{class=Class, protocol=Proto, meta=ListenMeta} = NkPort,
     Conn = {Proto, sctp, Ip, Port},
-    case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
+    case nkpacket_transport:get_connected(Conn, #{class=>Class}) of
         [Pid|_] -> 
             {ok, Pid};
         [] -> 

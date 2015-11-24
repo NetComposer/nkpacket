@@ -79,7 +79,7 @@
 %% Meta can contain most values from listener_opts and connect_opts
 
 -record(nkport, {
-    srv_id :: term(),
+    class :: nkpacket:class(),
     protocol :: nkpacket:protocol(),
     transp :: nkpacket:transport(),
     local_ip :: inet:ip_address(),
