@@ -94,7 +94,7 @@ syntax() ->
         base_nkport => [boolean, {record, nkport}],
         ?TLS_SYNTAX,
         user => any,
-        syntax => ignore
+        parse_syntax => ignore
     }.
 
 

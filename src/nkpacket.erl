@@ -100,6 +100,7 @@
         % Common options
         srv_id => srv_id(),                     % Service Id
         user => term(),                         % User metadata
+        parse_syntax => map(),                  % Allows to update the syntax
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
@@ -139,8 +140,9 @@
 -type connect_opts() ::
     #{
         % Common options
-        srv_id => srv_id(),                     % Service Id
+        srv_id => srv_id(),                 % Service Id
         user => term(),                     % User metadata
+        parse_syntax => map(),              % Allows to update the syntax
         monitor => atom() | pid(),          % Connection will monitor this
         connect_timeout => integer(),       % MSecs, default in config
         no_dns_cache => boolean(),          % Avoid DNS cache
@@ -174,9 +176,8 @@
 %% Options for resolving
 -type resolve_opts() ::
     #{
-        resolve_type => listen | connect,
-        syntax => map()                    % For parsing
-    }
+        resolve_type => listen | connect
+    }                                      % used to process options
     | listener_opts()
     | send_opts().
 
@@ -634,28 +635,28 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
             {ok, CoreOpts} -> maps:merge(UriOpts5, CoreOpts);
             {error, Error2} -> throw(Error2) 
         end,
-        case Opts1 of
+        Opts2 = case Opts1 of
             #{valid_schemes:=ValidSchemes} ->
                 case lists:member(Scheme, ValidSchemes) of
-                    true -> ok;
+                    true -> maps:remove(valid_schemes, Opts1);
                     false -> throw({invalid_scheme, Scheme})
                 end;
             _ ->
                 ok
         end,
-        Protocol = case Opts1 of
+        Protocol = case Opts2 of
             #{srv_id:=SrvId} -> 
                 nkpacket:get_protocol(SrvId, Scheme);
             _ -> 
                 nkpacket:get_protocol(Scheme)
         end,
-        case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
+        case nkpacket_dns:resolve(Uri, Opts2#{protocol=>Protocol}) of
             {ok, Addrs} ->
                 Conns = [ 
                     {Protocol, Transp, Addr, Port} 
                     || {Transp, Addr, Port} <- Addrs
                 ],
-                {ok, Conns, Opts1};
+                {ok, Conns, Opts3};
             {error, Error} ->
                 {error, Error}
         end

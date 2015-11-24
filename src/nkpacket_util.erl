@@ -128,7 +128,7 @@ make_web_proto(O) ->
 
 parse_opts(Opts) ->
     Syntax = case Opts of
-        #{syntax:=UserSyntax} -> 
+        #{parse_syntax:=UserSyntax} -> 
             maps:merge(UserSyntax, nkpacket_syntax:syntax());
         _ ->
             nkpacket_syntax:syntax()
