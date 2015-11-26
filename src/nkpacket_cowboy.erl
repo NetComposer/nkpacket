@@ -85,7 +85,7 @@ do_start(#nkport{pid=Pid}=NkPort, Filter) when is_pid(Pid) ->
     #nkport{transp=Transp, listen_ip=Ip, listen_port=Port} = NkPort,
     case nklib_proc:values({?MODULE, Transp, Ip, Port}) of
         [{_Servers, Listen}|_] ->
-            case nklib_util:call(Listen, {start, Pid, Filter}, #{timeout=>15000}) of
+            case nklib_util:call(Listen, {start, Pid, Filter}, 15000) of
                 ok -> {ok, Listen};
                 Error -> {error, {shared_failed, Error}}
             end;
