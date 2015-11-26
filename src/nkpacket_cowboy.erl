@@ -319,7 +319,29 @@ terminate(Reason, #state{ranch_pid=RanchPid}=State) ->
 
 start_link(Ref, Socket, TranspModule, Opts) ->
     % Now Cowboy will call execute/2
-    cowboy_protocol:start_link(Ref, Socket, TranspModule, Opts).
+    % {ok, spawn_link(fun() -> start_cowboy(Ref, Socket, TranspModule, Opts) end)}.
+   cowboy_protocol:start_link(Ref, Socket, TranspModule, Opts).
+
+
+% Cowboy fails when raw bytes are sent to the connection
+%
+% start_cowboy(Ref, Socket, TranspModule, Opts) ->
+%     process_flag(trap_exit, true),
+%     {ok, Pid} = cowboy_protocol:start_link(Ref, Socket, TranspModule, Opts),
+%     start_cowboy_wait(Pid).
+
+% start_cowboy_wait(Pid) ->
+%     receive
+%         {'EXIT', Pid, Reason} ->
+%             lager:warning("COWBOY EXIT: ~p", [Reason]);
+%         Other ->
+%             lager:warning("OTHER: ~p", [Other]),
+%             Pid ! Other,
+%             start_cowboy_wait(Pid)
+%     after 
+%         30000 ->
+%             lager:warning("COWBOY EXIT!!")
+%     end.
 
 
 %% @private Cowboy middleware callback
