@@ -30,7 +30,7 @@
 -export([register_protocol/2, register_protocol/3]).
 -export([get_protocol/1, get_protocol/2]).
 -export([start_listener/2, get_listener/2, stop_listener/1]).
--export([get_all/0, get_all/1, get_class/0]).
+-export([get_all/0, get_all/1, get_class/0, get_class/1]).
 -export([stop_all/0, stop_all/1]).
 -export([send/2, send/3, connect/2]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
@@ -346,6 +346,15 @@ get_class() ->
         end,
         #{},
         nklib_proc:values(nkpacket_listeners)).
+
+
+%% @doc Gets all classes having registered listeners
+-spec get_class(class()) -> 
+    [pid()].
+
+get_class(Class) ->
+    All = get_class(),
+    maps:get(Class, All, []).
 
 
 %% @doc Stops all locally started listeners (only for standard supervisor)
