@@ -439,10 +439,8 @@ handle_call({nkpacket_send, Msg}, _From, #state{nkport=NkPort}=State) ->
             % lager:debug("Conn Send: ~p", [OutMsg]),
             Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
             {reply, Reply, restart_timer(State1)};
-        {error, Error, State1} ->
-            {reply, {error, Error}, State1};
         {stop, Reason, State1} ->
-            {stop, Reason, {error, encode_error}, State1}
+            {stop, normal, {error, Reason}, State1}
     end;
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
@@ -518,9 +516,7 @@ handle_info({tcp_closed, _Socket}, #state{nkport=NkPort}=State) ->
         {ok, State1} ->
             {stop, normal, State1};
         {stop, _, State1} ->
-            {stop, normal, State1};
-        _ ->
-            {stop, normal, State}
+            {stop, normal, State1}
     end;
     
 handle_info({tcp_error, _Socket}, State) ->
@@ -706,8 +702,6 @@ do_parse(Data, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
                         {error, Error} ->
                             {stop, {reply_error, Error}, State2}
                     end;
-                {error, Error, State2} ->
-                    {stop, {encode_error, Error}, State2};
                 {stop, Reason, State2} ->
                     {stop, Reason, State2}
             end;
@@ -769,6 +763,9 @@ restart_timer(#state{timeout=Timeout, timeout_timer=Ref}=State) ->
 
 
 %% @private
+-spec encode(term(), #state{}) ->
+    {ok, nkpacket:outcoming(), #state{}} | {stop, term(), #state{}}.
+
 encode(Msg, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) -> 
     case erlang:function_exported(Protocol, conn_encode, 2) of
         true ->
@@ -778,7 +775,7 @@ encode(Msg, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
                 continue ->
                     encode2(Msg, State);
                 {error, Error} ->
-                    {error, Error, State}
+                    {stop, {encode_error, Error}, State}
             end;
         false ->
             encode2(Msg, State)
@@ -792,15 +789,13 @@ encode2(Msg, #state{nkport=NkPort}=State) ->
             {ok, Msg, State};
         undefined when is_list(Msg) ->
             case catch list_to_binary(Msg) of
-                {'EXIT', _} -> {error, encode_error, State};
+                {'EXIT', Error} -> {stop, {encode_error, Error}, State};
                 Bin -> {ok, Bin, State}
             end;
         undefined ->
-            {error, encode_error, State};
+            {stop, {encode_error, no_encode_callback}, State};
         {ok, OutMsg, State1} ->
             {ok, OutMsg, State1};
-        {error, Error, State1} ->
-            {error, Error, State1};
         {stop, Reason, State1} ->
             {stop, Reason, State1}
     end.
