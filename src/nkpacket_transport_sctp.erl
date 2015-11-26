@@ -56,7 +56,7 @@ get_listener(NkPort) ->
     {ok, pid()} | {error, term()}.
 
 connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
-    case catch gen_server:call(Pid, {connect, NkPort}, 180000) of
+    case catch gen_server:call(Pid, {nkpacket_connect, NkPort}, 180000) of
         {ok, ConnPid} -> 
             {ok, ConnPid};
         {error, Error} ->
@@ -150,7 +150,7 @@ init([NkPort]) ->
     {reply, term(), #state{}} | {noreply, term(), #state{}} | 
     {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
-handle_call({connect, ConnPort}, From, State) ->
+handle_call({nkpacket_connect, ConnPort}, From, State) ->
     #nkport{
         remote_ip = Ip, 
         remote_port = Port, 
@@ -173,10 +173,10 @@ handle_call({connect, ConnPort}, From, State) ->
                 ok;
             {error, Error} ->
                 gen_server:reply(From, {error, Error}),
-                gen_server:cast(Self, {connection_error, From});
+                gen_server:cast(Self, {nkpacket_connection_error, From});
             Error ->
                 gen_server:reply(From, {error, Error}),
-                gen_server:cast(Self, {connection_error, From})
+                gen_server:cast(Self, {nkpacket_connection_error, From})
         end
     end,
     ConnPid = spawn_link(Fun),
@@ -188,6 +188,9 @@ handle_call({connect, ConnPort}, From, State) ->
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
+
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
@@ -201,11 +204,11 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast({connection_error, From}, #state{pending_froms=Froms}=State) ->
+handle_cast({nkpacket_connection_error, From}, #state{pending_froms=Froms}=State) ->
     Froms1 = lists:keydelete(From, 2, Froms),
     {noreply, State#state{pending_froms=Froms1}};
 
-handle_cast(stop, State) ->
+handle_cast(nkpacket_stop, State) ->
     {stop, normal, State};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->

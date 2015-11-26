@@ -152,7 +152,7 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({start, Ip, Port, Pid}, _From, State) ->
+handle_call({nkpacket_start, Ip, Port, Pid}, _From, State) ->
     #state{nkport=NkPort, http_proto=HttpProto} = State,
     #nkport{protocol=Protocol, meta=Meta} = NkPort,
     NkPort1 = NkPort#nkport{
@@ -181,6 +181,9 @@ handle_call({start, Ip, Port, Pid}, _From, State) ->
             {reply, next, State}
     end;
 
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
+
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
@@ -193,7 +196,7 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast(stop, State) ->
+handle_cast(nkpacket_stop, State) ->
     {stop, normal, State};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->
@@ -254,7 +257,7 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 cowboy_init(Pid, Req, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
     % Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
+    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, self()}, infinity) of
         {ok, Protocol, HttpProto, ConnPid} ->
             case Protocol:http_init(HttpProto, ConnPid, Req, Env) of
                 {ok, Req1, Env1, Middlewares1} ->

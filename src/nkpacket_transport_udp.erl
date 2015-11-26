@@ -41,7 +41,7 @@
 %% @private Sends a STUN binding request
 %% It does not open a new NkPACKET's UDP connection
 send_stun_sync(Pid, Ip, Port, Timeout) ->
-    case catch gen_server:call(Pid, {send_stun, Ip, Port}, Timeout) of
+    case catch gen_server:call(Pid, {nkpacket_send_stun, Ip, Port}, Timeout) of
         {ok, StunIp, StunPort} -> 
             {ok, StunIp, StunPort};
         error -> 
@@ -52,7 +52,7 @@ send_stun_sync(Pid, Ip, Port, Timeout) ->
 %% @private Sends a STUN binding request, the response will be sent to the calling 
 %% process as {stun, {ok, Ip, Port}|error}.
 send_stun_async(Pid, Ip, Port) ->
-    gen_server:cast(Pid, {send_stun, Ip, Port, self()}).
+    gen_server:cast(Pid, {nkpacket_send_stun, Ip, Port, self()}).
 
 
 %% ===================================================================
@@ -81,7 +81,7 @@ get_listener(NkPort) ->
     {ok, pid()} | {error, term()}.
          
 connect(#nkport{transp=udp, pid=Pid}=NkPort) ->
-    case catch gen_server:call(Pid, {connect, NkPort}, 180000) of
+    case catch gen_server:call(Pid, {nkpacket_connect, NkPort}, 180000) of
         {ok, ConnPid} -> 
             {ok, ConnPid};
         {error, Error} ->
@@ -100,7 +100,7 @@ send(#nkport{transp=udp, socket=Socket}, Ip, Port, Data) ->
     gen_udp:send(Socket, Ip, Port, Data);
 
 send(Pid, Ip, Port, Data) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_socket, 180000) of
+    case catch gen_server:call(Pid, nkpacket_get_socket, 180000) of
         {ok, Socket} -> 
             send(Socket, Ip, Port, Data);
         _ -> 
@@ -226,7 +226,7 @@ init([NkPort]) ->
     {reply, term(), #state{}} | {noreply, term(), #state{}} | 
     {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
-handle_call({connect, ConnPort}, _From, State) ->
+handle_call({nkpacket_connect, ConnPort}, _From, State) ->
     #nkport{
         remote_ip = Ip,
         remote_port = Port, 
@@ -234,14 +234,17 @@ handle_call({connect, ConnPort}, _From, State) ->
     } = ConnPort,
     {reply, do_connect(Ip, Port, Meta, State), State};
 
-handle_call({send_stun, Ip, Port}, From, State) ->
+handle_call({nkpacket_send_stun, Ip, Port}, From, State) ->
     {noreply, do_send_stun(Ip, Port, {call, From}, State)};
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call(get_socket, _From, #state{socket=Socket}=State) ->
+handle_call(nkpacket_get_socket, _From, #state{socket=Socket}=State) ->
     {reply, {ok, Socket}, State};
+
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
@@ -255,8 +258,11 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast({send_stun, Ip, Port, Pid}, State) ->
+handle_cast({nkpacket_send_stun, Ip, Port, Pid}, State) ->
     {noreply, do_send_stun(Ip, Port, {msg, Pid}, State)};
+
+handle_cast(nkpacket_stop, State) ->
+    {stop, normal, State};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_cast, [Msg, NkPort], State) of

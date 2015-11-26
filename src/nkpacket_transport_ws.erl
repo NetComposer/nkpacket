@@ -198,7 +198,7 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({start, Ip, Port, Pid}, _From, State) ->
+handle_call({nkpacket_start, Ip, Port, Pid}, _From, State) ->
     #state{nkport=#nkport{meta=Meta}=NkPort} = State,
     NkPort1 = NkPort#nkport{
         remote_ip = Ip,
@@ -223,6 +223,9 @@ handle_call({start, Ip, Port, Pid}, _From, State) ->
                     " ~p", [Error]),
             {reply, next, State}
     end;
+
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
@@ -297,7 +300,7 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 cowboy_init(Pid, Req, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
     % _Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
+    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, self()}, infinity) of
         {ok, ConnPid} ->
             cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, infinity, run);
         next ->

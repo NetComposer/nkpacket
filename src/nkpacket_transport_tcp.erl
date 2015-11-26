@@ -183,8 +183,8 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call(get_state, _From, State) ->
-    {reply, State, State};
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
@@ -197,6 +197,9 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 %% @private
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
+
+handle_cast(nkpacket_stop, State) ->
+    {stop, normal, State};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
