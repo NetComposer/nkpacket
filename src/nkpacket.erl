@@ -308,12 +308,15 @@ get_listener(Uri, Opts) when is_map(Opts) ->
     ok | {error, term()}.
 
 stop_listener(Pid) when is_pid(Pid) ->
-    case [Id || {Id, P} <- nkpacket_sup:get_listeners(), P==Pid] of
-        [Id] ->
-            nkpacket_sup:del_listener(Id);
-        _ ->
-            {error, unknown_listener}
-    end;
+    nklib_util:call(Pid, nkpacket_stop, 30000);
+    
+% stop_listener(Pid) when is_pid(Pid) ->
+%     case [Id || {Id, P} <- nkpacket_sup:get_listeners(), P==Pid] of
+%         [Id] ->
+%             nkpacket_sup:del_listener(Id);
+%         _ ->
+%             {error, unknown_listener}
+%     end;
 
 stop_listener(#nkport{pid=Pid}) ->
     stop_listener(Pid).
