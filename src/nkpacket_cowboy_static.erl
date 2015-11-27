@@ -21,10 +21,11 @@
 
 -include_lib("kernel/include/file.hrl").
 
--type state() :: {opts(), #file_info{}} | {error, atom()}.
+-type state() :: {file, #file_info{}, opts()} | {error, atom()}.
 
 
--compile(export_all).
+-define(LOG(Txt, List), lager:notice("Webserver "++Txt, List)).
+
 
 %% ===================================================================
 %% Callbacks
@@ -44,7 +45,7 @@ init(Req, #{path:=DirPath}=Opts) ->
 		<<DirPath:DirPathSize/binary, _/binary>> ->
 			init_file(Req1, Opts, FilePath);
 		_ ->
-			lager:warning("Client trying to access ~s", [FilePath]),
+			lager:warning("Webserver trying to access forbidden ~s", [FilePath]),
 			{cowboy_rest, Req1, {error, malformed}}
 	end.
 
@@ -58,18 +59,20 @@ init_file(Req, Opts, FilePath) ->
 		{ok, #file_info{type=directory}} ->
 			case maps:get(index_file, Opts, undefined) of
 				undefined -> 
-					lager:debug("Static web server forbidden ~s", 
-								[FilePath]),
+					lager:debug("Webserver sent forbidden directory ~s", [FilePath]),
 					{cowboy_rest, Req, {error, forbidden}};
 				Index ->
-					FilePath1 = filename:join(FilePath, Index),
-					init_file(Req, Opts#{index_file:=undefined}, FilePath1)
+					Url = list_to_binary([cowboy_req:url(Req), $/, Index]),
+					lager:debug("Webserver sent redirect to ~s", [Url]),
+					Req2 = cowboy_req:set_resp_header(<<"location">>, Url, Req),
+					Req3 = cowboy_req:reply(301, Req2),
+					{ok, Req3, Opts}
 			end;
-		{ok, Info} ->
-			lager:debug("Static web server found ~s", [FilePath]),
-			{cowboy_rest, Req, {Opts#{path:=FilePath}, Info}};
+		{ok, #file_info{}=File} ->
+			lager:debug("Webserver found file ~s", [FilePath]),
+			{cowboy_rest, Req, {file, File, Opts#{path:=FilePath}}};
 		{error, enoent} ->
-			lager:notice("Static web server NOT found ~s", [FilePath]),
+			lager:info("Webserver didn't find file ~s", [FilePath]),
 			{cowboy_rest, Req, {error, not_found}};
 		_ ->
 			{cowboy_rest, Req, {error, forbidden}}
@@ -92,7 +95,8 @@ malformed_request(Req, State) ->
 
 forbidden(Req, {error, forbidden}=State) ->
 	{true, Req, State};
-forbidden(Req, {_, #file_info{access=Access}}=State) when Access==write; Access==none ->
+forbidden(Req, {file, #file_info{access=Access}, _}=State) 
+		when Access==write; Access==none ->
 	{true, Req, State};
 forbidden(Req, State) ->
 	{false, Req, State}.
@@ -102,7 +106,7 @@ forbidden(Req, State) ->
 -spec content_types_provided(cowboy_req:req(), state()) ->
 	{[{binary(), get_file}], cowboy_req:req(), state()}.
 	
-content_types_provided(Req, {#{path:=Path}=Opts, _Info}=State) ->
+content_types_provided(Req, {file, _, #{path:=Path}=Opts}=State) ->
 	case maps:get(mimetypes, Opts, all) of
 		all ->
 			{[{cow_mimetypes:all(Path), get_file}], Req, State};
@@ -121,7 +125,7 @@ content_types_provided(Req, {error, _}=State) ->
 
 resource_exists(Req, {error, not_found}=State) ->
 	{false, Req, State};
-resource_exists(Req, {_, #file_info{type=regular}}=State) ->
+resource_exists(Req, {file, #file_info{type=regular}, _}=State) ->
 	{true, Req, State};
 resource_exists(Req, State) ->
 	{false, Req, State}.
@@ -131,16 +135,16 @@ resource_exists(Req, State) ->
 -spec generate_etag(cowboy_req:req(), state()) ->
 	{{strong | weak, binary()}, cowboy_req:req(), state()}.
 
-generate_etag(Req, {Opts, Info}=State) ->
+generate_etag(Req, {file, File, Opts}=State) ->
 	case maps:get(etag, Opts, true) of
 		true ->
-			#file_info{size=Size, mtime=Mtime} = Info,
+			#file_info{size=Size, mtime=Mtime} = File,
 			{generate_default_etag(Size, Mtime), Req, State};
 		false ->
 			{undefined, Req, State};
 		{Module, Function} ->
 			#{path:=Path} = Opts,
-			#file_info{size=Size, mtime=Mtime} = Info,
+			#file_info{size=Size, mtime=Mtime} = File,
 			{Module:Function(Path, Size, Mtime), Req, State}
 	end.
 
@@ -154,7 +158,7 @@ generate_default_etag(Size, Mtime) ->
 -spec last_modified(cowboy_req:req(), state()) ->
 	{calendar:datetime(), cowboy_req:req(), state()}.
 
-last_modified(Req, {_Opts, #file_info{mtime=Modified}}=State) ->
+last_modified(Req, {file, #file_info{mtime=Modified}, _}=State) ->
 	{Modified, Req, State}.
 
 
@@ -162,7 +166,7 @@ last_modified(Req, {_Opts, #file_info{mtime=Modified}}=State) ->
 -spec get_file(cowboy_req:req(), state()) ->
 	{{stream, non_neg_integer(), fun()}, cowboy_req:req(), state()}.
 
-get_file(Req, {#{path:=Path}, #file_info{size=Size}}=State) ->
+get_file(Req, {file, #file_info{size=Size}, #{path:=Path}}=State) ->
 	Sendfile = fun(Socket, Transport) ->
 		case Transport:sendfile(Socket, Path) of
 			{ok, _} -> ok;

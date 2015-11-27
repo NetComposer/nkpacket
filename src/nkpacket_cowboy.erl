@@ -378,7 +378,7 @@ execute([Filter|Rest], Req, Env) ->
         (WsProto==any orelse ReqWsProto==WsProto)
     of
         true ->
-            lager:debug("Selected: ~p (~p), ~p (~p), ~p (~p)", 
+            lager:debug("NkPACKET selected: ~p (~p), ~p (~p), ~p (~p)", 
                 [ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             Req1 = case WsProto of
                 any -> 
@@ -394,7 +394,7 @@ execute([Filter|Rest], Req, Env) ->
                     Result
             end;
         false ->
-            lager:debug("Skipping: ~p (~p), ~p (~p), ~p (~p)", 
+            lager:debug("NkPACKET skipping: ~p (~p), ~p (~p), ~p (~p)", 
                 [ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             execute(Rest, Req, Env)
     end.
