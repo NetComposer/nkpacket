@@ -312,7 +312,7 @@ init([NkPort]) ->
                 https -> nkpacket_config_cache:http_timeout()
             end
     end,
-    lager:info("Created ~p connection to/from ~p:~p:~p (~p, ~p)", 
+    lager:debug("Created ~p connection to/from ~p:~p:~p (~p, ~p)", 
                [Protocol, Transp, Ip, Port, Class, self()]),
     if
         % Transp==ws; Transp==wss ->
