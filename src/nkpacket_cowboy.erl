@@ -34,12 +34,11 @@
 -export([init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
 -export([start_link/4, execute/2]).
+-export([extract_filter/1]).
 -export_type([user_filter/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
-
--type transp() :: ws | wss | http | https.
 
 
 -type user_filter() :: 
@@ -57,7 +56,7 @@
 -record(filter, {
     id :: term(),         
     module :: module(),    
-    transp :: transp(),
+    type :: http | ws,
     host :: binary() | all,
     paths :: [binary()],
     ws_proto :: binary() | all,
@@ -373,7 +372,6 @@ start_link(Ref, Socket, TranspModule, Opts) ->
 execute(Req, Env) ->
     {Ip, Port} = nklib_util:get_value(?MODULE, Env),
     Filters = get_filters(Ip, Port),
-    lager:warning("FILTERS: ~p", [Filters]),
     execute(Filters, Req, Env).
 
 
@@ -382,19 +380,22 @@ execute(Req, Env) ->
     term().
 
 execute([], Req, _Env) ->
-    lager:notice("NkPACKET Cowboy: page not found"),
+    lager:info("NkPACKET Cowboy: url ~s not matched", [cowboy_req:path(Req)]),
     {stop, reply(404, Req)};
 
 execute([Filter|Rest], Req, Env) ->
     #filter{
         id = Id,
         module = Module,
-        transp = _Transp,
+        type = Type,
         host = Host,
         paths = Paths,
         ws_proto = WsProto
     } = Filter,
-    lager:warning("HD: ~p", [cowboy_req:headers(Req)]),
+    ReqType = case cowboy_req:parse_header(<<"upgrade">>, Req, []) of
+        [<<"websocket">>] -> ws;
+        _ -> http
+    end,
     ReqHost = cowboy_req:host(Req),
     ReqPaths = nkpacket_util:norm_path(cowboy_req:path(Req)),
     ReqWsProto = case cowboy_req:parse_header(?WS_PROTO_HD, Req, []) of
@@ -402,9 +403,10 @@ execute([Filter|Rest], Req, Env) ->
         _ -> none
     end,
     case
+        (Type == ReqType) andalso
         (Host==any orelse ReqHost==Host) andalso
-        check_paths(ReqPaths, Paths) andalso
-        (WsProto==any orelse ReqWsProto==WsProto)
+        (WsProto==any orelse ReqWsProto==WsProto) andalso
+        check_paths(ReqPaths, Paths)
     of
         true ->
             lager:debug("NkPACKET Web Selected: ~p (~p), ~p (~p), ~p (~p)", 
@@ -459,8 +461,6 @@ listen_opts(#nkport{transp=Transp, listen_ip=Ip, meta=Opts})
 %% @private
 register(#state{nkport=Shared, filters=Filters}=State) ->
     #nkport{listen_ip=Ip, listen_port=Port} = Shared,
-    lager:warning("REG: ~p", [Filters]),
-
     nklib_proc:put({?MODULE, Ip, Port}, Filters),
     State.
 
@@ -484,10 +484,16 @@ check_paths(_A, _B) ->
 
 %% @private
 make_filter(Filter, ListenPid, Transp) ->
+    Type = case Transp of
+        http -> http;
+        https -> http;
+        ws -> ws;
+        wss -> ws
+    end,
     #filter{
         id = maps:get(id, Filter),
         module = maps:get(module, Filter),
-        transp = Transp,
+        type = Type,
         host = maps:get(host, Filter, any),
         paths = nkpacket_util:norm_path(maps:get(path, Filter, any)),
         ws_proto = maps:get(ws_proto, Filter, any),
@@ -509,6 +515,6 @@ get_modules(http) -> {inet, gen_tcp, ranch_tcp};
 get_modules(https) -> {ssl, ssl, ranch_ssl}.
 
 
-
-
-
+%% @private used in tests
+extract_filter(#filter{id=Id, host=Host, paths=Paths, ws_proto=Proto}) ->
+    {Id, Host, Paths, Proto}.

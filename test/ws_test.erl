@@ -322,13 +322,12 @@ multi() ->
 			}
 		}
 	] = test_util:listeners(dom3),
-	[
-		{ws, {0,0,0,0}, P1, Cow1, [
-     		#{id:=Ws3, host:=<<"localhost">>, path:=<<"/dom3">>, ws_proto:=<<"proto1">>},
-      		#{id:=Ws2, path:=<<"/dom2">>},
-      		#{id:=Ws1, path:=<<"/dom1/more">>}
-      	]}
-     ] = nkpacket_cowboy:get_all(),
+	[{{{0,0,0,0}, P1}, Cow1, [Filter1, Filter2, Filter3]}] = 
+    	nkpacket_cowboy:get_all(),
+	{Ws3, <<"localhost">>, [<<"dom3">>], <<"proto1">>} = 
+    	nkpacket_cowboy:extract_filter(Filter1),
+	{Ws2, any, [<<"dom2">>], any} = nkpacket_cowboy:extract_filter(Filter2),
+	{Ws1, any, [<<"dom1">>, <<"more">>], any} = nkpacket_cowboy:extract_filter(Filter3),
 
 	% Now we send a message from dom5 to dom1, we don't mind host and ws_proto
 	{ok, Conn1} = nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1,
@@ -441,8 +440,8 @@ multi() ->
 	receive {Ref1, listen_stop}  -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_stop}  -> ok after 1000 -> error(?LINE) end,
 	receive {Ref3, listen_stop}  -> ok after 1000 -> error(?LINE) end,
-	{error, unknown_listener} = nkpacket:stop_listener(Listen1),
-	{error, unknown_listener} = nkpacket:stop_listener(Ws3),
+	{error, {exit, _}} = nkpacket:stop_listener(Listen1),
+	{error, {exit, _}} = nkpacket:stop_listener(Ws3),
 	test_util:ensure([Ref1, Ref2, Ref3]).
 
 

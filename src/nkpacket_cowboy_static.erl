@@ -62,7 +62,7 @@ init_file(Req, Opts, FilePath) ->
 					lager:debug("Webserver sent forbidden directory ~s", [FilePath]),
 					{cowboy_rest, Req, {error, forbidden}};
 				Index ->
-					Url = list_to_binary([cowboy_req:url(Req), $/, Index]),
+					Url = join(Req, nklib_util:to_binary(Index)),
 					lager:debug("Webserver sent redirect to ~s", [Url]),
 					Req2 = cowboy_req:set_resp_header(<<"location">>, Url, Req),
 					Req3 = cowboy_req:reply(301, Req2),
@@ -183,6 +183,15 @@ get_file(Req, {file, #file_info{size=Size}, #{path:=Path}}=State) ->
 %% ===================================================================
 
 
-
-
-
+join(Req, Index) ->
+	Url1 = cowboy_req:url(Req),
+	Url2 = case byte_size(Url1) of
+		0 ->
+			<<"/">>;
+		Size ->
+			case binary:at(Url1, Size-1) of
+				$/ -> Url1;
+				_ -> <<Url1/binary, "/">>
+			end
+	end,
+	<<Url2/binary, Index/binary>>.

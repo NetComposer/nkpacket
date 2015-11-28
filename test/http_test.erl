@@ -172,16 +172,24 @@ static() ->
 	{ok, S2} = nkpacket:start_listener(Url2, #{http_proto=>Proto2}),
 
 	Gun = open(Port, tcp),
-	{ok, 200, H1, <<"index_root">>} = get(Gun, "/", []),
+	{ok, 301, H1} = get(Gun, "/", []),
+	[
+		{<<"connection">>, <<"keep-alive">>},
+		{<<"content-length">>, <<"0">>},
+		{<<"date">>, _},
+		{<<"location">>, <<"http://127.0.0.1:8080/index.html">>},
+		{<<"server">>, <<"NkPACKET">>}
+	] = lists:sort(H1),
+	{ok, 200, H2, <<"index_root">>} = get(Gun, "/index.html", []),
 	[
 		{<<"connection">>, <<"keep-alive">>},
 		{<<"content-length">>, <<"10">>},
-		{<<"content-type">>, <<"text/html">>},
+		{<<"content-type">>,<<"text/html">>},
 		{<<"date">>, _},
 		{<<"etag">>, Etag},
 		{<<"last-modified">>, Date},
 		{<<"server">>, <<"NkPACKET">>}
-	] = lists:sort(H1),
+	] = lists:sort(H2),
 	File1 = filename:join(Path, "index.html"),
 	{ok, #file_info{mtime=Mtime}} = file:read_file_info(File1, [{time, universal}]),
 	Etag = <<$", (integer_to_binary(erlang:phash2({10, Mtime}, 16#ffffffff)))/binary, $">>,
@@ -191,13 +199,13 @@ static() ->
 	{ok, 403, _} = get(Gun, "/1/2/", []),
 	{ok, 200, _, <<"index_root">>} = get(Gun, "/1/2/index.html", []),
 	{ok, 404, _} = get(Gun, "/1/2/index.htm", []),
-	{ok, 200, _, <<"index_dir1">>} = get(Gun, "/dir1", []),
+	{ok, 301, _} = get(Gun, "/dir1", []),
 	{ok, 403, _} = get(Gun, "/1/2/dir1", []),
-	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/dir1/file1.txt", []),
-	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/dir1/././file1.txt", []),
+	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/dir1/file1.txt", []),
+	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/dir1/././file1.txt", []),
 	lager:warning("Next warning about unathorized access is expected"),
 	{ok, 400, _} = get(Gun, "/dir1/../../file1.txt", []),
-	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/dir1/../dir1/file1.txt", []),
+	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/dir1/../dir1/file1.txt", []),
 	[
 		{<<"connection">>, <<"keep-alive">>},
 		{<<"content-length">>, <<"9">>},
@@ -206,8 +214,8 @@ static() ->
 		{<<"etag">>, _},
 		{<<"last-modified">>, _},
 		{<<"server">>,<<"NkPACKET">>}
-	] = lists:sort(H2),
-	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/1/2/dir1/file1.txt", []),
+	] = lists:sort(H3),
+	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/1/2/dir1/file1.txt", []),
 
 	ok = nkpacket:stop_listener(S1),
 	timer:sleep(100),
@@ -223,10 +231,6 @@ static() ->
 	{ok, 404, _} = get(Gun2, "/a/index.html", []),
 	{ok, 200, _, _} = get(Gun2, "/a/index.html", [{<<"host">>, <<"localhost">>}]),
 	{ok, 404, _} = get(Gun2, "/c/index.html", [{<<"host">>, <<"localhost">>}]),
-
-
-
-
 
 	% Gun3 = open(Port, tcp),
 	% {ok, 200, _, _} = get(Gun3, "/a/index.html", []),

@@ -72,8 +72,10 @@ default_port(_) -> invalid.
 listen_init(NkPort) ->
 	lager:notice("Protocol LISTEN init: ~p (~p)", [NkPort, self()]),
 	State = case nkpacket:get_user(NkPort) of
-		{ok, _Class, {Pid, Ref}} -> #listen_state{pid=Pid, ref=Ref};
-		_ -> #listen_state{}
+		{ok, _Class, {Pid, Ref}} -> 
+			#listen_state{pid=Pid, ref=Ref};
+		_ -> 
+			#listen_state{}
 	end,
 	maybe_reply(listen_init, State),
 	{ok, State}.
