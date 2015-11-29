@@ -56,7 +56,7 @@
 -record(filter, {
     id :: term(),         
     module :: module(),    
-    type :: http | ws,
+    transp :: http | https | ws | wss,
     host :: binary() | all,
     paths :: [binary()],
     ws_proto :: binary() | all,
@@ -387,11 +387,17 @@ execute([Filter|Rest], Req, Env) ->
     #filter{
         id = Id,
         module = Module,
-        type = Type,
+        transp = Transp,
         host = Host,
         paths = Paths,
         ws_proto = WsProto
     } = Filter,
+    Type = case Transp of
+        http -> http;
+        https -> http;
+        ws -> ws;
+        wss -> wss
+    end,
     ReqType = case cowboy_req:parse_header(<<"upgrade">>, Req, []) of
         [<<"websocket">>] -> ws;
         _ -> http
@@ -409,8 +415,8 @@ execute([Filter|Rest], Req, Env) ->
         check_paths(ReqPaths, Paths)
     of
         true ->
-            lager:debug("NkPACKET Web Selected: ~p (~p), ~p (~p), ~p (~p)", 
-                [ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
+            lager:debug("NkPACKET Web Selected: ~p (~p) ~p (~p), ~p (~p), ~p (~p)", 
+                [ReqType, Type, ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             Req1 = case WsProto of
                 any -> 
                     Req;
@@ -424,8 +430,8 @@ execute([Filter|Rest], Req, Env) ->
                     Result
             end;
         false ->
-            lager:debug("NkPACKET Web Skipping: ~p (~p), ~p (~p), ~p (~p)", 
-                [ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
+            lager:debug("NkPACKET Web Skipping: ~p (~p) ~p (~p), ~p (~p), ~p (~p)", 
+                [ReqType, Type, ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             execute(Rest, Req, Env)
     end.
 
@@ -484,16 +490,10 @@ check_paths(_A, _B) ->
 
 %% @private
 make_filter(Filter, ListenPid, Transp) ->
-    Type = case Transp of
-        http -> http;
-        https -> http;
-        ws -> ws;
-        wss -> ws
-    end,
     #filter{
         id = maps:get(id, Filter),
         module = maps:get(module, Filter),
-        type = Type,
+        transp = Transp,
         host = maps:get(host, Filter, any),
         paths = nkpacket_util:norm_path(maps:get(path, Filter, any)),
         ws_proto = maps:get(ws_proto, Filter, any),
