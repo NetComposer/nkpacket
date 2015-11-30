@@ -416,8 +416,8 @@ get_remote_bin(Term) ->
             {ok, 
                 <<
                     (nklib_util:to_binary(Transp))/binary, ":",
-                    (nklib_util:to_binary(Ip))/binary, ":",
-                    (nklib_util:to_binary(Port))
+                    (nklib_util:to_host(Ip))/binary, ":",
+                    (nklib_util:to_binary(Port))/binary
                 >>};
         {error, Error} ->
             {error, Error}
