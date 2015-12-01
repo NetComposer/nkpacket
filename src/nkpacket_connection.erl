@@ -100,7 +100,7 @@ send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
         true ->
             case Protocol:conn_encode(Msg, NkPort) of
                 {ok, OutMsg} ->
-                    lager:debug("transport quick encode: ~p", [OutMsg]),
+                    % lager:debug("transport quick encode: ~p", [OutMsg]),
                     case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
                         ok ->
                             reset_timeout(Pid),
