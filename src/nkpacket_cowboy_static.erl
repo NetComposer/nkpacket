@@ -39,11 +39,12 @@ init(Req, #{path:=DirPath}=Opts) ->
 	Req1 = cowboy_req:set_resp_header(<<"server">>, <<"NkPACKET">>, Req),
 	PathInfo = cowboy_req:path_info(Req),
 	FilePath = nklib_parse:fullpath(filename:join([DirPath|PathInfo])),
-	DirPathSize = byte_size(DirPath),
 	%% Check we don't go outside DirPath
+	DirPathSize = byte_size(DirPath),
 	case FilePath of
 		<<DirPath:DirPathSize/binary, _/binary>> ->
-			init_file(Req1, Opts, FilePath);
+			IsDir = binary:last(cowboy_req:url(Req)) == $/,
+			init_file(Req1, Opts, FilePath, IsDir);
 		_ ->
 			lager:warning("Webserver trying to access forbidden ~s", [FilePath]),
 			{cowboy_rest, Req1, {error, malformed}}
@@ -51,23 +52,27 @@ init(Req, #{path:=DirPath}=Opts) ->
 
 
 %% @private
--spec init_file(cowboy_req:req(), opts(), binary()) -> 
+-spec init_file(cowboy_req:req(), opts(), binary(), boolean()) -> 
 	{cowboy_rest, cowboy_req:req(), state()}.
 
-init_file(Req, Opts, FilePath) ->
+init_file(Req, Opts, FilePath, IsDir) ->
 	case file:read_file_info(FilePath, [{time, universal}]) of
-		{ok, #file_info{type=directory}} ->
+		{ok, #file_info{type=directory}} when IsDir ->
 			case maps:get(index_file, Opts, undefined) of
 				undefined -> 
-					lager:debug("Webserver sent forbidden directory ~s", [FilePath]),
+					lager:debug("Webserver didn't allow directory ~s", [FilePath]),
 					{cowboy_rest, Req, {error, forbidden}};
 				Index ->
-					Url = join(Req, nklib_util:to_binary(Index)),
-					lager:debug("Webserver sent redirect to ~s", [Url]),
-					Req2 = cowboy_req:set_resp_header(<<"location">>, Url, Req),
-					Req3 = cowboy_req:reply(301, Req2),
-					{ok, Req3, Opts}
+					FilePath2 = <<FilePath/binary, "/", Index/binary>>,
+					lager:debug("Webserver sending index file ~s", [FilePath2]),
+					init_file(Req, maps:remove(index_file, Opts), FilePath2, false)
 			end;
+		{ok, #file_info{type=directory}} when not IsDir ->
+			Url = <<(cowboy_req:url(Req))/binary, "/">>,
+			lager:debug("Webserver sent redirect to ~s", [Url]),
+			Req2 = cowboy_req:set_resp_header(<<"location">>, Url, Req),
+			Req3 = cowboy_req:reply(301, Req2),
+			{ok, Req3, Opts};
 		{ok, #file_info{}=File} ->
 			lager:debug("Webserver found file ~s", [FilePath]),
 			{cowboy_rest, Req, {file, File, Opts#{path:=FilePath}}};
@@ -183,15 +188,17 @@ get_file(Req, {file, #file_info{size=Size}, #{path:=Path}}=State) ->
 %% ===================================================================
 
 
-join(Req, Index) ->
-	Url1 = cowboy_req:url(Req),
-	Url2 = case byte_size(Url1) of
-		0 ->
-			<<"/">>;
-		Size ->
-			case binary:at(Url1, Size-1) of
-				$/ -> Url1;
-				_ -> <<Url1/binary, "/">>
-			end
-	end,
-	<<Url2/binary, Index/binary>>.
+
+
+% join(Req, Index) ->
+% 	Url1 = cowboy_req:url(Req),
+% 	Url2 = case byte_size(Url1) of
+% 		0 ->
+% 			<<"/">>;
+% 		Size ->
+% 			case binary:at(Url1, Size-1) of
+% 				$/ -> Url1;
+% 				_ -> <<Url1/binary, "/">>
+% 			end
+% 	end,
+% 	<<Url2/binary, Index/binary>>.
