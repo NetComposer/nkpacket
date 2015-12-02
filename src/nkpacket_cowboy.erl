@@ -396,7 +396,7 @@ execute([Filter|Rest], Req, Env) ->
         http -> http;
         https -> http;
         ws -> ws;
-        wss -> wss
+        wss -> ws
     end,
     ReqType = case cowboy_req:parse_header(<<"upgrade">>, Req, []) of
         [<<"websocket">>] -> ws;
