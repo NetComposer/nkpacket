@@ -85,6 +85,7 @@ syntax() ->
         tcp_listeners => nat_integer,
         host => host,
         path => path,
+        get_headers => [boolean, {list, binary}],
         cowboy_opts => list,
         ws_proto => lower,
         http_proto => fun spec_http_proto/3,

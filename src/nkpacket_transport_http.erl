@@ -25,7 +25,7 @@
 -export([get_listener/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
--export([cowboy_init/3, resume/5]).
+-export([cowboy_init/4, resume/5]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -92,7 +92,7 @@ init([NkPort]) ->
             % listen_port = Port,
             pid = self()
         },
-        Filter1 = maps:with([host, path], Meta),
+        Filter1 = maps:with([host, path, get_headers], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
         case nkpacket_cowboy:start(NkPort1, Filter2) of
             {ok, SharedPid} -> ok;
@@ -152,7 +152,7 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({nkpacket_start, Ip, Port, Pid}, _From, State) ->
+handle_call({nkpacket_start, Ip, Port, _UserMeta, Pid}, _From, State) ->
     #state{nkport=NkPort, http_proto=HttpProto} = State,
     #nkport{protocol=Protocol, meta=Meta} = NkPort,
     NkPort1 = NkPort#nkport{
@@ -251,13 +251,13 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 %% @private Called from nkpacket_cowboy:execute/2, inside
 %% cowboy's connection process
--spec cowboy_init(#nkport{}, cowboy_req:req(), list()) ->
+-spec cowboy_init(#nkport{}, cowboy_req:req(), nkpacket_cowboy:user_meta(), list()) ->
     term().
 
-cowboy_init(Pid, Req, Env) ->
+cowboy_init(Pid, Req, Meta, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
     % Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, self()}, infinity) of
+    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, Meta, self()}, infinity) of
         {ok, Protocol, HttpProto, ConnPid} ->
             case Protocol:http_init(HttpProto, ConnPid, Req, Env) of
                 {ok, Req1, Env1, Middlewares1} ->

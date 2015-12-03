@@ -125,6 +125,7 @@
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
         path => string() | binary(),            % Listen on this path and subpaths
+        get_headers => boolean() | [binary()],  % Get all headers or some
         cowboy_opts => cowboy_opts(),
 
         % WS/WSS

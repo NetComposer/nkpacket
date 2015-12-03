@@ -35,7 +35,7 @@
          handle_info/2]).
 -export([start_link/4, execute/2]).
 -export([extract_filter/1]).
--export_type([user_filter/0]).
+-export_type([user_filter/0, user_meta/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -47,10 +47,22 @@
         module => module(),     % Mandatory
         host => binary(),
         path => binary() | [binary()],
-        ws_proto => binary()
+        ws_proto => binary(),
+        get_headers => boolean() | [binary()]
     }.
 
 -define(WS_PROTO_HD, <<"sec-websocket-protocol">>).
+
+-type filter_meta() ::
+    #{
+        get_headers => boolean() | [binary()]
+    }.
+
+
+-type user_meta() ::
+    #{
+        headers => [{binary(), binary()}]
+    }.
 
 
 -record(filter, {
@@ -60,6 +72,7 @@
     host :: binary() | all,
     paths :: [binary()],
     ws_proto :: binary() | all,
+    meta :: filter_meta(),
     mon :: reference()
 }).
 
@@ -390,7 +403,8 @@ execute([Filter|Rest], Req, Env) ->
         transp = Transp,
         host = Host,
         paths = Paths,
-        ws_proto = WsProto
+        ws_proto = WsProto,
+        meta = FilterMeta
     } = Filter,
     Type = case Transp of
         http -> http;
@@ -423,7 +437,8 @@ execute([Filter|Rest], Req, Env) ->
                 _ -> 
                     cowboy_req:set_resp_header(?WS_PROTO_HD, WsProto, Req)
             end,
-            case Module:cowboy_init(Id, Req1, Env) of
+            Meta = get_user_meta(FilterMeta, Req),
+            case Module:cowboy_init(Id, Req1, Meta, Env) of
                 next -> 
                     execute(Rest, Req, Env);
                 Result ->
@@ -490,6 +505,7 @@ check_paths(_A, _B) ->
 
 %% @private
 make_filter(Filter, ListenPid, Transp) ->
+    Meta = maps:with([get_headers], Filter),
     #filter{
         id = maps:get(id, Filter),
         module = maps:get(module, Filter),
@@ -497,8 +513,26 @@ make_filter(Filter, ListenPid, Transp) ->
         host = maps:get(host, Filter, any),
         paths = nkpacket_util:norm_path(maps:get(path, Filter, any)),
         ws_proto = maps:get(ws_proto, Filter, any),
+        meta = Meta,
         mon = monitor(process, ListenPid)
     }.
+
+
+%% @private
+-spec get_user_meta(filter_meta(), cowboy:req()) ->
+    user_meta().
+
+get_user_meta(#{get_headers:=Names}, Req) ->
+    Hds1 = cowboy_req:headers(Req),
+    Hds2 = case Names of
+        true -> Hds1;
+        false -> #{};
+        _ -> [{Name, Key} || {Name, Key} <- Hds1, lists:member(Name, Names)]
+    end,
+    #{headers=>Hds2};
+
+get_user_meta(_, _) ->
+    #{}.
 
 
 %% @private
