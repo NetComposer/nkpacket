@@ -22,9 +22,9 @@
 -module(nkpacket_util).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([console_loglevel/1, make_web_proto/1]).
+-export([listen_print_all/0, conn_print_all/0]).
+-export([make_web_proto/1]).
 -export([make_cache/0, make_tls_opts/1, tls_keys/0]).
--export([debug/0, info/0, notice/0, warning/0, error/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
@@ -40,20 +40,26 @@
 %% =================================================================
 
 
-%% @doc Changes log level for console
-debug() -> console_loglevel(debug).
-info() -> console_loglevel(info).
-notice() -> console_loglevel(notice).
-warning() -> console_loglevel(warning).
-error() -> console_loglevel(error).
+listen_print_all() ->
+    print_all(nkpacket:get_all()).
 
 
-%% @doc Changes log level for console
--spec console_loglevel(debug|info|notice|warning|error) ->
-    ok.
+conn_print_all() ->
+    print_all(nkpacket_connection:get_all()).
 
-console_loglevel(Level) -> 
-    lager:set_loglevel(lager_console_backend, Level).
+
+print_all([]) ->
+    ok;
+print_all([Pid|Rest]) ->
+    {ok, #nkport{socket=Socket}=NkPort} = nkpacket:get_nkport(Pid),
+    NkPort1 = case is_tuple(Socket) of true -> 
+        NkPort#nkport{socket=element(1,Socket)}; 
+        false -> NkPort
+    end,
+    {_, _, List} = lager:pr(NkPort1, ?MODULE),
+    io:format("~p\n", [List]),
+    print_all(Rest).
+
 
 
 %% @doc Adds SSL options

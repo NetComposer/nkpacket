@@ -374,7 +374,7 @@ websocket_info(Info, Req, State) ->
 
 %% @private
 terminate(Reason, _Req, ConnPid) ->
-    lager:debug("WS process terminate: ~p", [Reason]),
+    lager:debug("WS ~p process terminate: ~p", [self(), Reason]),
     nkpacket_connection:stop(ConnPid, normal),
     ok.
 
