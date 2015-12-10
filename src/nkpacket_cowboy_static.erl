@@ -63,7 +63,8 @@ init_file(Req, Opts, FilePath, IsDir) ->
 					lager:debug("Webserver didn't allow directory ~s", [FilePath]),
 					{cowboy_rest, Req, {error, forbidden}};
 				Index ->
-					FilePath2 = <<FilePath/binary, "/", Index/binary>>,
+					Index1 = nklib_util:to_binary(Index),
+					FilePath2 = <<FilePath/binary, "/", Index1/binary>>,
 					lager:debug("Webserver sending index file ~s", [FilePath2]),
 					init_file(Req, maps:remove(index_file, Opts), FilePath2, false)
 			end;
