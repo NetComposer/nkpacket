@@ -362,7 +362,17 @@ websocket_handle(Other, Req, ConnPid) ->
     when Req::cowboy_req:req(), State::any().
 
 websocket_info({nkpacket_send, Frames}, Req, State) ->
+    % case Frames of
+    %     {text, <<"#SPB", _/binary>>=Msg} ->
+    %         lager:warning("SEND: ~p", [byte_size(Msg)]);
+    %     _ ->
+    %         lager:warning("SEND: ~p", [Frames])
+    % end,
     {reply, Frames, Req, State};
+
+websocket_info({nkpacket_reply, Ref, Pid}, Req, State) ->
+    Pid ! {nkpacket_reply, Ref},
+    {ok, Req, State};
 
 websocket_info(nkpacket_stop, Req, State) ->
     {stop, Req, State};
