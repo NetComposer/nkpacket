@@ -22,13 +22,14 @@
 -module(nkpacket_connection_lib).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([is_max/0, raw_send/2, raw_stop/1]).
+-export([is_max/0, raw_send/2, raw_send_sync/2, raw_stop/1]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
 -include("nkpacket.hrl").
 
 -define(MAX_UDP, 1500).
+-define(SYNC_TIMEOUT, 30000).
 
 
 %% ===================================================================
@@ -74,7 +75,12 @@ raw_send(#nkport{transp=ws, socket=Socket}, Data) when is_port(Socket) ->
 
 raw_send(#nkport{transp=wss, socket={sslsocket, _, _}=Socket}, Data) ->
     Bin = nkpacket_connection_ws:encode(get_ws_frame(Data)),
-    ssl:send(Socket, Bin);
+    L = ssl:send(Socket, Bin),
+    case L of
+        ok -> ok;
+        _ -> lager:warning("L: ~p", [L])
+    end,
+    L;
 
 raw_send(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->
     Msg = if
@@ -91,6 +97,27 @@ raw_send(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->
 
 raw_send(_, _) ->
     {error, invalid_transport}.
+
+
+%% @doc Sends data directly to a transport, wait transmission
+-spec raw_send_sync(nkpacket:nkport(), nkpacket:outcoming()) ->
+    ok | {error, term()}.
+    
+raw_send_sync(#nkport{socket=Pid}=NkPort, Data) when is_pid(Pid) ->
+    case raw_send(NkPort, Data) of
+        ok ->
+            Ref = make_ref(),
+            Pid ! {nkpacket_reply, Ref, self()},
+            receive
+                {nkpacket_reply, Ref} -> ok
+            after
+                ?SYNC_TIMEOUT -> {error, timeout}
+            end;
+        {error, Error} ->
+            {error, Error}
+    end;
+raw_send_sync(NkPort, Data) ->
+    raw_send(NkPort, Data).
 
 
 %% @private
