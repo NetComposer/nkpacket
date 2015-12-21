@@ -22,7 +22,7 @@
 -module(nkpacket_connection_lib).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([is_max/0, raw_send/2, raw_send_sync/2, raw_stop/1]).
+-export([is_max/0, raw_send/2, raw_stop/1]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
@@ -89,8 +89,14 @@ raw_send(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->
     end,
     case is_process_alive(Pid) of
         true -> 
-            Pid ! {nkpacket_send, Msg},
-            ok;
+            Ref = make_ref(),
+            Self = self(),
+            Pid ! {nkpacket_send, Ref, Self, Msg},
+            receive
+                {nkpacket_reply, Ref} -> ok
+            after
+                ?SYNC_TIMEOUT -> {error, timeout}
+            end;
         false ->
             {error, no_process}
     end;
@@ -99,25 +105,21 @@ raw_send(_, _) ->
     {error, invalid_transport}.
 
 
-%% @doc Sends data directly to a transport, wait transmission
--spec raw_send_sync(nkpacket:nkport(), nkpacket:outcoming()) ->
-    ok | {error, term()}.
+% %% @doc 
+% -spec sync(nkpacket:nkport()) ->
+%     ok | {error, term()}.
     
-raw_send_sync(#nkport{socket=Pid}=NkPort, Data) when is_pid(Pid) ->
-    case raw_send(NkPort, Data) of
-        ok ->
-            Ref = make_ref(),
-            Pid ! {nkpacket_reply, Ref, self()},
-            receive
-                {nkpacket_reply, Ref} -> ok
-            after
-                ?SYNC_TIMEOUT -> {error, timeout}
-            end;
-        {error, Error} ->
-            {error, Error}
-    end;
-raw_send_sync(NkPort, Data) ->
-    raw_send(NkPort, Data).
+% sync(#nkport{socket=Pid}) when is_pid(Pid) ->
+%     Ref = make_ref(),
+%     Pid ! {nkpacket_reply, Ref, self()},
+%     receive
+%         {nkpacket_reply, Ref} -> ok
+%     after
+%         ?SYNC_TIMEOUT -> {error, timeout}
+%     end;
+
+% sync(_NkPort) ->
+%     ok.
 
 
 %% @private
