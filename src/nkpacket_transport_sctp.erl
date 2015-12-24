@@ -39,10 +39,9 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(NkPort) ->
-    #nkport{protocol=Proto, transp=sctp, listen_ip=Ip, listen_port=Port} = NkPort,
+get_listener(#nkport{transp=sctp}=NkPort) ->
     {
-        {{Proto, sctp, Ip, Port, <<>>}, make_ref()}, 
+        {?MODULE, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -114,8 +113,10 @@ init([NkPort]) ->
                 pid = self(),
                 socket = {Socket, 0}
             },
+            Id = binary_to_atom(nklib_util:hash({sctp, Ip, Port1}), latin1),
+            true = register(Id, self()),
             ok = gen_sctp:listen(Socket, true),
-            nklib_proc:put(nkpacket_listeners, Class),
+            nklib_proc:put(nkpacket_listeners, {Id, Class}),
             ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
             ListenType = case size(Ip) of

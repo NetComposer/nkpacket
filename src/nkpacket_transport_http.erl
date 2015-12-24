@@ -41,10 +41,8 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
-    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port, meta=Meta} = NkPort,
-    Path = maps:get(path, Meta, <<>>),
     {
-        {{Proto, Transp, Ip, Port, Path}, make_ref()},
+        {?MODULE, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -105,7 +103,6 @@ init([NkPort]) ->
             _ -> 
                 Port1 = Port
         end,
-        nklib_proc:put(nkpacket_listeners, Class),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
             local_ip = Ip,
@@ -114,6 +111,10 @@ init([NkPort]) ->
             socket = SharedPid,
             meta = ConnMeta
         },   
+        Path = maps:get(path, Meta, <<>>),
+        Id = binary_to_atom(nklib_util:hash({tcp, Ip, Port1, Path}), latin1),
+        true = register(Id, self()),
+        nklib_proc:put(nkpacket_listeners, {Id, Class}),
         % We don't yet support HTTP outgoing connections, but for the future...
         ListenType = case size(Ip) of
             4 -> nkpacket_listen4;

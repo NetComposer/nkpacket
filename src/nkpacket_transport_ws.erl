@@ -49,10 +49,8 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
-    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port, meta=Meta} = NkPort,
-    Path = maps:get(path, Meta, <<>>),
     {
-        {{Proto, Transp, Ip, Port, Path}, make_ref()},
+        {?MODULE, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -147,7 +145,6 @@ init([NkPort]) ->
         end,
         erlang:monitor(process, SharedPid),
         {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(SharedPid),
-        nklib_proc:put(nkpacket_listeners, Class),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
             local_ip = LocalIp,
@@ -156,6 +153,12 @@ init([NkPort]) ->
             socket = SharedPid,
             meta = ConnMeta        
         },   
+        Host = maps:get(host, Meta, any),
+        Path = maps:get(path, Meta, any),
+        WsProto = maps:get(ws_proto, Meta, any),
+        Id = binary_to_atom(nklib_util:hash({tcp, LocalIp, LocalPort, Path}), latin1),
+        true = register(Id, self()),
+        nklib_proc:put(nkpacket_listeners, {Id, Class}),
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
@@ -168,9 +171,6 @@ init([NkPort]) ->
             _ -> 
                 undefined
         end,
-        Host = maps:get(host, Meta, any),
-        Path = maps:get(path, Meta, any),
-        WsProto = maps:get(ws_proto, Meta, any),
         lager:info("Created ~p listener for ~p:~p:~p (~p, ~p, ~p) (~p)", 
                    [Protocol, Transp, LocalIp, LocalPort, 
                     Host, Path, WsProto, self()]),

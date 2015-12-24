@@ -54,10 +54,12 @@ sctp_test_() ->
 
 basic() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	{ok, Sctp1} = nkpacket:start_listener({test_protocol, sctp, {0,0,0,0}, 0}, 
+	{ok, LSctp1} = nkpacket:start_listener({test_protocol, sctp, {0,0,0,0}, 0}, 
 										  M1#{class=>dom1, idle_timeout=>5000}),
-	{ok, Sctp2} = nkpacket:start_listener({test_protocol, sctp, {127,0,0,1}, 0}, 
+	Sctp1 = whereis(LSctp1),
+	{ok, LSctp2} = nkpacket:start_listener({test_protocol, sctp, {127,0,0,1}, 0}, 
 										  M2#{class=>dom2}),
+	Sctp2 = whereis(LSctp2),
 	timer:sleep(100),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end, 
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,

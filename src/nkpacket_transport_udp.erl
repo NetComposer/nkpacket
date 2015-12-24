@@ -64,10 +64,9 @@ send_stun_async(Pid, Ip, Port) ->
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(NkPort) ->
-    #nkport{protocol=Proto, transp=udp, listen_ip=Ip, listen_port=Port} = NkPort,
+get_listener(#nkport{transp=udp}=NkPort) ->
     {
-        {{Proto, udp, Ip, Port, <<>>}, make_ref()}, 
+        {?MODULE, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -187,7 +186,9 @@ init([NkPort]) ->
             _ ->
                 undefined
         end,
-        nklib_proc:put(nkpacket_listeners, Class),
+        Id = binary_to_atom(nklib_util:hash({udp, LocalIp, LocalPort}), latin1),
+        true = register(Id, self()),
+        nklib_proc:put(nkpacket_listeners, {Id, Class}),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},
         ListenType = case size(ListenIp) of

@@ -41,9 +41,8 @@
     supervisor:child_spec().
 
 get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
-    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port} = NkPort,
     {
-        {{Proto, Transp, Ip, Port, <<>>}, make_ref()}, 
+        {?MODULE, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -124,6 +123,8 @@ init([NkPort]) ->
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
+            Id = binary_to_atom(nklib_util:hash({tcp, LocalIp, LocalPort}), latin1),
+            true = register(Id, self()),
             NkPort1 = NkPort#nkport{
                 local_ip = LocalIp,
                 local_port = LocalPort, 
@@ -144,7 +145,7 @@ init([NkPort]) ->
                 ],
                 ?MODULE,
                 [RanchPort]),
-            nklib_proc:put(nkpacket_listeners, Class),
+            nklib_proc:put(nkpacket_listeners, {Id, Class}),
             ConnMetaOpts = [tcp_packet | ?CONN_LISTEN_OPTS],
             % ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),

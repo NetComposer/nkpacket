@@ -22,6 +22,7 @@
 -module(nkpacket_util).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
+-export([get_id/1, get_id/4]).
 -export([listen_print_all/0, conn_print_all/0]).
 -export([make_web_proto/1]).
 -export([make_cache/0, make_tls_opts/1, tls_keys/0]).
@@ -40,6 +41,33 @@
 %% =================================================================
 
 
+%% @doc
+-spec get_id(nkpacket:nkport()) ->
+    nkpacket:listen_id().
+
+get_id(#nkport{transp=Transp, local_ip=Ip, local_port=Port, meta=Meta}) ->
+    get_id(Transp, Ip, Port, Meta).
+
+
+%% @doc
+-spec get_id(nkpacket:transport(), inet:ip_address(), inet:port_number(), map()) ->
+    nkpacket:listen_id().
+
+get_id(Transp, Ip, Port, Meta) ->
+    {Sock, Res} = case Transp of
+        udp -> {udp, <<>>};
+        tcp -> {tcp, <<>>};
+        tls -> {tcp, <<>>};
+        sctp -> {sctp, <<>>};
+        ws -> {tcp, maps:get(path, Meta, <<>>)};
+        wss -> {tcp, maps:get(path, Meta, <<>>)};
+        http -> {tcp, maps:get(path, Meta, <<>>)};
+        https -> {tcp, maps:get(path, Meta, <<>>)}
+    end,
+    Bin = nklib_util:hash({Sock, Ip, Port, Res}),
+    binary_to_atom(Bin, latin1).
+
+
 listen_print_all() ->
     print_all(nkpacket:get_all()).
 
@@ -50,8 +78,8 @@ conn_print_all() ->
 
 print_all([]) ->
     ok;
-print_all([Pid|Rest]) ->
-    {ok, #nkport{socket=Socket}=NkPort} = nkpacket:get_nkport(Pid),
+print_all([Id|Rest]) ->
+    {ok, #nkport{socket=Socket}=NkPort} = nkpacket:get_nkport(Id),
     NkPort1 = case is_tuple(Socket) of true -> 
         NkPort#nkport{socket=element(1,Socket)}; 
         false -> NkPort

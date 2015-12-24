@@ -35,10 +35,18 @@
 
 add_listener(Spec) ->
     case supervisor:start_child(nkpacket_listen_sup, Spec) of
-        {ok, Pid} -> {ok, Pid};
-        {ok, Pid, Info} -> {ok, Pid, Info};
-        {error, {Error, _}} -> {error, Error};
-        {error, Error} -> {error, Error}
+        {ok, Pid} -> 
+            {ok, Pid};
+        {ok, Pid, Info} -> 
+            {ok, Pid, Info};
+        {error, already_present} ->
+            Id = element(1, Spec),
+            ok = supervisor:delete_child(nkpacket_listen_sup, Id),
+            add_listener(Spec);
+        {error, {Error, _}} -> 
+            {error, Error};
+        {error, Error} -> 
+            {error, Error}
     end.
 
 

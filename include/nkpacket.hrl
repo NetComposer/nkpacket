@@ -72,26 +72,6 @@
 ).
 
 
--define(SERVICE_SYNTAX,
-    packet_idle_timeout => pos_integer,
-    packet_connect_timeout => nat_integer,
-    packet_sctp_out_streams => nat_integer,
-    packet_sctp_in_streams => nat_integer,
-    packet_no_dns_cache => boolean
-).
-
-
--define(SERVICE_TYPES,
-    packet_idle_timeout => pos_integer(),
-    packet_connect_timeout => pos_integer(),
-    packet_sctp_out_streams => pos_integer(),
-    packet_sctp_in_streams => pos_integer(),
-    packet_no_dns_cache => boolean()
-).
-  
-
-
-
 %% ===================================================================
 %% Records
 %% ===================================================================
