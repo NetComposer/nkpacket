@@ -39,9 +39,9 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{transp=sctp}=NkPort) ->
+get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=sctp}=NkPort) ->
     {
-        {?MODULE, make_ref()},
+        {{sctp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 

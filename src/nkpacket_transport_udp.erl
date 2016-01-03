@@ -64,9 +64,9 @@ send_stun_async(Pid, Ip, Port) ->
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{transp=udp}=NkPort) ->
+get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=udp}=NkPort) ->
     {
-        {?MODULE, make_ref()},
+        {{udp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
