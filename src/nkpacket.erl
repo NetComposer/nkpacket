@@ -38,7 +38,7 @@
 -export([get_meta/1, get_user/1]).
 -export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
 
--export_type([listen_id/0, class/0, transport/0, protocol/0, nkport/0]).
+-export_type([listen_id/0, class/0, transport/0, protocol/0, nkport/0, netspec/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
@@ -71,6 +71,9 @@
 
 %% An opened port (listener or connection)
 -type nkport() :: #nkport{}.
+
+%% 
+-type netspec() :: {protocol(), transport(), inet:ip_address(), inet:port_number()}.
 
 
 -type cowboy_opts() :: 
@@ -391,7 +394,7 @@ get_nkport(Id) when is_pid(Id); is_atom(Id) ->
 
 %% @doc Gets the current port number of a listener or connection
 -spec get_local(listen_id()|pid()|nkport()) ->
-    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
+    {ok, netspec()} | error.
 
 get_local(#nkport{protocol=Proto, transp=Transp, local_ip=Ip, local_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
@@ -401,7 +404,7 @@ get_local(Id) when is_pid(Id); is_atom(Id) ->
 
 %% @doc Gets the current remote peer address and port
 -spec get_remote(listen_id()|pid()|nkport()) ->
-    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
+    {ok, netspec()} | error.
 
 get_remote(#nkport{protocol=Proto, transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
