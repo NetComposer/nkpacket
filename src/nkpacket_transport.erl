@@ -218,7 +218,11 @@ do_send(Msg, [Port|Rest], #{pre_send_fun:=Fun}=Opts) ->
     do_send(Msg1, [Port|Rest], maps:remove(pre_send_fun, Opts));
 
 do_send(Msg, [Port|Rest], Opts) ->
-    case nkpacket_connection:send(Port, Msg) of
+    SendOpts = case maps:find(udp_max_size, Opts) of
+        {ok, MaxSize} -> #{udp_max_size=>MaxSize};
+        error -> #{}
+    end,
+    case nkpacket_connection:send(Port, Msg, SendOpts) of
         ok when is_pid(Port) ->
             {ok, {Port, Msg}};
         ok ->

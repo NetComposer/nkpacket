@@ -77,6 +77,7 @@ syntax() ->
         valid_schemes => {list, atom},
         udp_starts_tcp => boolean,
         udp_to_tcp => boolean,
+        udp_max_size => nat_integer,
         udp_no_connections => boolean,
         udp_stun_reply => boolean,
         udp_stun_t1 => nat_integer,

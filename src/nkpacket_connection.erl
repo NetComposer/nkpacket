@@ -23,9 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([send/2, stop/1, stop/2, start/1]).
-
-
+-export([send/2, send/3, stop/1, stop/2, start/1]).
 -export([reset_timeout/2, get_timeout/1, update_monitor/2]).
 -export([get_all/0, get_all/1, get_all_class/0, stop_all/0, stop_all/1]).
 -export([incoming/2, connect/1, conn_init/1]).
@@ -37,6 +35,7 @@
 -include("nkpacket.hrl").
 
 -define(CALL_TIMEOUT, 180000).
+
 
 
 %% ===================================================================
@@ -91,38 +90,46 @@ connect(#nkport{}=NkPort) ->
     end.
 
 
-%% @doc Sends a new message to a started connection
+%% @doc Equivalent to send(Port, Data, #{})
 -spec send(nkpacket:nkport()|pid(), term()) ->
     ok | {error, term()}.
 
-send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
+send(Port, Data) ->
+    send(Port, Data, #{}).
+
+
+%% @doc Sends a new message to a started connection
+-spec send(nkpacket:nkport()|pid(), term(), nkpacket_connection_lib:send_opts()) ->
+    ok | {error, term()}.
+
+send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg, Opts) when node(Pid)==node() ->
     case erlang:function_exported(Protocol, conn_encode, 2) of
         true ->
             case Protocol:conn_encode(Msg, NkPort) of
                 {ok, OutMsg} ->
                     % lager:debug("transport quick encode: ~p", [OutMsg]),
-                    case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
+                    case nkpacket_connection_lib:raw_send(NkPort, OutMsg, Opts) of
                         ok ->
                             reset_timeout(Pid),
                             ok;
                         {error, Error} ->
                             {error, Error}
                     end;
-                continue ->
-                    send(Pid, Msg);
+                continue when is_pid(Pid) ->
+                    send(Pid, Msg, Opts);
                 {error, Error} ->
                     lager:notice("Error unparsing msg: ~p", [Error]),
                     {error, encode_error}
             end;
-        false ->
-            send(Pid, Msg)
+        false when is_pid(Pid) ->
+            send(Pid, Msg, Opts)
     end;
 
-send(Pid, _Msg) when Pid==self() ->
+send(Pid, _Msg, _Opts) when Pid==self() ->
     {error, same_process};
 
-send(Pid, Msg) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, {nkpacket_send, Msg}, 180000) of
+send(Pid, Msg, Opts) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, {nkpacket_send, Msg, Opts}, 180000) of
         {'EXIT', _} -> {error, no_process};
         Other -> Other
     end.
@@ -433,11 +440,11 @@ handle_call(nkpacket_get_timeout, _From, #state{timeout_timer=Ref}=State) ->
     end,
     {reply, Reply, State};
 
-handle_call({nkpacket_send, Msg}, _From, #state{nkport=NkPort}=State) ->
+handle_call({nkpacket_send, Msg, Opts}, _From, #state{nkport=NkPort}=State) ->
     case encode(Msg, State) of
         {ok, OutMsg, State1} ->
             % lager:debug("Conn Send: ~p", [OutMsg]),
-            Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
+            Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg, Opts),
             {reply, Reply, restart_timer(State1)};
         {stop, Reason, State1} ->
             {stop, normal, {error, Reason}, State1}

@@ -222,14 +222,15 @@ send() ->
 		nkpacket:send({test_protocol, udp, {127,0,0,1}, Listen2}, {msg1, Msg}, M1),
 	{error, udp_too_large} = 
 		nkpacket:send({test_protocol, udp, {127,0,0,1}, Listen2}, {msg1, Msg},
-					  M1#{class=>dom1}),
+					  M1#{class=>dom1, udp_max_size=>1500}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end,
 
 	% This is going to use tcp
 	{ok, Conn1Pid} = nkpacket:send({test_protocol, udp, {127,0,0,1}, Listen2},
 								{msg1, Msg}, 
-								M1#{class=>dom1, udp_to_tcp=>true, tcp_packet=>4}),
+								M1#{class=>dom1, udp_to_tcp=>true, tcp_packet=>4,
+									udp_max_size=>1500}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Udp
 	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Tcp
