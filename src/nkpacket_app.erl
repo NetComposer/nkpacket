@@ -47,11 +47,25 @@ start() ->
             Error
     end.
 
+
 %% @private OTP standard start callback
 start(_Type, _Args) ->
+    MainIp = nkpacket_util:find_main_ip(),
+    MainIp6 = nkpacket_util:find_main_ip(auto, ipv6),
+    ExtIp = case nkpacket_stun:ext_ip() of
+        {ok, ExtIp2} -> 
+            ExtIp2;
+        {port_changed, ExtIp2} ->
+            lager:warning("Current NAT is changing ports"),
+            ExtIp2;
+        {error, ExtError} ->
+            lager:warning("Error detecting external ip: ~p", [ExtError]),
+            {127,0,01}
+    end,
     put(local_ips, nkpacket_util:get_local_ips()),
-    put(main_ip, nkpacket_util:find_main_ip()),
-    put(main_ip6, nkpacket_util:find_main_ip(auto, ipv6)),
+    put(main_ip, MainIp),
+    put(main_ip6, MainIp6),
+    put(ext_ip6, ExtIp),
     put(tls_defaults, nkpacket_syntax:tls_defaults()),
     Syntax = nkpacket_syntax:app_syntax(),
     Defaults = nkpacket_syntax:app_defaults(),
@@ -63,6 +77,9 @@ start(_Type, _Args) ->
             {ok, Pid} = nkpacket_sup:start_link(),
             {ok, Vsn} = application:get_key(nkpacket, vsn),
             lager:notice("NkPACKET v~s has started.", [Vsn]),
+            lager:notice("Main IP is ~s (~s). External IP is ~s", 
+                         [nklib_util:to_host(MainIp), nklib_util:to_host(MainIp6),
+                          nklib_util:to_host(ExtIp)]),
             {ok, Pid};
         {error, Error} ->
             lager:error("Config error: ~p", [Error]),

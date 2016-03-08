@@ -25,10 +25,13 @@
 -module(nkpacket_stun).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
+-export([ext_ip/0, ext_ip/1]).
 -export([decode/1, binding_request/0, binding_response/3]).
+-export([test_all/0]).
 
 -export_type([class/0, method/0, attribute/0]).
 
+-include_lib("nklib/include/nklib.hrl").
 
 %% ===================================================================
 %% Types
@@ -51,6 +54,71 @@
 %% ===================================================================
 %% Public
 %% ===================================================================
+
+
+%% @doc Uses a known list of Stun servers to find external ip
+-spec ext_ip() ->
+    {ok, inet:ip_address()} | {port_changed, inet:ip_address()} | {error, error}.
+
+ext_ip() ->
+    Servers = nklib_util:randomize(stun_servers()),
+    ext_ip(Servers).
+
+
+%% @doc Finds external IP with supplied host or list of hosts
+-spec ext_ip(nklib:user_uri()) ->
+    {ok, inet:ip_address()} | {port_changed, inet:ip_address()} | {error, error}.
+
+ext_ip(Url) ->
+    {ok, Socket} = gen_udp:open(0, [binary, {active, false}]),
+    {ok, {_LocalIp, LocalPort}} = inet:sockname(Socket),
+    Reply = case nklib_parse:uris(Url) of
+        error ->
+            {error, invalid_uri};
+        Uris ->
+            ext_ip_iter(Uris, Socket, LocalPort)
+    end,
+    gen_udp:close(Socket),
+    Reply.
+
+
+%% @private
+ext_ip_iter([], _Socket, _LocalPort) ->
+    {error, no_answer};
+
+ext_ip_iter([Uri|Rest], Socket, LocalPort) ->
+    case Uri of
+        #uri{scheme=stun, domain=Host1, port=Port1} ->
+            Port2 = case Port1 of
+                0 -> 3478;
+                _ -> Port1
+            end,
+            {Id, Request} = binding_request(),
+            Host2 = nklib_util:to_list(Host1),
+            Send = gen_udp:send(Socket, Host2, Port2, Request),
+            case Send==ok andalso gen_udp:recv(Socket, 0, 5000) of
+                {ok, {_, _, Raw}} ->
+                    case decode(Raw) of
+                        {response, binding, Id, Data} ->
+                            case proplists:get_value(mapped_address, Data) of
+                                {RemoteIp, LocalPort} ->
+                                    {ok, RemoteIp};
+                                {RemoteIp, _} ->
+                                    {port_changed, RemoteIp};
+                                _ ->
+                                    ext_ip_iter(Rest, Socket, LocalPort)
+                            end;
+                        _ ->
+                            ext_ip_iter(Rest, Socket, LocalPort)
+                    end;
+                _ ->
+                    ext_ip_iter(Rest, Socket, LocalPort)
+            end;
+        _ ->
+            {error, invalid_uri}
+    end.
+
+
 
 %% @doc Decodes a STUN packet
 -spec decode(Packet::binary()) ->
@@ -163,6 +231,38 @@ attributes(<<Type:16, Length:16, Rest/binary>>, Acc) ->
 
 attributes(_, Acc)   ->
     lists:reverse(Acc).
+
+
+%% @private
+test_all() ->
+    lists:foreach(
+        fun(#uri{domain=Host}=Url) ->
+            Res = case ext_ip(Url) of
+                {ok, Ip} -> nklib_util:to_host(Ip);
+                {port_changed, Ip} -> nklib_util:to_host(Ip);
+                {error, _} -> error
+            end,
+            lager:notice("STUN ~s: ~s", [Host, Res])
+        end,
+        nklib_parse:uris(stun_servers())).
+
+
+%% @private
+stun_servers() ->
+    [
+        "stun:stun.counterpath.com",
+        "stun:stun.ekiga.net",
+        "stun:stun.ideasip.com",
+        "stun:stun.iptel.org",
+        "stun:stun.schlund.de",
+        "stun:stun.voiparound.com",
+        "stun:stun.voipbuster.com",
+        "stun:stun.voipstunt.com",
+        "stun:stun.voxgratia.org",
+        "stun:stun.freeswitch.org"
+    ].
+
+
 
 
 
