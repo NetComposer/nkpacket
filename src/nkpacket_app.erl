@@ -76,8 +76,8 @@ start(_Type, _Args) ->
             nkpacket_util:make_cache(),
             {ok, Pid} = nkpacket_sup:start_link(),
             {ok, Vsn} = application:get_key(nkpacket, vsn),
-            lager:notice("NkPACKET v~s has started.", [Vsn]),
-            lager:notice("Main IP is ~s (~s). External IP is ~s", 
+            lager:info("NkPACKET v~s has started.", [Vsn]),
+            lager:info("Main IP is ~s (~s). External IP is ~s", 
                          [nklib_util:to_host(MainIp), nklib_util:to_host(MainIp6),
                           nklib_util:to_host(ExtIp)]),
             {ok, Pid};
