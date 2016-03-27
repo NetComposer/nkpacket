@@ -59,13 +59,13 @@ start(_Type, _Args) ->
             lager:warning("Current NAT is changing ports"),
             ExtIp2;
         {error, ExtError} ->
-            lager:warning("Error detecting external ip: ~p", [ExtError]),
-            {127,0,01}
+            lager:error("Error detecting external ip: ~p", [ExtError]),
+            {127,0,0,1}
     end,
     put(local_ips, nkpacket_util:get_local_ips()),
     put(main_ip, MainIp),
     put(main_ip6, MainIp6),
-    put(ext_ip6, ExtIp),
+    put(ext_ip, ExtIp),
     put(tls_defaults, nkpacket_syntax:tls_defaults()),
     Syntax = nkpacket_syntax:app_syntax(),
     Defaults = nkpacket_syntax:app_defaults(),
@@ -87,14 +87,13 @@ start(_Type, _Args) ->
     end.
 
 
-
-
 %% @private OTP standard stop callback
 stop(_) ->
     ok.
 
 
 
+%% Config Management
 get(Key) ->
     nklib_config:get(nkpacket, Key).
 
