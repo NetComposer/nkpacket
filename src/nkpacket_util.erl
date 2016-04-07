@@ -197,7 +197,7 @@ parse_uri_opts(UriOpts, Opts) ->
 %% @private
 make_cache() ->
     Defaults = nkpacket_syntax:app_defaults(),
-    Keys = [local_ips, main_ip, main_ip6, ext_ip | maps:keys(Defaults)],
+    Keys = [local_ips | maps:keys(Defaults)],
     nklib_config:make_cache(Keys, nkpacket, none, nkpacket_config_cache, none).
 
 

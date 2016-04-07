@@ -44,6 +44,10 @@ app_syntax() ->
         connect_timeout => nat_integer,
         sctp_out_streams => nat_integer,
         sctp_in_streams => nat_integer,
+        main_ip => [ip4, {enum, [auto]}],
+        main_ip6 => [ip6, {enum, [auto]}],
+        ext_ip => [ip4, {enum, [auto]}],
+        ext_ip6 => [ip6, {enum, [auto]}],
         ?TLS_SYNTAX
     }.
 
@@ -60,7 +64,11 @@ app_defaults() ->
         http_timeout => 180000,                 % 
         connect_timeout => 30000,               %
         sctp_out_streams => 10,
-        sctp_in_streams => 10
+        sctp_in_streams => 10,
+        main_ip => auto,
+        main_ip6 => auto,
+        ext_ip => auto,
+        ext_ip6 => auto
     }.
 
 

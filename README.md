@@ -112,7 +112,10 @@ http_timeout|`integer()`|180000|(msecs)
 connect_timeout|`integer()`|30000|(msecs)
 sctp_out_streams|`integer()`|10|Default SCTP out streams
 sctp_in_streams|`integer()`|10|Default SCTP in streams
-tcp_listeners|`integer()`|10|Default number of TCP listenersº
+tcp_listeners|`integer()`|10|Default number of TCP listeners
+main_ip|`inet:ip4_address()`|auto|Main IPv4 of the host
+main_ip6|`inet:ip6_address()`|auto|Main IPv6 of the host
+ext_ip|`inet:ip4_address()`|auto|Public Ipv4 of the host
 tls_certfile|`string()`|-|Custom certificate file
 tls_keyfile|`string()`|-|Custom key file
 tls_cacertfile|`string()`|-|Custom CA certificate file
@@ -120,9 +123,16 @@ tls_password|`string()`|-|Password fort the certificate
 tls_verify|`boolean()`|false|If we must check certificate
 tls_depth|`integer()`|0|TLS check depth
 
+main_ip, main_ip6, if auto, are guessed from the main network cards.
+ext_ip, if auto, is obtained using STUN.
+None of them are used by nkpacket itself, but are available for client projects.
+
+
 NkPACKET uses [lager](https://github.com/basho/lager) for log management. 
 
 NkPACKET needs Erlang >= 17 and it is tested on Linux and OSX.
+
+
 
 
 # Contributing
