@@ -81,6 +81,7 @@ raw_send(#nkport{transp=tcp, socket=Socket}, Data, _Opts) ->
     gen_tcp:send(Socket, Data);
 
 raw_send(#nkport{transp=tls, socket=Socket}, Data, _Opts) ->
+    % lager:warning("Send: ~p", [list_to_binary([Data])]),
     ssl:send(Socket, Data);
 
 raw_send(#nkport{transp=sctp, socket={Socket, AssocId}}, Data, _Opts) ->
