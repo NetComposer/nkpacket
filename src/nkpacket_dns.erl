@@ -626,6 +626,7 @@ sort_select(Pos, [C|Rest], Acc) ->
 
 
 basic_test() ->
+    Opts = #{no_dns_cache=>true},
     {ok, [
         {undefined, {1,2,3,4}, 0},
         {tcp, {4,3,2,1}, 25},
@@ -633,9 +634,9 @@ basic_test() ->
         {tls, {1,0,0,0,0,0,0,5}, 0}
     ]} = 
         resolve("http://1.2.3.4, http://4.3.2.1:25;transport=tcp,"
-                "http://all:1200, <http://[1::5]>;transport=tls"),
+                "http://all:1200, <http://[1::5]>;transport=tls", Opts),
 
-    Http = #{protocol=>nkpacket_protocol_http},
+    Http = Opts#{protocol=>nkpacket_protocol_http},
     {ok, [
         {http, {1,2,3,4}, 80},
         {https, {1,2,3,4}, 443},
@@ -663,7 +664,8 @@ basic_test() ->
         {udp, {127,0,0,1}, 1234}
     ]} = 
         resolve("http://localhost, https://localhost, http://localhost:25, "
-                "http://localhost;transport=tls, https://localhost:1234;transport=udp"),
+                "http://localhost;transport=tls, https://localhost:1234;transport=udp",
+                Opts),
 
     {ok, [
         {http, {127,0,0,1}, 80},

@@ -169,7 +169,7 @@ init([NkPort]) ->
             local_ip = LocalIp,
             local_port = LocalPort, 
             listen_port = LocalPort,
-            pid = self(),
+            pid = Self,
             socket = Socket
         },
         TcpPid = case Meta of
@@ -187,7 +187,7 @@ init([NkPort]) ->
                 undefined
         end,
         Id = binary_to_atom(nklib_util:hash({udp, LocalIp, LocalPort}), latin1),
-        true = register(Id, self()),
+        true = register(Id, Self),
         nklib_proc:put(nkpacket_listeners, {Id, Class}),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},

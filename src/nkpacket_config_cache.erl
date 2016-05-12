@@ -21,10 +21,24 @@
 %% @private NkSIP Config Cache
 %%
 %%
-%% This module is hot compiled in run-time, after NkSIP application has started.
+%% This module is hot compiled in run-time, after NkPACKET application has started.
 %% It maintains a number of functions to cache some parts of the configuration.
 %%
 %% See nkpacket_config
 
 -module(nkpacket_config_cache).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
+-compile([export_all]).
+
+
+local_ips() -> [].
+udp_timeout() -> 0.
+tcp_timeout() -> 0.
+sctp_timeout() -> 0.
+ws_timeout() -> 0.
+http_timeout() -> 0.
+max_connections() -> 0.
+dns_cache_ttl() -> 0.
+connect_timeout() -> 0.
+sctp_in_streams() -> 0.
+sctp_out_streams() -> 0.

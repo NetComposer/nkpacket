@@ -22,7 +22,7 @@
 
 -module(test_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
--behaviour(nkpacket_protocol).
+% -behaviour(nkpacket_protocol).
 
 -export([transports/1, default_port/1]).
 -export([conn_init/1, conn_parse/3, conn_encode/3, conn_stop/3]).
