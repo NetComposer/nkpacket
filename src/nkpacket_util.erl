@@ -332,13 +332,15 @@ call_protocol(Fun, Args, State, Pos) ->
         false ->
             undefined;
         true ->
-            try apply(Protocol, Fun, Args++[ProtoState]) of
-                ok ->
-                    {ok, State};
-                {Class, ProtoState1} when is_atom(Class) -> 
-                    {Class, setelement(Pos+1, State, ProtoState1)};
-                {Class, Value, ProtoState1} when is_atom(Class) -> 
-                    {Class, Value, setelement(Pos+1, State, ProtoState1)}
+            try 
+                case apply(Protocol, Fun, Args++[ProtoState]) of
+                    ok ->
+                        {ok, State};
+                    {Class, ProtoState1} when is_atom(Class) -> 
+                        {Class, setelement(Pos+1, State, ProtoState1)};
+                    {Class, Value, ProtoState1} when is_atom(Class) -> 
+                        {Class, Value, setelement(Pos+1, State, ProtoState1)}
+                end
             catch
                 Class:Reason ->
                     Stacktrace = erlang:get_stacktrace(),
