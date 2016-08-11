@@ -765,7 +765,10 @@ get_pid(Pid) when is_pid(Pid) -> Pid.
 %% @private
 restart_timer(#state{timeout=Timeout, timeout_timer=Ref}=State) ->
     nklib_util:cancel_timer(Ref),
-    Timer = erlang:start_timer(Timeout, self(), idle_timer),
+    Timer = case Timeout > 0 of
+        true -> erlang:start_timer(Timeout, self(), idle_timer);
+        false -> undefined
+    end,
     State#state{timeout_timer=Timer}.
 
 
