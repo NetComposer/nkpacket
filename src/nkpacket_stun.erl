@@ -237,12 +237,19 @@ attributes(_, Acc)   ->
 test_all() ->
     lists:foreach(
         fun(#uri{domain=Host}=Url) ->
-            Res = case ext_ip(Url) of
-                {ok, Ip} -> nklib_util:to_host(Ip);
-                {port_changed, Ip} -> nklib_util:to_host(Ip);
-                {error, _} -> error
-            end,
-            lager:notice("STUN ~s: ~s", [Host, Res])
+            Now = nklib_util:l_timestamp(),
+            case ext_ip(Url) of
+                {ok, Ip} -> 
+                    Time = (nklib_util:l_timestamp() - Now) div 1000,
+                    lager:notice("STUN ~s: ~s (~p msecs)", 
+                                 [Host, nklib_util:to_host(Ip), Time]);
+                {port_changed, Ip} -> 
+                    Time = (nklib_util:l_timestamp() - Now) div 1000,
+                    lager:notice("STUN ~s: ~s (~p msecs)", 
+                                 [Host, nklib_util:to_host(Ip), Time]);
+                {error, _} -> 
+                    lager:notice("STUN ~s: error", [Host])
+            end
         end,
         nklib_parse:uris(stun_servers())).
 
@@ -259,7 +266,8 @@ stun_servers() ->
         "stun:stun.voipbuster.com",
         "stun:stun.voipstunt.com",
         "stun:stun.voxgratia.org",
-        "stun:stun.freeswitch.org"
+        "stun:stun.freeswitch.org",
+        "stun:stun.voip.eutelia.it"
     ].
 
 
