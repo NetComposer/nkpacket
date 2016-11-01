@@ -7,3 +7,5 @@ ebin
 rel
 log
 .rebar
+_build
+rebar.lock
