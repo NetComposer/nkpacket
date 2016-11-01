@@ -25,10 +25,12 @@
 -module(nkpacket_stun).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
+-export([ext_ip/0, ext_ip/1, get_stun_servers/0, get_stun_servers/1]).
 -export([decode/1, binding_request/0, binding_response/3]).
 
 -export_type([class/0, method/0, attribute/0]).
 
+-include_lib("nklib/include/nklib.hrl").
 
 %% ===================================================================
 %% Types
@@ -51,6 +53,53 @@
 %% ===================================================================
 %% Public
 %% ===================================================================
+
+
+%% @doc Uses a known list of Stun servers to find external ip
+-spec ext_ip() ->
+    inet:ip_address().
+
+ext_ip() ->
+    ext_ip(nklib_util:randomize(stun_servers())).
+
+
+%% @doc Finds external IP with supplied host or list of hosts
+-spec ext_ip([binary()|nklib:user_uri()]) ->
+    {ok, inet:ip_address()} | {port_changed, inet:ip_address()}.
+
+
+ext_ip([]) ->
+    {127,0,0,1};
+
+ext_ip([Uri|Rest]) ->
+    case get_stun_servers([Uri]) of
+        {{127,0,0,1}, _List} -> ext_ip(Rest);
+        {ExtIp, _List} -> ExtIp
+    end.
+
+
+
+%% @doc Get external IP and a list of working stun servers
+-spec get_stun_servers() ->
+    {ExtIp::inet:ip_address(), [{inet:ip_address(), inet:ip_port()}]} | error.
+
+get_stun_servers() ->
+    get_stun_servers(stun_servers()).
+
+
+%% @doc Get external IP and a list of working stun servers
+-spec get_stun_servers([binary()|nklib:user_uri()]) ->
+    {ExtIp::inet:ip_address(), [{inet:ip_address(), inet:ip_port()}]} | error.
+
+get_stun_servers(List) ->
+    {ok, Socket} = gen_udp:open(0, [binary, {active, false}]),
+    {ok, {_LocalIp, LocalPort}} = inet:sockname(Socket),
+    Res = get_stun_servers(List, Socket, LocalPort, []),
+    gen_udp:close(Socket),
+    Res.
+
+
+
 
 %% @doc Decodes a STUN packet
 -spec decode(Packet::binary()) ->
@@ -163,6 +212,108 @@ attributes(<<Type:16, Length:16, Rest/binary>>, Acc) ->
 
 attributes(_, Acc)   ->
     lists:reverse(Acc).
+
+
+%% @private
+get_stun_servers([], _Socket, _Local, List) ->
+    ExtIps = [ExtIp || {ExtIp, _Type, _StunIp, _StunPort, _Time} <- List],
+    case lists:usort(ExtIps) of
+        [ExtIp] ->
+            ok;
+        [ExtIp|_] = All ->
+            lager:error("STUN multiple external IPs!!: ~p", [All]);
+        [] ->
+            ExtIp = {127,0,0,1},
+            lager:notice("STUN could not find external IP!!")
+    end,
+    case lists:keymember(port_changed, 2, List) of
+        true ->
+            lager:warning("Current NAT is changing ports!");
+        false ->
+            ok
+    end,
+    Stuns = [{StunIp, StunPort} 
+             || {_ExtIp, _Type, StunIp, StunPort, _Time} <- lists:keysort(5, List)],
+    {ExtIp, Stuns};
+
+get_stun_servers([Uri|Rest], Socket, Local, Acc) ->
+    {Host, Port} = case nklib_parse:uris(Uri) of
+        error ->  
+            {nklib_util:to_list(Uri), 0};
+        [#uri{domain=Host0, port=Port0}|_] -> 
+            {nklib_util:to_list(Host0), Port0}
+    end,
+    Ips = case inet:getaddrs(Host, inet) of
+        {ok, Ips0} -> 
+            Ips0;
+        {error, _} -> 
+            case inet:getaddrs(Host, inet6) of
+                {ok, Ips1} -> Ips1;
+                {error, _} -> []
+            end
+    end,
+    case Ips of
+        [] ->
+            lager:notice("Skipping STUN ~s", [Host]),
+            get_stun_servers(Rest, Socket, Local, Acc);
+        _ ->
+            lager:info("Checking STUN ~s", [Host]),
+            Acc2 = check_stun_server(Ips, Port, Socket, Local, Acc),
+            get_stun_servers(Rest, Socket, Local, Acc2)
+    end.
+
+
+%% @private
+check_stun_server([], _Port, _Socket, _Local, Acc) ->
+    Acc;
+
+check_stun_server([Ip|Rest], Port, Socket, LocalPort, Acc) ->
+    {Id, Request} = binding_request(),
+    Start = nklib_util:l_timestamp(),
+    Port2 = case Port of
+        0 -> 3478;
+        _ -> Port
+    end,
+    ok = gen_udp:send(Socket, Ip, Port2, Request),
+    Acc2 = case gen_udp:recv(Socket, 0, 5000) of
+        {ok, {_, _, Raw}} ->
+            case decode(Raw) of
+                {response, binding, Id, Data} ->
+                    Time = (nklib_util:l_timestamp() - Start) div 1000,
+                    % lager:info("STUN server ~p: ~p msecs", [Ip, Time]),
+                    case proplists:get_value(mapped_address, Data) of
+                        {RemoteIp, LocalPort} ->
+                            [{RemoteIp, ok, Ip, Port2, Time}|Acc];
+                        {RemoteIp, _} ->
+                            [{RemoteIp, port_changed, Ip, Port2, Time}|Acc];
+                        _ ->
+                            Acc
+                    end;
+                _ ->
+                    Acc
+            end;
+        _ ->
+            Acc
+    end,
+    check_stun_server(Rest, Port, Socket, LocalPort, Acc2).
+
+
+
+%% @private
+stun_servers() ->
+    [
+        "stun:stun.counterpath.com",
+        "stun:stun.ekiga.net",
+        "stun:stun.ideasip.com",
+        % "stun:stun.iptel.org",    % Not working
+        "stun:stun.schlund.de",
+        "stun:stun.voiparound.com", % same ips as voipbuster.com and voipstunt.com
+        "stun:stun.voxgratia.org",
+        "stun:stun.freeswitch.org",
+        "stun:stun.voip.eutelia.it"
+    ].
+
+
 
 
 

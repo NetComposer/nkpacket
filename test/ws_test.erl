@@ -52,7 +52,7 @@ basic() ->
 	% A "catch all" server (all hosts, all paths)
 	% Should use default port for ws: 1238
 	Url0 = "<test://all;transport=ws>",
-	{ok, Ws1} = nkpacket:start_listener(Url0, M1#{srv_id=>dom1}),
+	{ok, Ws1} = nkpacket:start_listener(Url0, M1#{class=>dom1}),
 	{ok, {_, ws, {0,0,0,0}, LPort1}} = nkpacket:get_local(Ws1),
 	case LPort1 of
 		1238 -> ok;
@@ -61,7 +61,7 @@ basic() ->
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	[
 		#nkport{
-	       	srv_id = dom1,
+	       	class = dom1,
 			transp=ws, 
 			local_ip={0,0,0,0}, local_port=LPort1
 		} = _Listen1
@@ -69,14 +69,14 @@ basic() ->
 	
 	Url1 = "test://localhost:"++integer_to_list(LPort1)++
 			";transport=ws;connect_timeout=2000;idle_timeout=1000",
-	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{srv_id=>dom2}),
+	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{class=>dom2}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, #nkport{
-       	srv_id = dom2,
+       	class = dom2,
 		transp = ws, 
 		local_ip = {127,0,0,1}, local_port = Port1,
         remote_ip = {127,0,0,1}, remote_port = LPort1,
@@ -87,7 +87,7 @@ basic() ->
 
 	[
 		#nkport{
-	       	srv_id = dom1,
+	       	class = dom1,
 			transp = ws, 
 			local_ip = {0,0,0,0}, local_port = LPort1,
 	        remote_ip = {127,0,0,1}, remote_port = Port1,
@@ -99,12 +99,12 @@ basic() ->
 	] = test_util:conns(dom1),
 
 	% We send some more data. The same connection is used.
-	{ok, Conn1} = nkpacket:send(Conn1, msg1b, #{srv_id=>dom2}),
+	{ok, Conn1} = nkpacket:send(Conn1, msg1b, #{class=>dom2}),
 	receive {Ref2, {encode, msg1b}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1b}}} -> ok after 1000 -> error(?LINE) end,
 
 	% And in the opposite direction
-	{ok, Conn1R} = nkpacket:send(Conn1R, msg1c, #{srv_id=>dom1}),
+	{ok, Conn1R} = nkpacket:send(Conn1R, msg1c, #{class=>dom1}),
 	receive {Ref1, {encode, msg1c}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg1c}}} -> ok after 1000 -> error(?LINE) end,
 
@@ -124,14 +124,14 @@ basic() ->
 	% Since we use a different URL, it opens a new connection
 	Url2 = "test://127.0.0.1:"++integer_to_list(LPort1)++
 	        "/a/b;transport=ws;connect_timeout=2000;idle_timeout=500",
-	{ok, Conn2} = nkpacket:send(Url2, msg2, M2#{srv_id=>dom2, connect_timeout=>3000}),
+	{ok, Conn2} = nkpacket:send(Url2, msg2, M2#{class=>dom2, connect_timeout=>3000}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, #nkport{
-       	srv_id = dom2,
+       	class = dom2,
 		transp=ws, 
 		local_ip={127,0,0,1}, local_port=Port2,
         remote_ip={127,0,0,1}, remote_port=LPort1,
@@ -158,7 +158,7 @@ basic() ->
 wss() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	Url0 = "<test://all;transport=wss>",
-	{ok, Ws1} = nkpacket:start_listener(Url0, M1#{srv_id=>dom1}),
+	{ok, Ws1} = nkpacket:start_listener(Url0, M1#{class=>dom1}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	{ok, {_, wss, {0,0,0,0}, LPort1}} = nkpacket:get_local(Ws1),
 	case LPort1 of
@@ -167,21 +167,21 @@ wss() ->
 	end,
 	[
 		#nkport{
-	       	srv_id = dom1,
+	       	class = dom1,
 			transp=wss, 
 			local_ip={0,0,0,0}, local_port=LPort1
 		} = _Listen1
 	] = test_util:listeners(dom1),
 	
 	Url1 = "<test://localhost:"++integer_to_list(LPort1)++";transport=wss>",
-	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{srv_id=>dom2}),
+	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{class=>dom2}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, #nkport{
-       	srv_id = dom2,
+       	class = dom2,
 		transp=wss, 
 		local_ip={127,0,0,1}, local_port=_,
         remote_ip={127,0,0,1}, remote_port=LPort1,
@@ -191,13 +191,13 @@ wss() ->
 	}} = nkpacket:get_nkport(Conn1),
 
 	% We send some more data. The same connection is used.
-	{ok, Conn1} = nkpacket:send(Conn1, msg1b, #{srv_id=>dom2}),
+	{ok, Conn1} = nkpacket:send(Conn1, msg1b, #{class=>dom2}),
 	receive {Ref2, {encode, msg1b}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1b}}} -> ok after 1000 -> error(?LINE) end,
 
 	% And in the opposite direction
 	[#nkport{pid=Conn1R}] = test_util:conns(dom1),
-	{ok, Conn1R} = nkpacket:send(Conn1R, msg1c, #{srv_id=>dom1}),
+	{ok, Conn1R} = nkpacket:send(Conn1R, msg1c, #{class=>dom1}),
 	receive {Ref1, {encode, msg1c}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg1c}}} -> ok after 1000 -> error(?LINE) end,
 
@@ -211,14 +211,15 @@ wss() ->
 ping() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	Url = "<test://localhost;transport=ws>",
-	{ok, Ws1} = nkpacket:start_listener(Url, M1#{srv_id=>dom1}),
+	{ok, Ws1} = nkpacket:start_listener(Url, M1#{class=>dom1}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 
-	{ok, _Conn1} = nkpacket:send(Url, {nkraw, {ping, <<"ping1">>}}, M2#{srv_id=>dom2}),
+	{ok, _Conn1} = nkpacket:send(Url, {nkraw, {ping, <<"ping1">>}}, M2#{class=>dom2}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, {ping, _}}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {pong, <<"ping1">>}} -> ok after 1000 -> error(?LINE) end,
+
 	%% WE HAVE AND ADDITIONAL PONG... WHY???
 	receive {Ref2, {pong, <<"ping1">>}} -> ok after 1000 -> error(?LINE) end,
 
@@ -226,6 +227,7 @@ ping() ->
 	nkpacket_connection:send(Conn1R, {nkraw, {ping, <<"ping2">>}}),
 	receive {Ref1, {encode, {ping, <<"ping2">>}}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {pong, <<"ping2">>}} -> ok after 1000 -> error(?LINE) end,
+
 
 	nkpacket_connection:send(Conn1R, {nkraw, {close, 1000, <<>>}}),
 	receive {Ref1, {encode, {close, 1000, <<>>}}} -> ok after 1000 -> error(?LINE) end,
@@ -241,7 +243,7 @@ ping() ->
 large() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	Url = "<test://localhost;transport=ws>",
-	{ok, Ws1} = nkpacket:start_listener(Url, M1),	% No srv_id
+	{ok, Ws1} = nkpacket:start_listener(Url, M1),	% No class
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 
 	LargeMsg = binary:copy(<<"abcdefghij">>, 1000),
@@ -269,17 +271,20 @@ multi() ->
 	% Listener 2 on {0,0,0,0}, all hosts, path /dom2
 	% Listener 3 on {0,0,0,0}, localhost, path /dom3 and proto 'proto1'
 
-	{ok, Ws1} = nkpacket:start_listener({test_protocol, ws, {0,0,0,0}, 0},
-						   			    M1#{srv_id=>dom1, path=>"/dom1/more"}),
+	{ok, LWs1} = nkpacket:start_listener({test_protocol, ws, {0,0,0,0}, 0},
+						   			    M1#{class=>dom1, path=>"/dom1/more"}),
+	Ws1 = whereis(LWs1),
 	{ok, {_, ws, {0,0,0,0}, P1}} = nkpacket:get_local(Ws1),
 	P1S = integer_to_list(P1),
 
-	{ok, Ws2} = nkpacket:start_listener("<test://all:"++P1S++"/dom2;transport=ws>",
-										M2#{srv_id=>dom2, idle_timeout=>1000}),
+	{ok, LWs2} = nkpacket:start_listener("<test://all:"++P1S++"/dom2;transport=ws>",
+										M2#{class=>dom2, idle_timeout=>1000}),
+	Ws2 = whereis(LWs2),
 
 	Url3 = "test://all:"++P1S++"/any;transport=ws;host=localhost; path= \"dom3\"; "
 		 "ws_proto=proto1",
-	{ok, Ws3} = nkpacket:start_listener(Url3, M3#{srv_id=>dom3}),
+	{ok, LWs3} = nkpacket:start_listener(Url3, M3#{class=>dom3}),
+	Ws3 = whereis(LWs3),
 
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
@@ -288,7 +293,7 @@ multi() ->
 
 	[
 		#nkport{
-	       	srv_id = dom1,
+	       	class = dom1,
 			transp = ws,
 			local_ip = {0,0,0,0}, local_port = P1,
 			remote_ip = undefined, remote_port = undefined,
@@ -300,7 +305,7 @@ multi() ->
 	] = test_util:listeners(dom1),
  	[
  		#nkport{
-	       	srv_id = dom2,
+	       	class = dom2,
  			transp = ws,
           	local_ip = {0,0,0,0},local_port = P1,
           	listen_ip = {0,0,0,0},listen_port = P1,
@@ -311,7 +316,7 @@ multi() ->
     ] = test_util:listeners(dom2),
  	[
  		#nkport{transp = ws,
-       		srv_id = dom3,
+       		class = dom3,
 			local_ip = {0,0,0,0}, local_port = P1,
 			listen_ip = {0,0,0,0},listen_port = P1,
 			protocol = test_protocol, pid = Ws3, 
@@ -322,24 +327,23 @@ multi() ->
 			}
 		}
 	] = test_util:listeners(dom3),
-	[
-		{ws, {0,0,0,0}, P1, Cow1, [
-     		#{id:=Ws3, host:=<<"localhost">>, path:=<<"/dom3">>, ws_proto:=<<"proto1">>},
-      		#{id:=Ws2, path:=<<"/dom2">>},
-      		#{id:=Ws1, path:=<<"/dom1/more">>}
-      	]}
-     ] = nkpacket_cowboy:get_all(),
+	[{{{0,0,0,0}, P1}, Cow1, [Filter1, Filter2, Filter3]}] = 
+    	nkpacket_cowboy:get_all(),
+	{Ws3, <<"localhost">>, [<<"dom3">>], <<"proto1">>} = 
+    	nkpacket_cowboy:extract_filter(Filter1),
+	{Ws2, any, [<<"dom2">>], any} = nkpacket_cowboy:extract_filter(Filter2),
+	{Ws1, any, [<<"dom1">>, <<"more">>], any} = nkpacket_cowboy:extract_filter(Filter3),
 
 	% Now we send a message from dom5 to dom1, we don't mind host and ws_proto
 	{ok, Conn1} = nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1,
-								#{path=>"/dom1/more", idle_timeout=>500, srv_id=>dom5}),
+								#{path=>"/dom1/more", idle_timeout=>500, class=>dom5}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
 	% Conn1B = Conn1#nkport{meta=maps:remove(idle_timeout, Conn1#nkport.meta)},
     [#nkport{pid=Conn1}] = test_util:conns(dom5),
 	{ok, #nkport{
-       	srv_id = dom5,
+       	class = dom5,
 		transp = ws,
         local_ip = {127,0,0,1}, local_port = Conn1Port,
         remote_ip = {127,0,0,1}, remote_port = P1,
@@ -348,7 +352,7 @@ multi() ->
     }} = nkpacket:get_nkport(Conn1),
     [
     	#nkport{
-       	srv_id = dom1,
+       	class = dom1,
 		transp = ws,
         local_ip = {0,0,0,0}, local_port = P1,
         remote_ip = {127,0,0,1}, remote_port = Conn1Port,
@@ -362,24 +366,24 @@ multi() ->
     % No one is listening here
     {error, closed} = 
     	nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1, 
-    				   #{srv_id=>dom5}),
+    				   #{class=>dom5}),
     {error, closed} = 
     	nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1, 
-    				   #{srv_id=>dom5, path=>"/"}),
+    				   #{class=>dom5, path=>"/"}),
     {error, closed} = 
     	nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1, 
-    				  #{srv_id=>dom5, path=>"/dom1"}),
+    				  #{class=>dom5, path=>"/dom1"}),
 
     % Now we connect to dom2
     % We use host because of the url
 	{ok, Conn2} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom2;transport=ws>", 
-								msg2, M1#{srv_id=>dom1}),
+								msg2, M1#{class=>dom1}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
 	{ok, #nkport{
-		srv_id = dom1,
+		class = dom1,
 		transp = ws,
         local_ip = {127,0,0,1}, local_port = Conn2Port,
         remote_ip = {127,0,0,1}, remote_port = P1,
@@ -394,7 +398,7 @@ multi() ->
     [#nkport{pid=Conn2}] = test_util:conns(dom1),
     [
     	#nkport{
-	       	srv_id = dom2,
+	       	class = dom2,
     		transp = ws,
           	local_ip = {0,0,0,0}, local_port = P1,
           	remote_ip = {127,0,0,1}, remote_port = Conn2Port,
@@ -407,28 +411,28 @@ multi() ->
 	% We connect to dom3, but the host must be 'localhost'
 	{error, closed} = 
 		nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>", msg3, 
-					  #{srv_id=>dom5}),
+					  #{class=>dom5}),
 	{error, closed} = 
 		nkpacket:send("<test://localhost:"++P1S++"/dom3;transport=ws>", msg3,
-					  #{srv_id=>dom5}),
+					  #{class=>dom5}),
 	% It also needs a supported WS protocol
 	{error, closed} = 
 		nkpacket:send("<test://localhost:"++P1S++"/dom3;transport=ws>", msg3,
-					  #{ws_proto=>proto2, srv_id=>dom5}),
+					  #{ws_proto=>proto2, class=>dom5}),
 
 	{ok, Conn3} = 
 		nkpacket:send("<test://localhost:"++P1S++"/dom3;transport=ws>", msg3,
-					  #{ws_proto=>proto1, srv_id=>dom5}),
+					  #{ws_proto=>proto1, class=>dom5}),
 
 	receive {Ref3, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref3, {parse, {binary, msg3}}} -> ok after 1000 -> error(?LINE) end,
 
 	% Send a new message, must use the same transport (same path, host and proto)
 	{error, closed} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>", 
-									msg4, #{srv_id=>dom5}),
-	{error, closed} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1", msg4, #{srv_id=>dom5}),
+									msg4, #{class=>dom5}),
+	{error, closed} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1", msg4, #{class=>dom5}),
 
-	{ok, Conn3} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1;host=localhost", msg4, #{srv_id=>dom5}),
+	{ok, Conn3} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1;host=localhost", msg4, #{class=>dom5}),
 	receive {Ref3, {parse, {binary, msg4}}} -> ok after 1000 -> error(?LINE) end,
 
 	nkpacket_connection:stop(Conn3, normal),
@@ -441,8 +445,8 @@ multi() ->
 	receive {Ref1, listen_stop}  -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_stop}  -> ok after 1000 -> error(?LINE) end,
 	receive {Ref3, listen_stop}  -> ok after 1000 -> error(?LINE) end,
-	{error, unknown_listener} = nkpacket:stop_listener(Listen1),
-	{error, unknown_listener} = nkpacket:stop_listener(Ws3),
+	{error, {exit, _}} = nkpacket:stop_listener(Listen1),
+	{error, {exit, _}} = nkpacket:stop_listener(Ws3),
 	test_util:ensure([Ref1, Ref2, Ref3]).
 
 

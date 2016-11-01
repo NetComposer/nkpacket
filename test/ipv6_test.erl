@@ -49,8 +49,8 @@ basic() ->
 	All6 = {0,0,0,0,0,0,0,0},
 	Local6 = {0,0,0,0,0,0,0,1},
 	Url = "<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>",
-	{ok, Tcp1} = nkpacket:start_listener(Url, M1#{srv_id=>dom1}),
-	{ok, Tcp2} = nkpacket:start_listener({test_protocol, tcp, All6, 0}, M2#{srv_id=>dom2}),
+	{ok, Tcp1} = nkpacket:start_listener(Url, M1#{class=>dom1}),
+	{ok, Tcp2} = nkpacket:start_listener({test_protocol, tcp, All6, 0}, M2#{class=>dom2}),
 	{ok, {_, tcp, _, LPort1}} = nkpacket:get_local(Tcp1),	
 	{ok, {_, tcp, _, LPort2}} = nkpacket:get_local(Tcp2),
 	case LPort2 of
@@ -64,7 +64,7 @@ basic() ->
 
 	[Listen1] = nkpacket:get_all(dom1),
  	{ok, #nkport{
-        srv_id = dom1,
+        class = dom1,
  		transp = tcp,
         local_ip = Local6, local_port = LPort1,
         listen_ip = Local6, listen_port = LPort1,
@@ -73,7 +73,7 @@ basic() ->
 
 	[Listen2] = nkpacket:get_all(dom2),
 	{ok, #nkport{
-       	srv_id = dom2,
+       	class = dom2,
 		transp = tcp,
         local_ip = All6, local_port = LPort2, 
         remote_ip = undefined, remote_port = undefined,
@@ -81,7 +81,7 @@ basic() ->
         protocol = test_protocol
 	}} = nkpacket:get_nkport(Listen2),
 
-	{ok, _} = nkpacket:send(Url, msg1, M2#{srv_id=>dom2}),
+	{ok, _} = nkpacket:send(Url, msg1, M2#{class=>dom2}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -89,7 +89,7 @@ basic() ->
 
 	[Conn1] = nkpacket_connection:get_all(dom1),
 	{ok, #nkport{
-	        srv_id = dom1,
+	        class = dom1,
 			transp=tcp,
 			local_ip=Local6, local_port=_ConnPort1,
 			remote_ip=Local6, remote_port=ConnPort2,
@@ -98,7 +98,7 @@ basic() ->
 
 	[Conn2] = nkpacket_connection:get_all(dom2),
 	{ok, #nkport{
-	        srv_id = dom2,
+	        class = dom2,
 			transp=tcp,
 			local_ip=Local6, local_port=ConnPort2,
 			remote_ip=Local6, remote_port=LPort1,
@@ -124,33 +124,33 @@ is_local() ->
 	{ok, Tcp0} = nkpacket:start_listener(
 		"<test:[::1]:"++integer_to_list(LPort0)++";transport=tcp>", #{}),
 	{ok, Tcp1} = nkpacket:start_listener( 
-		"<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>", #{srv_id=>dom1}),
+		"<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>", #{class=>dom1}),
 	{ok, Tcp2} = nkpacket:start_listener(
-		"<test://all6:"++integer_to_list(LPort2)++";transport=udp>", #{srv_id=>dom2}),
+		"<test://all6:"++integer_to_list(LPort2)++";transport=udp>", #{class=>dom2}),
 
 	[Uri0] = nklib_parse:uris(
 		"<test:[::1]:"++integer_to_list(LPort0)++";transport=tcp>"),
 	true = nkpacket:is_local(Uri0),
-	false = nkpacket:is_local(Uri0, #{srv_id=>dom1}),
-	false = nkpacket:is_local(Uri0, #{srv_id=>dom2}),
+	false = nkpacket:is_local(Uri0, #{class=>dom1}),
+	false = nkpacket:is_local(Uri0, #{class=>dom2}),
 
 	[Uri1] = nklib_parse:uris(
 		"<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>"),
 	false = nkpacket:is_local(Uri1),
-	true = nkpacket:is_local(Uri1, #{srv_id=>dom1}),
-	false = nkpacket:is_local(Uri1, #{srv_id=>dom2}),
+	true = nkpacket:is_local(Uri1, #{class=>dom1}),
+	false = nkpacket:is_local(Uri1, #{class=>dom2}),
 
 	[Uri2] = nklib_parse:uris(
 		"<test:[::1]:"++integer_to_list(LPort2)++";transport=udp>"),
 	false = nkpacket:is_local(Uri2),
-	false = nkpacket:is_local(Uri2, #{srv_id=>dom1}),
-	true = nkpacket:is_local(Uri2, #{srv_id=>dom2}),
+	false = nkpacket:is_local(Uri2, #{class=>dom1}),
+	true = nkpacket:is_local(Uri2, #{class=>dom2}),
 
 	[Uri3] = nklib_parse:uris(
 		"<test:[::2]:"++integer_to_list(LPort1)++";transport=tcp>"),
 	false = nkpacket:is_local(Uri3),
-	false = nkpacket:is_local(Uri3, #{srv_id=>dom1}),
-	false = nkpacket:is_local(Uri3, #{srv_id=>dom2}),
+	false = nkpacket:is_local(Uri3, #{class=>dom1}),
+	false = nkpacket:is_local(Uri3, #{class=>dom2}),
 
 	case 
 		[Ip || Ip <- nkpacket_config_cache:local_ips(), size(Ip)==8]
@@ -163,8 +163,8 @@ is_local() ->
 						"<test:[", nklib_util:to_host(Local6), "]:" ++ 
 						integer_to_list(LPort2)++";transport=udp>"]),
 			[Uri4] = nklib_parse:uris(Url4),
-			false = nkpacket:is_local(Uri4, #{srv_id=>dom1}),
-			true = nkpacket:is_local(Uri4, #{srv_id=>dom2})
+			false = nkpacket:is_local(Uri4, #{class=>dom1}),
+			true = nkpacket:is_local(Uri4, #{class=>dom2})
 	end,
 
 	ok = nkpacket:stop_listener(Tcp0),

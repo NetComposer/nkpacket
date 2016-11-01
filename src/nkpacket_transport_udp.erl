@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -41,7 +41,7 @@
 %% @private Sends a STUN binding request
 %% It does not open a new NkPACKET's UDP connection
 send_stun_sync(Pid, Ip, Port, Timeout) ->
-    case catch gen_server:call(Pid, {send_stun, Ip, Port}, Timeout) of
+    case catch gen_server:call(Pid, {nkpacket_send_stun, Ip, Port}, Timeout) of
         {ok, StunIp, StunPort} -> 
             {ok, StunIp, StunPort};
         error -> 
@@ -52,7 +52,7 @@ send_stun_sync(Pid, Ip, Port, Timeout) ->
 %% @private Sends a STUN binding request, the response will be sent to the calling 
 %% process as {stun, {ok, Ip, Port}|error}.
 send_stun_async(Pid, Ip, Port) ->
-    gen_server:cast(Pid, {send_stun, Ip, Port, self()}).
+    gen_server:cast(Pid, {nkpacket_send_stun, Ip, Port, self()}).
 
 
 %% ===================================================================
@@ -64,10 +64,9 @@ send_stun_async(Pid, Ip, Port) ->
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(NkPort) ->
-    #nkport{protocol=Proto, transp=udp, listen_ip=Ip, listen_port=Port} = NkPort,
+get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=udp}=NkPort) ->
     {
-        {{Proto, udp, Ip, Port, <<>>}, make_ref()}, 
+        {{udp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -81,7 +80,7 @@ get_listener(NkPort) ->
     {ok, pid()} | {error, term()}.
          
 connect(#nkport{transp=udp, pid=Pid}=NkPort) ->
-    case catch gen_server:call(Pid, {connect, NkPort}, 180000) of
+    case catch gen_server:call(Pid, {nkpacket_connect, NkPort}, 180000) of
         {ok, ConnPid} -> 
             {ok, ConnPid};
         {error, Error} ->
@@ -100,7 +99,7 @@ send(#nkport{transp=udp, socket=Socket}, Ip, Port, Data) ->
     gen_udp:send(Socket, Ip, Port, Data);
 
 send(Pid, Ip, Port, Data) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, get_socket, 180000) of
+    case catch gen_server:call(Pid, nkpacket_get_socket, 180000) of
         {ok, Socket} -> 
             send(Socket, Ip, Port, Data);
         _ -> 
@@ -149,7 +148,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        srv_id = SrvId,
+        class = Class,
         protocol = Protocol, 
         transp = udp,
         listen_ip = ListenIp, 
@@ -187,14 +186,16 @@ init([NkPort]) ->
             _ ->
                 undefined
         end,
-        nklib_proc:put(nkpacket_listeners, SrvId),
+        Id = binary_to_atom(nklib_util:hash({udp, LocalIp, LocalPort}), latin1),
+        true = register(Id, self()),
+        nklib_proc:put(nkpacket_listeners, {Id, Class}),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
         end,
-        nklib_proc:put({ListenType, SrvId, Protocol, udp}, ConnPort),
+        nklib_proc:put({ListenType, Class, Protocol, udp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
         MonRef = case Meta of
             #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
@@ -226,7 +227,7 @@ init([NkPort]) ->
     {reply, term(), #state{}} | {noreply, term(), #state{}} | 
     {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
-handle_call({connect, ConnPort}, _From, State) ->
+handle_call({nkpacket_connect, ConnPort}, _From, State) ->
     #nkport{
         remote_ip = Ip,
         remote_port = Port, 
@@ -234,14 +235,17 @@ handle_call({connect, ConnPort}, _From, State) ->
     } = ConnPort,
     {reply, do_connect(Ip, Port, Meta, State), State};
 
-handle_call({send_stun, Ip, Port}, From, State) ->
+handle_call({nkpacket_send_stun, Ip, Port}, From, State) ->
     {noreply, do_send_stun(Ip, Port, {call, From}, State)};
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call(get_socket, _From, #state{socket=Socket}=State) ->
+handle_call(nkpacket_get_socket, _From, #state{socket=Socket}=State) ->
     {reply, {ok, Socket}, State};
+
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
@@ -255,8 +259,11 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast({send_stun, Ip, Port, Pid}, State) ->
+handle_cast({nkpacket_send_stun, Ip, Port, Pid}, State) ->
     {noreply, do_send_stun(Ip, Port, {msg, Pid}, State)};
+
+handle_cast(nkpacket_stop, State) ->
+    {stop, normal, State};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_cast, [Msg, NkPort], State) of
@@ -487,9 +494,9 @@ do_connect(Ip, Port, State) ->
 
 %% @private
 do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
-    #nkport{srv_id=SrvId, protocol=Proto, meta=ListenMeta} = NkPort,
+    #nkport{class=Class, protocol=Proto, meta=ListenMeta} = NkPort,
     Conn = {Proto, udp, Ip, Port},
-    case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
+    case nkpacket_transport:get_connected(Conn, #{class=>Class}) of
         [Pid|_] -> 
             {ok, Pid};
         [] ->

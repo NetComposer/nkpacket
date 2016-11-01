@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -22,13 +22,20 @@
 -module(nkpacket_connection_lib).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([is_max/0, raw_send/2, raw_stop/1]).
+-export([is_max/0, raw_send/2, raw_send/3, raw_send_sync/2, raw_stop/1]).
+-export_type([send_opts/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
 -include("nkpacket.hrl").
 
--define(MAX_UDP, 1500).
+
+-define(SYNC_TIMEOUT, 30000).
+
+-type send_opts() :: 
+    #{
+        udp_max_size => integer()
+    }.
 
 
 %% ===================================================================
@@ -48,35 +55,47 @@ is_max() ->
             false
     end.
 
-
-%% @doc Sends data directly to a transport
+%% @doc Equivalent to raw_send(NkPort, Data, #{})
 -spec raw_send(nkpacket:nkport(), nkpacket:outcoming()) ->
     ok | {error, term()}.
     
-raw_send(#nkport{transp=udp}, Data) when byte_size(Data) > ?MAX_UDP ->
-    {error, udp_too_large};    
+raw_send(NkPort, Data) ->
+    raw_send(NkPort, Data, #{}).
 
-raw_send(#nkport{transp=udp, socket=Socket, remote_ip=Ip, remote_port=Port}, Data) ->
-    gen_udp:send(Socket, Ip, Port, Data);
 
-raw_send(#nkport{transp=tcp, socket=Socket}, Data) ->
+%% @doc Sends data directly to a transport
+-spec raw_send(nkpacket:nkport(), nkpacket:outcoming(), send_opts()) ->
+    ok | {error, term()}.
+    
+raw_send(#nkport{transp=udp}=NkPort, Data, Opts) ->
+    MaxSize = maps:get(udp_max_size, Opts, 65507),
+    case byte_size(Data) > MaxSize of
+        true ->
+            {error, udp_too_large};    
+        false ->
+            #nkport{socket=Socket, remote_ip=Ip, remote_port=Port} = NkPort,
+            gen_udp:send(Socket, Ip, Port, Data)
+    end;
+
+raw_send(#nkport{transp=tcp, socket=Socket}, Data, _Opts) ->
     gen_tcp:send(Socket, Data);
 
-raw_send(#nkport{transp=tls, socket=Socket}, Data) ->
+raw_send(#nkport{transp=tls, socket=Socket}, Data, _Opts) ->
+    % lager:warning("Send: ~p", [list_to_binary([Data])]),
     ssl:send(Socket, Data);
 
-raw_send(#nkport{transp=sctp, socket={Socket, AssocId}}, Data) ->
+raw_send(#nkport{transp=sctp, socket={Socket, AssocId}}, Data, _Opts) ->
     gen_sctp:send(Socket, AssocId, 0, Data);
 
-raw_send(#nkport{transp=ws, socket=Socket}, Data) when is_port(Socket) ->
+raw_send(#nkport{transp=ws, socket=Socket}, Data, _Opts) when is_port(Socket) ->
     Bin = nkpacket_connection_ws:encode(get_ws_frame(Data)),
     gen_tcp:send(Socket, Bin);
 
-raw_send(#nkport{transp=wss, socket={sslsocket, _, _}=Socket}, Data) ->
+raw_send(#nkport{transp=wss, socket={sslsocket, _, _}=Socket}, Data, _Opts) ->
     Bin = nkpacket_connection_ws:encode(get_ws_frame(Data)),
     ssl:send(Socket, Bin);
 
-raw_send(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->
+raw_send(#nkport{transp=Transp, socket=Pid}, Data, _Opts) when is_pid(Pid) ->
     Msg = if
         Transp==ws; Transp==wss -> get_ws_frame(Data);
         true -> Data
@@ -89,8 +108,35 @@ raw_send(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->
             {error, no_process}
     end;
 
-raw_send(_, _) ->
+raw_send(_, _, _) ->
     {error, invalid_transport}.
+
+
+%% @doc Sends data directly to a transport, ensures sync sending
+-spec raw_send_sync(nkpacket:nkport(), nkpacket:outcoming()) ->
+    ok | {error, term()}.
+
+raw_send_sync(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->
+    Msg = if
+        Transp==ws; Transp==wss -> get_ws_frame(Data);
+        true -> Data
+    end,
+    case is_process_alive(Pid) of
+        true -> 
+            Ref = make_ref(),
+            Self = self(),
+            Pid ! {nkpacket_send, Ref, Self, Msg},
+            receive
+                {nkpacket_reply, Ref} -> ok
+            after
+                ?SYNC_TIMEOUT -> {error, timeout}
+            end;
+        false ->
+            {error, no_process}
+    end;
+
+raw_send_sync(NkPort, Data) ->
+    raw_send(NkPort, Data).
 
 
 %% @private

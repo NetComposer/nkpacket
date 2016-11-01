@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -26,9 +26,9 @@
 -module(nkpacket_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([transports/1, default_port/1, encode/2, naptr/2]).
--export([conn_init/1, conn_parse/3, conn_encode/3, conn_bridge/4, conn_handle_call/4,
-		 conn_handle_cast/3, conn_handle_info/3, conn_stop/3]).
+-export([transports/1, default_port/1, naptr/2]).
+-export([conn_init/1, conn_parse/3, conn_encode/3, conn_encode/2, conn_bridge/4, 
+		 conn_handle_call/4, conn_handle_cast/3, conn_handle_info/3, conn_stop/3]).
 -export([listen_init/1, listen_parse/5, listen_handle_call/4,
 		 listen_handle_cast/3, listen_handle_info/3, listen_stop/3]).
 -export([http_init/4]).
@@ -82,15 +82,6 @@ transports(_) ->
 default_port(_) ->
     invalid.
 
-%% @doc Implement this function to provide a 'quick' encode function, 
-%% in case you don't need the connection state to perform the encode.
-%% Do not implement it or return 'continue' to call conn_encode/2
--spec encode(term(), nkpacket:nkport()) ->
-    {ok, nkpacket:outcoming()} | continue | {error, term()}.
-
-encode(_, _) ->
-    continue.
-
 
 %% @doc Implement this function to allow NAPTR DNS queries.
 %% When a request to resolve a URL maps to a non-IP host, with undefined
@@ -132,7 +123,8 @@ conn_init(_) ->
 
 %% @doc This function is called when a new message arrives to the connection
 -spec conn_parse(nkpacket:incoming(), nkpacket:nkport(), conn_state()) ->
-	{ok, conn_state()} | {bridge, nkpacket:nkport()} | 
+	{ok, conn_state()} | {reply, term(), conn_state()} | 
+	{bridge, nkpacket:nkport(), conn_state()} |
 	{stop, Reason::term(), conn_state()}.
 
 conn_parse(_Msg, _NkPort, ConnState) ->
@@ -141,11 +133,20 @@ conn_parse(_Msg, _NkPort, ConnState) ->
 
 %% @doc This function is called when a new message must be send to the connection
 -spec conn_encode(term(), nkpacket:nkport(), conn_state()) ->
-	{ok, nkpacket:outcoming(), conn_state()} | {error, term(), conn_state()} |
-	{stop, Reason::term(), conn_state()}.
+	{ok, nkpacket:outcoming(), conn_state()} | {stop, Reason::term(), conn_state()}.
 
 conn_encode(_Term, _NkPort, ConnState) ->
 	{error, not_defined, ConnState}.
+
+
+%% @doc Implement this function to provide a 'quick' encode function, 
+%% in case you don't need the connection state to perform the encode.
+%% Return 'continue' to use the default version
+-spec conn_encode(term(), nkpacket:nkport()) ->
+    {ok, nkpacket:outcoming()} | continue | {error, term()}.
+
+conn_encode(_Term, _NkPort) ->
+	continue.
 
 
 %% @doc This function is called on incoming data for bridged connections

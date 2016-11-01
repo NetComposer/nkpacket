@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -35,10 +35,18 @@
 
 add_listener(Spec) ->
     case supervisor:start_child(nkpacket_listen_sup, Spec) of
-        {ok, Pid} -> {ok, Pid};
-        {ok, Pid, Info} -> {ok, Pid, Info};
-        {error, {Error, _}} -> {error, Error};
-        {error, Error} -> {error, Error}
+        {ok, Pid} -> 
+            {ok, Pid};
+        {ok, Pid, Info} -> 
+            {ok, Pid, Info};
+        {error, already_present} ->
+            Id = element(1, Spec),
+            ok = supervisor:delete_child(nkpacket_listen_sup, Id),
+            add_listener(Spec);
+        {error, {Error, _}} -> 
+            {error, Error};
+        {error, Error} -> 
+            {error, Error}
     end.
 
 

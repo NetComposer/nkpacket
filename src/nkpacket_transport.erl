@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -63,7 +63,7 @@ get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==
     Host = maps:get(host, Opts, any),
     Path = maps:get(path, Opts, any),
     WsProto = maps:get(ws_proto, Opts, any),
-    SrvId = maps:get(srv_id, Opts, none),
+    Class = maps:get(class, Opts, none),
     nklib_util:filtermap(
         fun({Meta, Pid}) ->
             HostOK = Host==any orelse 
@@ -89,13 +89,13 @@ get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==
                 false -> false
             end
         end,
-        nklib_proc:values({nkpacket_connection, SrvId, Conn}));
+        nklib_proc:values({nkpacket_connection, Class, Conn}));
 
 get_connected({_, _, _, _}=Conn, Opts) ->
-    SrvId = maps:get(srv_id, Opts, none),
+    Class = maps:get(class, Opts, none),
     [
         Pid || 
-        {_Meta, Pid} <- nklib_proc:values({nkpacket_connection, SrvId, Conn})
+        {_Meta, Pid} <- nklib_proc:values({nkpacket_connection, Class, Conn})
     ].
 
 
@@ -168,7 +168,7 @@ send([{connect, Conn}|Rest], Msg, Opts) ->
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
 
-send([{_, _, _, _}=Conn|Rest], Msg, #{srv_id:=_}=Opts) ->
+send([{_, _, _, _}=Conn|Rest], Msg, #{class:=_}=Opts) ->
     Pids = case Opts of
         #{force_new:=true} -> [];
         _ -> get_connected(Conn, Opts)
@@ -185,7 +185,7 @@ send([{_, _, _, _}=Conn|Rest], Msg, #{srv_id:=_}=Opts) ->
             send([{connect, Conn}|Rest], Msg, Opts1)
     end;
 
-% If we dont specify a service, do not reuse connections
+% If we dont specify a class, do not reuse connections
 send([{_, _, _, _}=Conn|Rest], Msg, Opts) ->
     send([{connect, Conn}|Rest], Msg, Opts);
 
@@ -218,7 +218,11 @@ do_send(Msg, [Port|Rest], #{pre_send_fun:=Fun}=Opts) ->
     do_send(Msg1, [Port|Rest], maps:remove(pre_send_fun, Opts));
 
 do_send(Msg, [Port|Rest], Opts) ->
-    case nkpacket_connection:send(Port, Msg) of
+    SendOpts = case maps:find(udp_max_size, Opts) of
+        {ok, MaxSize} -> #{udp_max_size=>MaxSize};
+        error -> #{}
+    end,
+    case nkpacket_connection:send(Port, Msg, SendOpts) of
         ok when is_pid(Port) ->
             {ok, {Port, Msg}};
         ok ->
@@ -310,12 +314,12 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
             Meta2 = maps:remove(host, Meta1),
             Meta3 = maps:remove(path, Meta2),
             ConnPort = BasePort#nkport{
-                srv_id = maps:get(srv_id, Opts, none),
+                class = maps:get(class, Opts, none),
                 transp = Transp, 
                 protocol = Protocol,
                 remote_ip = Ip, 
                 remote_port = Port,
-                meta = maps:remove(srv_id, maps:merge(Meta3, Opts))
+                meta = maps:remove(class, maps:merge(Meta3, Opts))
             },
             % If we found a listening transport, connection will monitor it
             nkpacket_connection:connect(ConnPort)
@@ -393,7 +397,7 @@ open_port(NkPort, Opts) ->
     end,
     case Port of
         0 when is_integer(DefPort) ->
-            lager:info("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
+            lager:debug("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
             case Module:Fun(DefPort, Opts) of
                 {ok, Socket} ->
                     {ok, Socket};
@@ -411,7 +415,7 @@ open_port(NkPort, Opts) ->
     {ok, port()} | {error, term()}.
 
 open_port(Ip, Port, Module, Fun, Opts, Iter) ->
-    lager:info("Opening ~p:~p (~p)", [Module, Port, Opts]),
+    lager:debug("Opening ~p:~p (~p)", [Module, Port, Opts]),
     case Module:Fun(Port, Opts) of
         {ok, Socket} ->
             {ok, Socket};

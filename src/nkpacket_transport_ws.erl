@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -33,7 +33,7 @@
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
 -export([websocket_handle/3, websocket_info/3, terminate/3]).
--export([cowboy_init/3]).
+-export([cowboy_init/4]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -48,11 +48,10 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
-    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port, meta=Meta} = NkPort,
-    Path = maps:get(path, Meta, <<>>),
+get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=Transp}=NkPort) 
+        when Transp==ws; Transp==wss ->
     {
-        {{Proto, Transp, Ip, Port, Path}, make_ref()},
+        {{Transp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -129,7 +128,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        srv_id = SrvId,
+        class = Class,
         transp = Transp, 
         listen_ip = ListenIp, 
         listen_port = ListenPort,
@@ -139,7 +138,7 @@ init([NkPort]) ->
     process_flag(trap_exit, true),   %% Allow calls to terminate
     try
         NkPort1 = NkPort#nkport{pid = self()},
-        Filter1 = maps:with([SrvId, host, path, ws_proto], Meta),
+        Filter1 = maps:with([Class, host, path, ws_proto, get_headers], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
         case nkpacket_cowboy:start(NkPort1, Filter2) of
             {ok, SharedPid} -> ok;
@@ -147,7 +146,6 @@ init([NkPort]) ->
         end,
         erlang:monitor(process, SharedPid),
         {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(SharedPid),
-        nklib_proc:put(nkpacket_listeners, SrvId),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
             local_ip = LocalIp,
@@ -156,11 +154,17 @@ init([NkPort]) ->
             socket = SharedPid,
             meta = ConnMeta        
         },   
+        Host = maps:get(host, Meta, any),
+        Path = maps:get(path, Meta, any),
+        WsProto = maps:get(ws_proto, Meta, any),
+        Id = binary_to_atom(nklib_util:hash({tcp, LocalIp, LocalPort, Path}), latin1),
+        true = register(Id, self()),
+        nklib_proc:put(nkpacket_listeners, {Id, Class}),
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
         end,
-        nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
+        nklib_proc:put({ListenType, Class, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
         MonRef = case Meta of
             #{monitor:=UserRef} -> 
@@ -168,9 +172,6 @@ init([NkPort]) ->
             _ -> 
                 undefined
         end,
-        Host = maps:get(host, Meta, any),
-        Path = maps:get(path, Meta, any),
-        WsProto = maps:get(ws_proto, Meta, any),
         lager:info("Created ~p listener for ~p:~p:~p (~p, ~p, ~p) (~p)", 
                    [Protocol, Transp, LocalIp, LocalPort, 
                     Host, Path, WsProto, self()]),
@@ -198,14 +199,8 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({start, Ip, Port, Pid}, _From, State) ->
+handle_call({nkpacket_start, Ip, Port, UserMeta, Pid}, _From, State) ->
     #state{nkport=#nkport{meta=Meta}=NkPort} = State,
-    NkPort1 = NkPort#nkport{
-        remote_ip = Ip,
-        remote_port = Port,
-        socket = Pid,
-        meta = maps:without([host, path], Meta)
-    },
     % We remove host and path because the connection we are going to start
     % is not related (from the remote point of view) of the local host and path
     % In case to be reused, they should not be taken into account.
@@ -213,6 +208,14 @@ handle_call({start, Ip, Port, Pid}, _From, State) ->
     % to be used based on the flow (the socket of #nkport{})
     % Connection will monitor listen process (unsing 'pid' and 
     % the cowboy process (using 'socket')
+    Meta1 = maps:without([host, path], Meta),
+    Meta2 = maps:merge(Meta1, UserMeta),
+    NkPort1 = NkPort#nkport{
+        remote_ip = Ip,
+        remote_port = Port,
+        socket = Pid,
+        meta = Meta2
+    },
     case nkpacket_connection:start(NkPort1) of
         {ok, #nkport{pid=ConnPid}=NkPort2} ->
             lager:debug("WS listener accepted connection: ~p", 
@@ -223,6 +226,9 @@ handle_call({start, Ip, Port, Pid}, _From, State) ->
                     " ~p", [Error]),
             {reply, next, State}
     end;
+
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
@@ -291,13 +297,12 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 %% @private Called from nkpacket_cowboy:execute/2, inside
 %% cowboy's connection process
--spec cowboy_init(#nkport{}, cowboy_req:req(), list()) ->
+-spec cowboy_init(#nkport{}, cowboy_req:req(), nkpacket_cowboy:user_meta(), list()) ->
     term().
 
-cowboy_init(Pid, Req, Env) ->
+cowboy_init(Pid, Req, Meta, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    % _Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
+    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, Meta, self()}, infinity) of
         {ok, ConnPid} ->
             cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, infinity, run);
         next ->
@@ -357,8 +362,23 @@ websocket_handle(Other, Req, ConnPid) ->
     {stop, Req, State}
     when Req::cowboy_req:req(), State::any().
 
+websocket_info({nkpacket_send, Fun}, Req, State) when is_function(Fun, 0) ->
+    {reply, Fun(), Req, State};
+
 websocket_info({nkpacket_send, Frames}, Req, State) ->
     {reply, Frames, Req, State};
+
+websocket_info({nkpacket_send, Ref, Pid, Fun}, Req, State) when is_function(Fun, 0) ->
+    self() ! {nkpacket_reply, Ref, Pid},
+    {reply, Fun(), Req, State};
+
+websocket_info({nkpacket_send, Ref, Pid, Frames}, Req, State) ->
+    self() ! {nkpacket_reply, Ref, Pid},
+    {reply, Frames, Req, State};
+
+websocket_info({nkpacket_reply, Ref, Pid}, Req, State) ->
+    Pid ! {nkpacket_reply, Ref},
+    {ok, Req, State};
 
 websocket_info(nkpacket_stop, Req, State) ->
     {stop, Req, State};
@@ -370,7 +390,7 @@ websocket_info(Info, Req, State) ->
 
 %% @private
 terminate(Reason, _Req, ConnPid) ->
-    lager:debug("WS process terminate: ~p", [Reason]),
+    lager:debug("WS ~p process terminate: ~p", [self(), Reason]),
     nkpacket_connection:stop(ConnPid, normal),
     ok.
 

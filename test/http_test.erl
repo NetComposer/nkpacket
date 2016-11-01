@@ -52,11 +52,13 @@ basic() ->
  	
  	Url1 = "<http://all:"++integer_to_list(Port)++"/test1>",
 	Proto1 = {dispatch, #{routes => [{'_', [{"/test1", test_cowboy_handler, [M1]}]}]}},
-	{ok, Http1} = nkpacket:start_listener(Url1, M1#{srv_id=>dom1, http_proto=>Proto1}),
+	{ok, LHttp1} = nkpacket:start_listener(Url1, M1#{class=>dom1, http_proto=>Proto1}),
+	Http1 = whereis(LHttp1),
  	
  	Url2 = "<http://all:"++integer_to_list(Port)++"/test2/>",
 	Proto2 = {dispatch, #{routes => [{'_', [{"/test2", test_cowboy_handler, [M2]}]}]}},
-	{ok, Http2} = nkpacket:start_listener(Url2, M2#{srv_id=>dom2, http_proto=>Proto2}),
+	{ok, LHttp2} = nkpacket:start_listener(Url2, M2#{class=>dom2, http_proto=>Proto2}),
+	Http2 = whereis(LHttp2),
 
  	Url3 = "<http://0.0.0.0:"++integer_to_list(Port)++">",
 	Proto3 = {dispatch, #{routes => 
@@ -65,17 +67,18 @@ basic() ->
 			{'_', [{"/test3/a/2", test_cowboy_handler, [M3]}]}
 
 		]}},
-	{ok, Http3} = nkpacket:start_listener(Url3, M3#{
-		srv_id => dom3,
+	{ok, LHttp3} = nkpacket:start_listener(Url3, M3#{
+		class => dom3,
 		host => "localhost",
 		path => "/test3/a",
 		http_proto => Proto3
 	}),
+	Http3 = whereis(LHttp3),
 	timer:sleep(100),
 
 	[Listen1] = nkpacket:get_all(dom1),
 	{ok, #nkport{
-			srv_id = dom1,
+			class = dom1,
 			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
@@ -84,7 +87,7 @@ basic() ->
 	}} = nkpacket:get_nkport(Listen1),
 	[Listen2] = nkpacket:get_all(dom2),
 	{ok, #nkport{
-			srv_id = dom2,
+			class = dom2,
  			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
@@ -93,7 +96,7 @@ basic() ->
 	}} = nkpacket:get_nkport(Listen2),
 	[Listen3] = nkpacket:get_all(dom3),
 	{ok, #nkport{
-			srv_id = dom3,
+			class = dom3,
 			transp = http,
 			local_ip = {0,0,0,0}, local_port = Port,
 			listen_ip = {0,0,0,0}, listen_port = Port,
@@ -137,7 +140,7 @@ basic() ->
 	<<"NkPACKET">> = nklib_util:get_value(<<"server">>, H4),
 
 	ok = nkpacket:stop_listener(Http1),
-	ok = nkpacket:stop_listener(Http2),
+	ok = nkpacket:stop_listener(LHttp2),
 	ok.
 
 
@@ -172,11 +175,19 @@ static() ->
 	{ok, S2} = nkpacket:start_listener(Url2, #{http_proto=>Proto2}),
 
 	Gun = open(Port, tcp),
-	{ok, 200, H1, <<"index_root">>} = get(Gun, "/", []),
+	{ok, 200, _, <<"index_root">>} = get(Gun, "/", []),
+	% [
+	% 	{<<"connection">>, <<"keep-alive">>},
+	% 	{<<"content-length">>, <<"0">>},
+	% 	{<<"date">>, _},
+	% 	{<<"location">>, <<"http://127.0.0.1:8080/index.html">>},
+	% 	{<<"server">>, <<"NkPACKET">>}
+	% ] = lists:sort(H1),
+	{ok, 200, H1, <<"index_root">>} = get(Gun, "/index.html", []),
 	[
 		{<<"connection">>, <<"keep-alive">>},
 		{<<"content-length">>, <<"10">>},
-		{<<"content-type">>, <<"text/html">>},
+		{<<"content-type">>,<<"text/html">>},
 		{<<"date">>, _},
 		{<<"etag">>, Etag},
 		{<<"last-modified">>, Date},
@@ -191,13 +202,20 @@ static() ->
 	{ok, 403, _} = get(Gun, "/1/2/", []),
 	{ok, 200, _, <<"index_root">>} = get(Gun, "/1/2/index.html", []),
 	{ok, 404, _} = get(Gun, "/1/2/index.htm", []),
-	{ok, 200, _, <<"index_dir1">>} = get(Gun, "/dir1", []),
-	{ok, 403, _} = get(Gun, "/1/2/dir1", []),
-	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/dir1/file1.txt", []),
-	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/dir1/././file1.txt", []),
+	{ok, 301, _} = get(Gun, "/dir1", []),
+	{ok, 301, H2} = get(Gun, "/1/2/dir1", []),
+	[
+		{<<"connection">>,<<"keep-alive">>},
+       	{<<"content-length">>,<<"0">>},
+	    {<<"date">>, _},
+        {<<"location">>, <<"http://127.0.0.1:8080/1/2/dir1/">>},
+        {<<"server">>,<<"NkPACKET">>}
+    ] = lists:sort(H2),
+	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/dir1/file1.txt", []),
+	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/dir1/././file1.txt", []),
 	lager:warning("Next warning about unathorized access is expected"),
 	{ok, 400, _} = get(Gun, "/dir1/../../file1.txt", []),
-	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/dir1/../dir1/file1.txt", []),
+	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/dir1/../dir1/file1.txt", []),
 	[
 		{<<"connection">>, <<"keep-alive">>},
 		{<<"content-length">>, <<"9">>},
@@ -206,8 +224,8 @@ static() ->
 		{<<"etag">>, _},
 		{<<"last-modified">>, _},
 		{<<"server">>,<<"NkPACKET">>}
-	] = lists:sort(H2),
-	{ok, 200, H2, <<"file1.txt">>} = get(Gun, "/1/2/dir1/file1.txt", []),
+	] = lists:sort(H3),
+	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/1/2/dir1/file1.txt", []),
 
 	ok = nkpacket:stop_listener(S1),
 	timer:sleep(100),
@@ -223,10 +241,6 @@ static() ->
 	{ok, 404, _} = get(Gun2, "/a/index.html", []),
 	{ok, 200, _, _} = get(Gun2, "/a/index.html", [{<<"host">>, <<"localhost">>}]),
 	{ok, 404, _} = get(Gun2, "/c/index.html", [{<<"host">>, <<"localhost">>}]),
-
-
-
-
 
 	% Gun3 = open(Port, tcp),
 	% {ok, 200, _, _} = get(Gun3, "/a/index.html", []),

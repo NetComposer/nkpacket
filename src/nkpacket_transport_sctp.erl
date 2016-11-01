@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -39,10 +39,9 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(NkPort) ->
-    #nkport{protocol=Proto, transp=sctp, listen_ip=Ip, listen_port=Port} = NkPort,
+get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=sctp}=NkPort) ->
     {
-        {{Proto, sctp, Ip, Port, <<>>}, make_ref()}, 
+        {{sctp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -56,7 +55,7 @@ get_listener(NkPort) ->
     {ok, pid()} | {error, term()}.
 
 connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
-    case catch gen_server:call(Pid, {connect, NkPort}, 180000) of
+    case catch gen_server:call(Pid, {nkpacket_connect, NkPort}, 180000) of
         {ok, ConnPid} -> 
             {ok, ConnPid};
         {error, Error} ->
@@ -94,7 +93,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        srv_id = SrvId,
+        class = Class,
         transp = sctp,
         listen_ip = Ip, 
         listen_port = Port,
@@ -114,15 +113,17 @@ init([NkPort]) ->
                 pid = self(),
                 socket = {Socket, 0}
             },
+            Id = binary_to_atom(nklib_util:hash({sctp, Ip, Port1}), latin1),
+            true = register(Id, self()),
             ok = gen_sctp:listen(Socket, true),
-            nklib_proc:put(nkpacket_listeners, SrvId),
+            nklib_proc:put(nkpacket_listeners, {Id, Class}),
             ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
             ConnPort = NkPort1#nkport{meta=ConnMeta},
             ListenType = case size(Ip) of
                 4 -> nkpacket_listen4;
                 8 -> nkpacket_listen6
             end,
-            nklib_proc:put({ListenType, SrvId, Protocol, sctp}, ConnPort),
+            nklib_proc:put({ListenType, Class, Protocol, sctp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserPid} -> erlang:monitor(process, UserPid);
@@ -150,7 +151,7 @@ init([NkPort]) ->
     {reply, term(), #state{}} | {noreply, term(), #state{}} | 
     {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
-handle_call({connect, ConnPort}, From, State) ->
+handle_call({nkpacket_connect, ConnPort}, From, State) ->
     #nkport{
         remote_ip = Ip, 
         remote_port = Port, 
@@ -173,10 +174,10 @@ handle_call({connect, ConnPort}, From, State) ->
                 ok;
             {error, Error} ->
                 gen_server:reply(From, {error, Error}),
-                gen_server:cast(Self, {connection_error, From});
+                gen_server:cast(Self, {nkpacket_connection_error, From});
             Error ->
                 gen_server:reply(From, {error, Error}),
-                gen_server:cast(Self, {connection_error, From})
+                gen_server:cast(Self, {nkpacket_connection_error, From})
         end
     end,
     ConnPid = spawn_link(Fun),
@@ -188,6 +189,9 @@ handle_call({connect, ConnPort}, From, State) ->
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
+
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
@@ -201,11 +205,11 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast({connection_error, From}, #state{pending_froms=Froms}=State) ->
+handle_cast({nkpacket_connection_error, From}, #state{pending_froms=Froms}=State) ->
     Froms1 = lists:keydelete(From, 2, Froms),
     {noreply, State#state{pending_froms=Froms1}};
 
-handle_cast(stop, State) ->
+handle_cast(nkpacket_stop, State) ->
     {stop, normal, State};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->
@@ -222,7 +226,7 @@ handle_cast(Msg, #state{nkport=NkPort}=State) ->
 
 handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
     #state{socket=Socket, nkport=NkPort} = State,
-    #nkport{srv_id=SrvId, protocol=Proto} = NkPort,
+    #nkport{class=Class, protocol=Proto} = NkPort,
     State1 = case SAC of
         #sctp_assoc_change{state=comm_up, assoc_id=AssocId} ->
             % lager:error("COMM_UP: ~p", [AssocId]),
@@ -238,7 +242,7 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
         #sctp_assoc_change{state=shutdown_comp, assoc_id=_AssocId} ->
             % lager:error("COMM_DOWN: ~p", [AssocId]),
             Conn = {Proto, sctp, Ip, Port},
-            case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
+            case nkpacket_transport:get_connected(Conn, #{class=>Class}) of
                 [Pid|_] -> nkpacket_connection:stop(Pid, normal);
                 _ -> ok
             end,
@@ -345,9 +349,9 @@ do_connect(Ip, Port, AssocId, State) ->
 %% @private
 do_connect(Ip, Port, AssocId, Meta, State) ->
     #state{nkport=NkPort, socket=Socket} = State,
-    #nkport{srv_id=SrvId, protocol=Proto, meta=ListenMeta} = NkPort,
+    #nkport{class=Class, protocol=Proto, meta=ListenMeta} = NkPort,
     Conn = {Proto, sctp, Ip, Port},
-    case nkpacket_transport:get_connected(Conn, #{srv_id=>SrvId}) of
+    case nkpacket_transport:get_connected(Conn, #{class=>Class}) of
         [Pid|_] -> 
             {ok, Pid};
         [] -> 

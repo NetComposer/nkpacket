@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -47,29 +47,31 @@ start() ->
             Error
     end.
 
+
 %% @private OTP standard start callback
 start(_Type, _Args) ->
-    put(local_ips, nkpacket_util:get_local_ips()),
-    put(main_ip, nkpacket_util:find_main_ip()),
-    put(main_ip6, nkpacket_util:find_main_ip(auto, ipv6)),
     put(tls_defaults, nkpacket_syntax:tls_defaults()),
     Syntax = nkpacket_syntax:app_syntax(),
     Defaults = nkpacket_syntax:app_defaults(),
     case nklib_config:load_env(nkpacket, Syntax, Defaults) of
         {ok, _} ->
+            get_auto_ips(),
             nkpacket:register_protocol(http, nkpacket_protocol_http),
             nkpacket:register_protocol(https, nkpacket_protocol_http),
             nkpacket_util:make_cache(),
             {ok, Pid} = nkpacket_sup:start_link(),
             {ok, Vsn} = application:get_key(nkpacket, vsn),
-            lager:notice("NkPACKET v~s has started.", [Vsn]),
+            lager:info("NkPACKET v~s has started.", [Vsn]),
+            MainIp = nklib_util:to_host(nkpacket_app:get(main_ip)),
+            MainIp6 = nklib_util:to_host(nkpacket_app:get(main_ip6)),
+            ExtIp = nklib_util:to_host(nkpacket_app:get(ext_ip)),
+            lager:info("Main IP is ~s (~s). External IP is ~s", 
+                       [MainIp, MainIp6, ExtIp]),
             {ok, Pid};
         {error, Error} ->
             lager:error("Config error: ~p", [Error]),
             error(config_error)
     end.
-
-
 
 
 %% @private OTP standard stop callback
@@ -78,16 +80,45 @@ stop(_) ->
 
 
 
+%% Config Management
 get(Key) ->
     nklib_config:get(nkpacket, Key).
 
 get(Key, Default) ->
     nklib_config:get(nkpacket, Key, Default).
 
-get_srv(SrvId, Key) ->
-    nklib_config:get_domain(nkpacket, SrvId, Key).
+get_srv(Class, Key) ->
+    nklib_config:get_domain(nkpacket, Class, Key).
 
 put(Key, Val) ->
     nklib_config:put(nkpacket, Key, Val).
 
 
+%% @private
+get_auto_ips() ->
+    case nkpacket_app:get(main_ip) of
+        auto -> 
+            nkpacket_app:put(main_ip, nkpacket_util:find_main_ip());
+        _ -> 
+            ok
+    end,
+    case nkpacket_app:get(main_ip6) of
+        auto -> 
+            nkpacket_app:put(main_ip6, nkpacket_util:find_main_ip(auto, ipv6));
+        _ -> 
+            ok
+    end,
+    case nkpacket_app:get(ext_ip) of
+        auto -> 
+            ExtIp = nkpacket_stun:ext_ip(),
+            nkpacket_app:put(ext_ip, ExtIp);
+        _ ->
+            ok
+    end,
+    case nkpacket_app:get(ext_ip6) of
+        auto -> 
+            nkpacket_app:put(ext_ip6, {0,0,0,0,0,0,0,1});
+        _ ->
+            ok
+    end,
+    put(local_ips, nkpacket_util:get_local_ips()).

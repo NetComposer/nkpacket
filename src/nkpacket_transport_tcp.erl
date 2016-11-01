@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -40,10 +40,10 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
-    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port} = NkPort,
+get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=Transp}=NkPort) 
+        when Transp==tcp; Transp==tls ->
     {
-        {{Proto, Transp, Ip, Port, <<>>}, make_ref()}, 
+        {{Transp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -111,7 +111,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        srv_id = SrvId,
+        class = Class,
         protocol = Protocol,
         transp = Transp, 
         listen_ip = ListenIp, 
@@ -124,6 +124,8 @@ init([NkPort]) ->
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
+            Id = binary_to_atom(nklib_util:hash({tcp, LocalIp, LocalPort}), latin1),
+            true = register(Id, self()),
             NkPort1 = NkPort#nkport{
                 local_ip = LocalIp,
                 local_port = LocalPort, 
@@ -144,7 +146,7 @@ init([NkPort]) ->
                 ],
                 ?MODULE,
                 [RanchPort]),
-            nklib_proc:put(nkpacket_listeners, SrvId),
+            nklib_proc:put(nkpacket_listeners, {Id, Class}),
             ConnMetaOpts = [tcp_packet | ?CONN_LISTEN_OPTS],
             % ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),
@@ -153,7 +155,7 @@ init([NkPort]) ->
                 4 -> nkpacket_listen4;
                 8 -> nkpacket_listen6
             end,
-            nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
+            nklib_proc:put({ListenType, Class, Protocol, Transp}, ConnPort),
             {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
             MonRef = case Meta of
                 #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
@@ -183,8 +185,8 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call(get_state, _From, State) ->
-    {reply, State, State};
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
@@ -197,6 +199,9 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 %% @private
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
+
+handle_cast(nkpacket_stop, State) ->
+    {stop, normal, State};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_cast, [Msg, NkPort], State) of

@@ -72,8 +72,10 @@ default_port(_) -> invalid.
 listen_init(NkPort) ->
 	lager:notice("Protocol LISTEN init: ~p (~p)", [NkPort, self()]),
 	State = case nkpacket:get_user(NkPort) of
-		{ok, {Pid, Ref}} -> #listen_state{pid=Pid, ref=Ref};
-		_ -> #listen_state{}
+		{ok, _Class, {Pid, Ref}} -> 
+			#listen_state{pid=Pid, ref=Ref};
+		_ -> 
+			#listen_state{}
 	end,
 	maybe_reply(listen_init, State),
 	{ok, State}.
@@ -123,7 +125,7 @@ listen_stop(Reason, _NkPort, State) ->
 conn_init(NkPort) ->
 	lager:notice("Protocol CONN init: ~p (~p)", [NkPort, self()]),
 	State = case nkpacket:get_user(NkPort) of
-		{ok, {Pid, Ref}} -> #conn_state{pid=Pid, ref=Ref};
+		{ok, _Class, {Pid, Ref}} -> #conn_state{pid=Pid, ref=Ref};
 		_ -> #conn_state{}
 	end,
 	maybe_reply(conn_init, State),
@@ -157,9 +159,9 @@ conn_parse({pong, Payload}, _NkPort, State) ->
 	maybe_reply({pong, Payload}, State),
 	{ok, State};
 
-conn_parse(Data, #nkport{srv_id=SrvId}, State) ->
+conn_parse(Data, #nkport{class=Class}, State) ->
 	Msg = erlang:binary_to_term(Data),
-	lager:debug("Parsing: ~p (~p)", [Msg, SrvId]),
+	lager:debug("Parsing: ~p (~p)", [Msg, Class]),
 	maybe_reply({parse, Msg}, State),
 	{ok, State}.
 

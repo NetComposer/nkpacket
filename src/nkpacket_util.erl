@@ -22,9 +22,10 @@
 -module(nkpacket_util).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([console_loglevel/1, make_web_proto/1]).
+-export([get_id/1, get_id/4]).
+-export([listen_print_all/0, conn_print_all/0]).
+-export([make_web_proto/1]).
 -export([make_cache/0, make_tls_opts/1, tls_keys/0]).
--export([debug/0, info/0, notice/0, warning/0, error/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, remove_user/1]).
 -export([init_protocol/3, call_protocol/4]).
@@ -40,20 +41,53 @@
 %% =================================================================
 
 
-%% @doc Changes log level for console
-debug() -> console_loglevel(debug).
-info() -> console_loglevel(info).
-notice() -> console_loglevel(notice).
-warning() -> console_loglevel(warning).
-error() -> console_loglevel(error).
+%% @doc
+-spec get_id(nkpacket:nkport()) ->
+    nkpacket:listen_id().
+
+get_id(#nkport{transp=Transp, local_ip=Ip, local_port=Port, meta=Meta}) ->
+    get_id(Transp, Ip, Port, Meta).
 
 
-%% @doc Changes log level for console
--spec console_loglevel(debug|info|notice|warning|error) ->
-    ok.
+%% @doc
+-spec get_id(nkpacket:transport(), inet:ip_address(), inet:port_number(), map()) ->
+    nkpacket:listen_id().
 
-console_loglevel(Level) -> 
-    lager:set_loglevel(lager_console_backend, Level).
+get_id(Transp, Ip, Port, Meta) ->
+    {Sock, Res} = case Transp of
+        udp -> {udp, <<>>};
+        tcp -> {tcp, <<>>};
+        tls -> {tcp, <<>>};
+        sctp -> {sctp, <<>>};
+        ws -> {tcp, maps:get(path, Meta, <<>>)};
+        wss -> {tcp, maps:get(path, Meta, <<>>)};
+        http -> {tcp, maps:get(path, Meta, <<>>)};
+        https -> {tcp, maps:get(path, Meta, <<>>)}
+    end,
+    Bin = nklib_util:hash({Sock, Ip, Port, Res}),
+    binary_to_atom(Bin, latin1).
+
+
+listen_print_all() ->
+    print_all(nkpacket:get_all()).
+
+
+conn_print_all() ->
+    print_all(nkpacket_connection:get_all()).
+
+
+print_all([]) ->
+    ok;
+print_all([Id|Rest]) ->
+    {ok, #nkport{socket=Socket}=NkPort} = nkpacket:get_nkport(Id),
+    NkPort1 = case is_tuple(Socket) of true -> 
+        NkPort#nkport{socket=element(1,Socket)}; 
+        false -> NkPort
+    end,
+    {_, _, List} = lager:pr(NkPort1, ?MODULE),
+    io:format("~p\n", [List]),
+    print_all(Rest).
+
 
 
 %% @doc Adds SSL options
@@ -75,7 +109,12 @@ make_tls_opts(Opts) ->
             end
         end,
         nklib_util:to_list(Opts)),
-    Opts2 = maps:merge(nkpacket_app:get(tls_defaults), maps:from_list(Opts1)),
+    Defaults1 = nkpacket_app:get(tls_defaults),
+    Defaults2 = case lists:keymember(certfile, 1, Opts1) of
+        true -> maps:remove(keyfile, Defaults1);
+        false -> Defaults1
+    end,
+    Opts2 = maps:merge(Defaults2, maps:from_list(Opts1)),
     Opts3 = case Opts2 of
         #{verify:=true} -> Opts2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
         #{verify:=false} -> maps:remove(verify, Opts2);
@@ -123,7 +162,7 @@ make_web_proto(O) ->
 
 parse_opts(Opts) ->
     Syntax = case Opts of
-        #{syntax:=UserSyntax} -> 
+        #{parse_syntax:=UserSyntax} -> 
             maps:merge(UserSyntax, nkpacket_syntax:syntax());
         _ ->
             nkpacket_syntax:syntax()
@@ -158,7 +197,7 @@ parse_uri_opts(UriOpts, Opts) ->
 %% @private
 make_cache() ->
     Defaults = nkpacket_syntax:app_defaults(),
-    Keys = [local_ips, main_ip, main_ip6 | maps:keys(Defaults)],
+    Keys = [local_ips | maps:keys(Defaults)],
     nklib_config:make_cache(Keys, nkpacket, none, nkpacket_config_cache, none).
 
 
@@ -293,19 +332,21 @@ call_protocol(Fun, Args, State, Pos) ->
         false ->
             undefined;
         true ->
-            try apply(Protocol, Fun, Args++[ProtoState]) of
-                ok ->
-                    {ok, State};
-                {Class, ProtoState1} when is_atom(Class) -> 
-                    {Class, setelement(Pos+1, State, ProtoState1)};
-                {Class, Value, ProtoState1} when is_atom(Class) -> 
-                    {Class, Value, setelement(Pos+1, State, ProtoState1)}
+            try 
+                case apply(Protocol, Fun, Args++[ProtoState]) of
+                    ok ->
+                        {ok, State};
+                    {Class, ProtoState1} when is_atom(Class) -> 
+                        {Class, setelement(Pos+1, State, ProtoState1)};
+                    {Class, Value, ProtoState1} when is_atom(Class) -> 
+                        {Class, Value, setelement(Pos+1, State, ProtoState1)}
+                end
             catch
-                Class:Reason ->
+                EClass:Reason ->
                     Stacktrace = erlang:get_stacktrace(),
                     lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
-                                [Class, Reason, Protocol, Fun, Args, Stacktrace]),
-                    erlang:Class([{reason, Reason}, {stacktrace, Stacktrace}])
+                                [EClass, Reason, Protocol, Fun, Args, Stacktrace]),
+                    erlang:EClass([{reason, Reason}, {stacktrace, Stacktrace}])
             end
     end.
 
@@ -362,6 +403,15 @@ norm_path(Path) when is_binary(Path) ->
 
 norm_path(Other) ->
     norm_path(nklib_util:to_binary(Other)).
+
+
+
+
+
+
+
+
+
 
 
 

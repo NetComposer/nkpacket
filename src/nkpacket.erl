@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -30,14 +30,15 @@
 -export([register_protocol/2, register_protocol/3]).
 -export([get_protocol/1, get_protocol/2]).
 -export([start_listener/2, get_listener/2, stop_listener/1]).
--export([get_all/0, get_all/1, get_srv_ids/0]).
+-export([get_all/0, get_all/1, get_class/0, get_class/1]).
 -export([stop_all/0, stop_all/1]).
 -export([send/2, send/3, connect/2]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
--export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_meta/1, get_user/1]).
+-export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1]).
+-export([get_meta/1, get_user/1]).
 -export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
 
--export_type([srv_id/0, transport/0, protocol/0, nkport/0]).
+-export_type([listen_id/0, class/0, transport/0, protocol/0, nkport/0, netspec/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connection/0, raw_connection/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
@@ -50,15 +51,17 @@
 %% Types
 %% ===================================================================
 
-%% Service id
-%% Listeners and connections have an associated service id.
+%% Each listening transport has an unique id, generated from transp, ip, port and path
+-type listen_id() :: atom().
+
+%% Listeners and connections have an associated class.
 %% When sending a message, if a previous connection to the same remote
-%% and service exists, it will be reused.
+%% and class exists, it will be reused.
 %% When starting an outgoing connection, if a suitable listening transport 
-%% is found with the same service id, some values from listener's metadata will 
+%% is found with the same class, some values from listener's metadata will 
 %% be copied to the new connection: user, idle_timeout, host, path, ws_proto, 
 %% refresh_fun, tcp_packet, tls_opts
--type srv_id() :: term().
+-type class() :: term().
 
 %% Recognized transport schemes
 -type transport() :: udp | tcp | tls | sctp | ws | wss | http | https.
@@ -68,6 +71,9 @@
 
 %% An opened port (listener or connection)
 -type nkport() :: #nkport{}.
+
+%% 
+-type netspec() :: {protocol(), transport(), inet:ip_address(), inet:port_number()}.
 
 
 -type cowboy_opts() :: 
@@ -98,8 +104,9 @@
 -type listener_opts() ::
     #{
         % Common options
-        srv_id => srv_id(),                     % Service Id
+        class => class(),                       % Class (see above)
         user => term(),                         % User metadata
+        parse_syntax => map(),                  % Allows to update the syntax
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
@@ -124,6 +131,7 @@
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
         path => string() | binary(),            % Listen on this path and subpaths
+        get_headers => boolean() | [binary()],  % Get all headers or some
         cowboy_opts => cowboy_opts(),
 
         % WS/WSS
@@ -139,8 +147,9 @@
 -type connect_opts() ::
     #{
         % Common options
-        srv_id => srv_id(),                     % Service Id
+        class => class(),                   % Class (see above)
         user => term(),                     % User metadata
+        parse_syntax => map(),              % Allows to update the syntax
         monitor => atom() | pid(),          % Connection will monitor this
         connect_timeout => integer(),       % MSecs, default in config
         no_dns_cache => boolean(),          % Avoid DNS cache
@@ -167,6 +176,7 @@
         % Specific options
         force_new => boolean(),             % Forces a new connection
         udp_to_tcp => boolean(),            % Change to TCP for large packets
+        udp_max_size => pos_integer(),
         pre_send_fun => pre_send_fun()
     }.
 
@@ -174,9 +184,8 @@
 %% Options for resolving
 -type resolve_opts() ::
     #{
-        resolve_type => listen | connect,
-        syntax => map()                    % For parsing
-    }
+        resolve_type => listen | connect
+    }                                      % used to process options
     | listener_opts()
     | send_opts().
 
@@ -232,13 +241,13 @@ register_protocol(Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
     nklib_config:put(nkpacket, {protocol, Scheme}, Protocol).
 
 
-%% doc Registers a new protocol for an specific service
--spec register_protocol(nkpacket:srv_id(), nklib:scheme(), nkpacket:protocol()) ->
+%% doc Registers a new protocol for an specific class
+-spec register_protocol(class(), nklib:scheme(), protocol()) ->
     ok.
 
-register_protocol(SrvId, Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
+register_protocol(Class, Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
     {module, _} = code:ensure_loaded(Protocol),
-    nklib_config:put_domain(nkpacket, SrvId, {protocol, Scheme}, Protocol).
+    nklib_config:put_domain(nkpacket, Class, {protocol, Scheme}, Protocol).
 
 
 %% @doc
@@ -247,18 +256,24 @@ get_protocol(Scheme) ->
 
 
 %% @doc
-get_protocol(SrvId, Scheme) -> 
-    nkpacket_app:get_srv(SrvId, {protocol, Scheme}).
+get_protocol(Class, Scheme) -> 
+    nkpacket_app:get_srv(Class, {protocol, Scheme}).
 
 
 %% @doc Starts a new listening transport.
 -spec start_listener(user_connection(), listener_opts()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, listen_id()} | {error, term()}.
 
 start_listener(UserConn, Opts) ->
     case get_listener(UserConn, Opts) of
         {ok, Spec} ->
-            nkpacket_sup:add_listener(Spec);
+            case nkpacket_sup:add_listener(Spec) of
+                {ok, Pid} -> 
+                    {registered_name, Id} = process_info(Pid, registered_name),
+                    {ok, Id};
+                {error, Error} -> 
+                    {error, Error}
+            end;
         {error, Error} ->
             {error, Error}
     end.
@@ -278,8 +293,9 @@ get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
                 _ ->
                     Opts1
             end,
+            % We cannot yet generate id, port can be 0
             NkPort = #nkport{
-                srv_id = maps:get(srv_id, Opts, none),
+                class = maps:get(class, Opts, none),
                 protocol = Protocol,
                 transp = Transp,
                 listen_ip = Ip,
@@ -304,48 +320,52 @@ get_listener(Uri, Opts) when is_map(Opts) ->
 
 
 %% @doc Stops a locally started listener (only for standard supervisor)
--spec stop_listener(nkport()|pid()) ->
+-spec stop_listener(nkport()|listen_id()|pid()) ->
     ok | {error, term()}.
 
-stop_listener(Pid) when is_pid(Pid) ->
-    case [Id || {Id, P} <- nkpacket_sup:get_listeners(), P==Pid] of
-        [Id] ->
-            nkpacket_sup:del_listener(Id);
-        _ ->
-            {error, unknown_listener}
-    end;
-
+stop_listener(Id) when is_pid(Id); is_atom(Id) ->
+    nklib_util:call(Id, nkpacket_stop, 30000);
+    
 stop_listener(#nkport{pid=Pid}) ->
     stop_listener(Pid).
 
 
-%% @doc Gets all registered transports in all SrvIds.
+%% @doc Gets all registered transports
 -spec get_all() -> 
-    [pid()].
+    [listen_id()].
 
 get_all() ->
-    [Pid || {_SrvId, Pid} <- nklib_proc:values(nkpacket_listeners)].
+    [Id || {{Id, _Class}, _Pid} <- nklib_proc:values(nkpacket_listeners)].
 
 
-%% @doc Gets all registered transports for a SrvId.
--spec get_all(srv_id()) -> 
+%% @doc Gets all registered transports for a class.
+-spec get_all(class()) -> 
     [pid()].
 
-get_all(SrvId) ->
-    [Pid || {S, Pid} <- nklib_proc:values(nkpacket_listeners), S==SrvId].
+get_all(Class) ->
+    [Id || {{Id, C}, _Pid} <- nklib_proc:values(nkpacket_listeners), C==Class].
 
 
-%% @doc Gets all service ids having registered listeners
--spec get_srv_ids() -> 
-    map().
+%% @doc Gets all classes having registered listeners
+-spec get_class() -> 
+    #{class() => [listen_id()]}.
 
-get_srv_ids() ->
+get_class() ->
     lists:foldl(
-        fun({SrvId, Pid}, Acc) ->
-            maps:put(SrvId, [Pid|maps:get(SrvId, Acc, [])], Acc) 
+        fun({{Id, Class}, _Pid}, Acc) ->
+            maps:put(Class, [Id|maps:get(Class, Acc, [])], Acc) 
         end,
         #{},
         nklib_proc:values(nkpacket_listeners)).
+
+
+%% @doc Gets all classes having registered listeners
+-spec get_class(class()) -> 
+    [listen_id()].
+
+get_class(Class) ->
+    All = get_class(),
+    maps:get(Class, All, []).
 
 
 %% @doc Stops all locally started listeners (only for standard supervisor)
@@ -355,68 +375,88 @@ stop_all() ->
         get_all()).
 
 
-%% @doc Stops all locally started listeners for a SrvId (only for standard supervisor)
-stop_all(SrvId) ->
+%% @doc Stops all locally started listeners for a class (only for standard supervisor)
+stop_all(Class) ->
     lists:foreach(
         fun(Pid) -> stop_listener(Pid) end,
-        get_all(SrvId)).
+        get_all(Class)).
 
 
 
-%% @doc Gets the current pid() of a listener or connection
--spec get_nkport(pid()) ->
+%% @doc Gets the current nkport of a listener or connection
+-spec get_nkport(listen_id()|pid()) ->
     {ok, nkport()} | error.
 
 get_nkport(#nkport{}=NkPort) ->
     {ok, NkPort};
-get_nkport(Pid) when is_pid(Pid) ->
-    apply_nkport(Pid, fun get_nkport/1).
+get_nkport(Id) when is_pid(Id); is_atom(Id) ->
+    apply_nkport(Id, fun get_nkport/1).
 
 
 %% @doc Gets the current port number of a listener or connection
--spec get_local(pid()|nkport()) ->
-    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
+-spec get_local(listen_id()|pid()|nkport()) ->
+    {ok, netspec()} | error.
 
 get_local(#nkport{protocol=Proto, transp=Transp, local_ip=Ip, local_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
-get_local(Pid) when is_pid(Pid) ->
-    apply_nkport(Pid, fun get_local/1).
+get_local(Id) when is_pid(Id); is_atom(Id) ->
+    apply_nkport(Id, fun get_local/1).
 
 
 %% @doc Gets the current remote peer address and port
--spec get_remote(pid()|nkport()) ->
-    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
+-spec get_remote(listen_id()|pid()|nkport()) ->
+    {ok, netspec()} | error.
 
 get_remote(#nkport{protocol=Proto, transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
-get_remote(Pid) when is_pid(Pid) ->
-    apply_nkport(Pid, fun get_remote/1).
+get_remote(Id) when is_pid(Id); is_atom(Id) ->
+    apply_nkport(Id, fun get_remote/1).
+
+
+%% @doc Gets the current remote peer address and port
+-spec get_remote_bin(listen_id()|pid()|nkport()) ->
+    {ok, binary()} | error.
+
+get_remote_bin(Term) ->
+    case get_remote(Term) of
+        {ok, {_Proto, Transp, Ip, Port}} ->
+            {ok, 
+                <<
+                    (nklib_util:to_binary(Transp))/binary, ":",
+                    (nklib_util:to_host(Ip))/binary, ":",
+                    (nklib_util:to_binary(Port))/binary
+                >>};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 
 %% @doc Gets the user metadata of a listener or connection
--spec get_meta(pid()|nkport()) ->
+-spec get_meta(listen_id()|pid()|nkport()) ->
     {ok, map()} | error.
 
 get_meta(#nkport{meta=Meta}) ->
     {ok, Meta};
-get_meta(Pid) when is_pid(Pid) ->
-    apply_nkport(Pid, fun get_meta/1).
+get_meta(Id) when is_pid(Id); is_atom(Id) ->
+    apply_nkport(Id, fun get_meta/1).
 
 
 %% @doc Gets the user metadata of a listener or connection
--spec get_user(pid()|nkport()) ->
-    {ok, term()} | error.
+-spec get_user(listen_id()|pid()|nkport()) ->
+    {ok, term(), term()} | error.
 
-get_user(#nkport{meta=Meta}) ->
-    {ok, maps:get(user, Meta, undefined)};
-get_user(Pid) when is_pid(Pid) ->
-    apply_nkport(Pid, fun get_user/1).
+get_user(#nkport{class=Class, meta=Meta}) ->
+    {ok, Class, maps:get(user, Meta, undefined)};
+get_user(Id) when is_pid(Id); is_atom(Id) ->
+    apply_nkport(Id, fun get_user/1).
 
 
 %% @doc Gets the current pid() of a listener or connection
--spec pid(pid()|nkport()) ->
+-spec pid(listen_id()|pid()|nkport()) ->
     pid().
 
+pid(Id) when is_atom(Id) ->
+    pid(whereis(Id));
 pid(Pid) when is_pid(Pid) ->
     Pid;
 pid(#nkport{pid=Pid}) ->
@@ -432,7 +472,7 @@ send(SendSpec, Msg) ->
 
 
 %% @doc Sends a message to a connection
-%% If a service is included, it will try to reuse any existing connection of the same service
+%% If a class is included, it will try to reuse any existing connection of the same class
 %% (except if force_new option is set)
 -spec send(send_spec() | [send_spec()], term(), send_opts()) ->
     {ok, pid()} | {error, term()}.
@@ -485,11 +525,11 @@ get_listening(Protocol, Transp) ->
 
 
 %% @private Finds a listening transport of Proto.
--spec get_listening(protocol(), transport(), #{srv_id=>srv_id(), ip=>4|6|tuple()}) -> 
+-spec get_listening(protocol(), transport(), #{class=>class(), ip=>4|6|tuple()}) -> 
     [nkport()].
 
 get_listening(Protocol, Transp, Opts) ->
-    SrvId = maps:get(srv_id, Opts, none),
+    Class = maps:get(class, Opts, none),
     Tag = case maps:get(ip, Opts, 4) of
         4 -> nkpacket_listen4;
         6 -> nkpacket_listen6;
@@ -499,7 +539,7 @@ get_listening(Protocol, Transp, Opts) ->
     [
         NkPort || 
         {NkPort, _Pid} 
-            <- nklib_proc:values({Tag, SrvId, Protocol, Transp})
+            <- nklib_proc:values({Tag, Class, Protocol, Transp})
     ].
 
 
@@ -514,7 +554,7 @@ is_local(Uri) ->
 
 %% @doc Checks if an `uri()' refers to a local started transport.
 %% For ws/wss, it does not check the path
--spec is_local(nklib:uri(), #{srv_id=>srv_id(), no_dns_cache=>boolean()}) -> 
+-spec is_local(nklib:uri(), #{class=>class(), no_dns_cache=>boolean()}) -> 
     boolean().
 
 is_local(#uri{}=Uri, Opts) ->
@@ -634,28 +674,28 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
             {ok, CoreOpts} -> maps:merge(UriOpts5, CoreOpts);
             {error, Error2} -> throw(Error2) 
         end,
-        case Opts1 of
+        Opts2 = case Opts1 of
             #{valid_schemes:=ValidSchemes} ->
                 case lists:member(Scheme, ValidSchemes) of
-                    true -> ok;
+                    true -> maps:remove(valid_schemes, Opts1);
                     false -> throw({invalid_scheme, Scheme})
                 end;
             _ ->
-                ok
+                Opts1
         end,
-        Protocol = case Opts1 of
-            #{srv_id:=SrvId} -> 
-                nkpacket:get_protocol(SrvId, Scheme);
+        Protocol = case Opts2 of
+            #{class:=Class} -> 
+                nkpacket:get_protocol(Class, Scheme);
             _ -> 
                 nkpacket:get_protocol(Scheme)
         end,
-        case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
+        case nkpacket_dns:resolve(Uri, Opts2#{protocol=>Protocol}) of
             {ok, Addrs} ->
                 Conns = [ 
                     {Protocol, Transp, Addr, Port} 
                     || {Transp, Addr, Port} <- Addrs
                 ],
-                {ok, Conns, Opts1};
+                {ok, Conns, maps:remove(resolve_type, Opts2)};
             {error, Error} ->
                 {error, Error}
         end
@@ -718,11 +758,11 @@ multi_resolve([Uri|Rest], Opts, Acc) ->
 
 
 %% @private
--spec apply_nkport(pid(), fun((nkport()) -> {ok, term()}))  ->
+-spec apply_nkport(listen_id()|pid(), fun((nkport()) -> {ok, term()}))  ->
     term() | error.
 
-apply_nkport(Pid, Fun) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, {nkpacket_apply_nkport, Fun}, 180000) of
+apply_nkport(Id, Fun) when is_pid(Id); is_atom(Id) ->
+    case catch gen_server:call(Id, {nkpacket_apply_nkport, Fun}, 180000) of
         {'EXIT', _} -> error;
         Other -> Other
     end.

@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -25,7 +25,7 @@
 -export([get_listener/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
--export([cowboy_init/3, resume/5]).
+-export([cowboy_init/4, resume/5]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -40,11 +40,10 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
-    #nkport{protocol=Proto, listen_ip=Ip, listen_port=Port, meta=Meta} = NkPort,
-    Path = maps:get(path, Meta, <<>>),
+get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=Transp}=NkPort) 
+        when Transp==http; Transp==https ->
     {
-        {{Proto, Transp, Ip, Port, Path}, make_ref()},
+        {{Transp, Ip, Port}, make_ref()},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -78,7 +77,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        srv_id = SrvId,
+        class = Class,
         protocol = Protocol,
         transp = Transp, 
         listen_ip = Ip, 
@@ -92,7 +91,7 @@ init([NkPort]) ->
             % listen_port = Port,
             pid = self()
         },
-        Filter1 = maps:with([host, path], Meta),
+        Filter1 = maps:with([host, path, get_headers], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
         case nkpacket_cowboy:start(NkPort1, Filter2) of
             {ok, SharedPid} -> ok;
@@ -105,7 +104,6 @@ init([NkPort]) ->
             _ -> 
                 Port1 = Port
         end,
-        nklib_proc:put(nkpacket_listeners, SrvId),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
             local_ip = Ip,
@@ -114,12 +112,16 @@ init([NkPort]) ->
             socket = SharedPid,
             meta = ConnMeta
         },   
+        Path = maps:get(path, Meta, <<>>),
+        Id = binary_to_atom(nklib_util:hash({tcp, Ip, Port1, Path}), latin1),
+        true = register(Id, self()),
+        nklib_proc:put(nkpacket_listeners, {Id, Class}),
         % We don't yet support HTTP outgoing connections, but for the future...
         ListenType = case size(Ip) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
         end,
-        nklib_proc:put({ListenType, SrvId, Protocol, Transp}, ConnPort),
+        nklib_proc:put({ListenType, Class, Protocol, Transp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, ConnPort),
         MonRef = case Meta of
             #{monitor:=UserRef} -> 
@@ -152,7 +154,7 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({start, Ip, Port, Pid}, _From, State) ->
+handle_call({nkpacket_start, Ip, Port, _UserMeta, Pid}, _From, State) ->
     #state{nkport=NkPort, http_proto=HttpProto} = State,
     #nkport{protocol=Protocol, meta=Meta} = NkPort,
     NkPort1 = NkPort#nkport{
@@ -181,6 +183,9 @@ handle_call({start, Ip, Port, Pid}, _From, State) ->
             {reply, next, State}
     end;
 
+handle_call(nkpacket_stop, _From, State) ->
+    {stop, normal, ok, State};
+
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
         undefined -> {noreply, State};
@@ -193,7 +198,7 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast(stop, State) ->
+handle_cast(nkpacket_stop, State) ->
     {stop, normal, State};
 
 handle_cast(Msg, #state{nkport=NkPort}=State) ->
@@ -248,13 +253,13 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 %% @private Called from nkpacket_cowboy:execute/2, inside
 %% cowboy's connection process
--spec cowboy_init(#nkport{}, cowboy_req:req(), list()) ->
+-spec cowboy_init(#nkport{}, cowboy_req:req(), nkpacket_cowboy:user_meta(), list()) ->
     term().
 
-cowboy_init(Pid, Req, Env) ->
+cowboy_init(Pid, Req, Meta, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
     % Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {start, Ip, Port, self()}, infinity) of
+    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, Meta, self()}, infinity) of
         {ok, Protocol, HttpProto, ConnPid} ->
             case Protocol:http_init(HttpProto, ConnPid, Req, Env) of
                 {ok, Req1, Env1, Middlewares1} ->

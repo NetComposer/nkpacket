@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2015 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -44,6 +44,10 @@ app_syntax() ->
         connect_timeout => nat_integer,
         sctp_out_streams => nat_integer,
         sctp_in_streams => nat_integer,
+        main_ip => [ip4, {enum, [auto]}],
+        main_ip6 => [ip6, {enum, [auto]}],
+        ext_ip => [ip4, {enum, [auto]}],
+        ext_ip6 => [ip6, {enum, [auto]}],
         ?TLS_SYNTAX
     }.
 
@@ -60,13 +64,17 @@ app_defaults() ->
         http_timeout => 180000,                 % 
         connect_timeout => 30000,               %
         sctp_out_streams => 10,
-        sctp_in_streams => 10
+        sctp_in_streams => 10,
+        main_ip => auto,
+        main_ip6 => auto,
+        ext_ip => auto,
+        ext_ip6 => auto
     }.
 
 
 syntax() ->
     #{
-        srv_id => any,
+        class => any,
         monitor => proc,
         idle_timeout => pos_integer,
         connect_timeout => nat_integer,
@@ -77,6 +85,7 @@ syntax() ->
         valid_schemes => {list, atom},
         udp_starts_tcp => boolean,
         udp_to_tcp => boolean,
+        udp_max_size => nat_integer,
         udp_no_connections => boolean,
         udp_stun_reply => boolean,
         udp_stun_t1 => nat_integer,
@@ -85,6 +94,7 @@ syntax() ->
         tcp_listeners => nat_integer,
         host => host,
         path => path,
+        get_headers => [boolean, {list, binary}],
         cowboy_opts => list,
         ws_proto => lower,
         http_proto => fun spec_http_proto/3,
@@ -94,7 +104,7 @@ syntax() ->
         base_nkport => [boolean, {record, nkport}],
         ?TLS_SYNTAX,
         user => any,
-        syntax => ignore
+        parse_syntax => ignore
     }.
 
 
