@@ -1,6 +1,6 @@
 {application, nkpacket, [
     {description, "NkPACKET"},
-    {vsn, "v0.6.0"},
+    {vsn, "develop"},
     {modules, []},
     {registered, []},
     {mod, {nkpacket_app, []}},
