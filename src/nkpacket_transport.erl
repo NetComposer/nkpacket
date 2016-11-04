@@ -164,7 +164,7 @@ send([{connect, Conn}|Rest], Msg, Opts) ->
                     send(Rest, Msg, Opts1)
             end;
         {error, Error} ->
-            lager:notice("Error connecting to ~p: ~p", [Conn, Error]),
+            lager:info("Error connecting to ~p: ~p", [Conn, Error]),
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
 
@@ -397,7 +397,7 @@ open_port(NkPort, Opts) ->
     end,
     case Port of
         0 when is_integer(DefPort) ->
-            lager:debug("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
+            lager:info("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
             case Module:Fun(DefPort, Opts) of
                 {ok, Socket} ->
                     {ok, Socket};
@@ -415,12 +415,12 @@ open_port(NkPort, Opts) ->
     {ok, port()} | {error, term()}.
 
 open_port(Ip, Port, Module, Fun, Opts, Iter) ->
-    lager:debug("Opening ~p:~p (~p)", [Module, Port, Opts]),
+    lager:info("Opening ~p:~p (~p)", [Module, Port, Opts]),
     case Module:Fun(Port, Opts) of
         {ok, Socket} ->
             {ok, Socket};
         {error, eaddrinuse} when Iter > 0 ->
-            lager:notice("~p port ~p is in use, waiting (~p)", 
+            lager:info("~p port ~p is in use, waiting (~p)", 
                          [Module, Port, Iter]),
             timer:sleep(1000),
             open_port(Ip, Port, Module, Fun, Opts, Iter-1);
