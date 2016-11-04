@@ -158,7 +158,8 @@ init([NkPort]) ->
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
     try
-        ListenOpts = [binary, {reuseaddr, true}, {ip, ListenIp}, {active, once}],
+        % ListenOpts = [binary, {reuseaddr, true}, {ip, ListenIp}, {active, once}],
+        ListenOpts = [binary, {ip, ListenIp}, {active, once}],
         Socket = case nkpacket_transport:open_port(NkPort, ListenOpts) of
             {ok, Socket0}  -> Socket0;
             {error, Error} -> throw(Error) 
