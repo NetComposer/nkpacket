@@ -31,6 +31,7 @@
 
 
 -define(SYNC_TIMEOUT, 30000).
+-define(UDP_MAX_SIZE, 1300).
 
 -type send_opts() :: 
     #{
@@ -68,7 +69,7 @@ raw_send(NkPort, Data) ->
     ok | {error, term()}.
     
 raw_send(#nkport{transp=udp}=NkPort, Data, Opts) ->
-    MaxSize = maps:get(udp_max_size, Opts, 65507),
+    MaxSize = maps:get(udp_max_size, Opts, ?UDP_MAX_SIZE),
     case byte_size(Data) > MaxSize of
         true ->
             {error, udp_too_large};    
