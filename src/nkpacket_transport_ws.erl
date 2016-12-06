@@ -39,6 +39,17 @@
 -include("nkpacket.hrl").
 
 
+%% To get debug info, start with debug=>true
+
+-define(DEBUG(Txt, Args),
+    case get(nkpacket_debug) of
+        true -> ?LLOG(debug, Txt, Args);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args), lager:Type("NkPACKET WS "++Txt, Args)).
+
+
 %% ===================================================================
 %% Private
 %% ===================================================================
@@ -71,6 +82,8 @@ connect(NkPort) ->
         remote_port = Port, 
         meta = Meta
     } = NkPort,
+    Debug = maps:get(debug, Meta, false),
+    put(nkpacket_debug, Debug),
     SocketOpts = outbound_opts(NkPort),
     TranspMod = case Transp of ws -> tcp, ranch_tcp; wss -> ranch_ssl end,
     ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
@@ -136,6 +149,8 @@ init([NkPort]) ->
         protocol = Protocol
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
+    Debug = maps:get(debug, Meta, false),
+    put(nkpacket_debug, Debug),
     try
         NkPort1 = NkPort#nkport{pid = self()},
         Filter1 = maps:with([Class, host, path, ws_proto, get_headers], Meta),
@@ -172,9 +187,9 @@ init([NkPort]) ->
             _ -> 
                 undefined
         end,
-        lager:info("Created ~p listener for ~p:~p:~p (~p, ~p, ~p) (~p)", 
-                   [Protocol, Transp, LocalIp, LocalPort, 
-                    Host, Path, WsProto, self()]),
+        ?DEBUG("created ~p listener for ~p:~p:~p (~p, ~p, ~p) (~p)", 
+               [Protocol, Transp, LocalIp, LocalPort, 
+                Host, Path, WsProto, self()]),
         State = #state{
             nkport = ConnPort,
             protocol = Protocol,
@@ -185,7 +200,7 @@ init([NkPort]) ->
         {ok, State}
     catch
         throw:TError -> 
-            lager:error("could not start ~p transport on ~p:~p (~p)", 
+            ?LLOG(error, "could not start ~p transport on ~p:~p (~p)", 
                    [Transp, ListenIp, ListenPort, TError]),
         {stop, TError}
     end.
@@ -218,12 +233,10 @@ handle_call({nkpacket_start, Ip, Port, UserMeta, Pid}, _From, State) ->
     },
     case nkpacket_connection:start(NkPort1) of
         {ok, #nkport{pid=ConnPid}=NkPort2} ->
-            lager:debug("WS listener accepted connection: ~p", 
-                  [NkPort2]),
+            ?DEBUG("listener accepted connection: ~p", [NkPort2]),
             {reply, {ok, ConnPid}, State};
         {error, Error} ->
-            lager:notice("WS listener did not accepted connection:"
-                    " ~p", [Error]),
+            ?DEBUG("listener did not accepted connection: ~p", [Error]),
             {reply, next, State}
     end;
 
@@ -261,7 +274,7 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}, #state{monitor_ref=MRef}=Sta
     {stop, normal, State};
 
 handle_info({'DOWN', _MRef, process, Pid, Reason}, #state{shared=Pid}=State) ->
-    % lager:warning("WS received SHARED stop"),
+    ?DEBUG("received SHARED stop", []),
     {stop, Reason, State};
 
 handle_info(Msg, #state{nkport=NkPort}=State) ->
@@ -349,7 +362,7 @@ websocket_handle({pong, Body}, Req, ConnPid) ->
     {ok, Req, ConnPid};
 
 websocket_handle(Other, Req, ConnPid) ->
-    lager:warning("WS Handler received unexpected ~p", [Other]),
+    ?LLOG(warning, "WS Handler received unexpected ~p", [Other]),
     {stop, Req, ConnPid}.
 
 
@@ -390,7 +403,7 @@ websocket_info(Info, Req, State) ->
 
 %% @private
 terminate(Reason, _Req, ConnPid) ->
-    lager:debug("WS ~p process terminate: ~p", [self(), Reason]),
+    ?DEBUG("process terminate: ~p (~p)", [Reason, self()]),
     nkpacket_connection:stop(ConnPid, normal),
     ok.
 

@@ -30,6 +30,16 @@
 -include("nkpacket.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
 
+%% To get debug info, start with debug=>true
+
+-define(DEBUG(Txt, Args),
+    case get(nkpacket_debug) of
+        true -> ?LLOG(debug, Txt, Args);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args), lager:Type("NkPACKET SCTP "++Txt, Args)).
+
 
 %% ===================================================================
 %% Private
@@ -102,6 +112,8 @@ init([NkPort]) ->
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
+    Debug = maps:get(debug, Meta, false),
+    put(nkpacket_debug, Debug),
     ListenOpts = listen_opts(NkPort),
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
@@ -140,7 +152,7 @@ init([NkPort]) ->
             },
             {ok, State};
         {error, Error} ->
-            lager:error("could not start SCTP transport on ~p:~p (~p)", 
+            ?LLOG(error, "could not start SCTP transport on ~p:~p (~p)", 
                    [Ip, Port, Error]),
             {stop, Error}
     end.
@@ -229,7 +241,7 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
     #nkport{class=Class, protocol=Proto} = NkPort,
     State1 = case SAC of
         #sctp_assoc_change{state=comm_up, assoc_id=AssocId} ->
-            % lager:error("COMM_UP: ~p", [AssocId]),
+            ?DEBUG("COMM_UP: ~p", [AssocId]),
             #state{pending_froms=Froms} = State,
             case lists:keytake({Ip, Port}, 1, Froms) of
                 {value, {_, From, Meta}, Froms1} -> 
@@ -239,8 +251,8 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
                 false ->
                     State
             end;
-        #sctp_assoc_change{state=shutdown_comp, assoc_id=_AssocId} ->
-            % lager:error("COMM_DOWN: ~p", [AssocId]),
+        #sctp_assoc_change{state=shutdown_comp, assoc_id=AssocId} ->
+            ?DEBUG("COMM_DOWN: ~p", [AssocId]),
             Conn = {Proto, sctp, Ip, Port},
             case nkpacket_transport:get_connected(Conn, #{class=>Class}) of
                 [Pid|_] -> nkpacket_connection:stop(Pid, normal);
@@ -259,11 +271,11 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
                 {ok, #nkport{pid=Pid}} ->
                     nkpacket_connection:incoming(Pid, Data);
                 {error, Error} ->
-                    lager:notice("Error ~p on SCTP connection up", [Error])
+                    ?LLOG(info, "error ~p on SCTP connection up", [Error])
             end,
             State;
         Other ->
-            lager:notice("SCTP unknown data from ~p, ~p: ~p", [Ip, Port, Other]),
+            ?LLOG(info, "SCTP unknown data from ~p, ~p: ~p", [Ip, Port, Other]),
             State
     end,
     ok = inet:setopts(Socket, [{active, once}]),
@@ -306,7 +318,7 @@ code_change(_OldVsn, State, _Extra) ->
     ok.
 
 terminate(Reason, #state{nkport=NkPort, socket=Socket}=State) ->  
-    lager:debug("SCTP server process stopped", []),
+    ?DEBUG("server process stopped", []),
     catch call_protocol(listen_stop, [Reason, NkPort], State),
     gen_sctp:close(Socket).
 

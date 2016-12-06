@@ -41,6 +41,16 @@
 -include("nkpacket.hrl").
 
 
+-define(DEBUG(Txt, Args),
+    case get(nkpacket_debug) of
+        true -> ?LLOG(debug, Txt, Args);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args), lager:Type("NkPACKET Cowboy "++Txt, Args)).
+
+
+
 -type user_filter() :: 
     #{
         id => term(),           % Mandatory
@@ -196,6 +206,8 @@ init([NkPort, Filter]) ->
         meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
+    Debug = maps:get(debug, Meta, false),
+    put(nkpacket_debug, Debug),
     ListenOpts = listen_opts(NkPort),
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
@@ -222,7 +234,7 @@ init([NkPort, Filter]) ->
             CowboyOpts1 = maps:get(cowboy_opts, Meta, []),
             CowboyOpts2 = nklib_util:store_values(
                 [
-                    {env, [{?MODULE, RanchId}]},
+                    {env, [{?MODULE, RanchId}, {debug, Debug}]},
                     {middlewares, [?MODULE]},
                     {timeout, Timeout},     % Time to close the connection if no requests
                     {compress, true}        
@@ -247,7 +259,7 @@ init([NkPort, Filter]) ->
             },
             {ok, register(State)};
         {error, Error} ->
-            lager:error("could not start ~p transport on ~p:~p (~p)", 
+            ?LLOG(error, "could not start ~p transport on ~p:~p (~p)", 
                    [Transp, ListenIp, ListenPort, Error]),
             {stop, Error}
     end.
@@ -296,10 +308,10 @@ handle_info({'DOWN', MRef, process, _Pid, _Reason}=Msg, State) ->
     #state{filters=Filters} = State,
     case lists:keytake(MRef, #filter.mon, Filters) of
         {value, _, []} ->
-            % lager:debug("Last server leave"),
+            ?DEBUG("last server leave", []),
             {stop, normal, State};
         {value, _, Filters1} ->
-            % lager:debug("Server leave"),
+            ?DEBUG("server leave", []),
             {noreply, register(State#state{filters=Filters1})};
         false ->
             lager:warning("Module ~p received unexpected info: ~p", [?MODULE, Msg]),
@@ -327,7 +339,7 @@ code_change(_OldVsn, State, _Extra) ->
     ok.
 
 terminate(Reason, #state{ranch_pid=RanchPid}=State) ->  
-    lager:debug("Cowboy listener stop: ~p", [Reason]),
+    ?DEBUG("listener stop: ~p", [Reason]),
     #state{
         ranch_id = RanchId,
         nkport = #nkport{transp=Transp, socket=Socket}
@@ -384,6 +396,10 @@ start_link(Ref, Socket, TranspModule, Opts) ->
 
 execute(Req, Env) ->
     {Ip, Port} = nklib_util:get_value(?MODULE, Env),
+    case nklib_util:get_value(debug, Env) of
+        true -> put(nkpacket_debug, true);
+        _ -> ok
+    end,
     Filters = get_filters(Ip, Port),
     execute(Filters, Req, Env).
 
@@ -393,7 +409,7 @@ execute(Req, Env) ->
     term().
 
 execute([], Req, _Env) ->
-    lager:info("NkPACKET Cowboy: url ~s not matched", [cowboy_req:path(Req)]),
+    ?LLOG(info, "url ~s not matched", [cowboy_req:path(Req)]),
     {stop, reply(404, Req)};
 
 execute([Filter|Rest], Req, Env) ->
@@ -429,7 +445,7 @@ execute([Filter|Rest], Req, Env) ->
         check_paths(ReqPaths, Paths)
     of
         true ->
-            lager:debug("NkPACKET Web Selected: ~p (~p) ~p (~p), ~p (~p), ~p (~p)", 
+            ?DEBUG("selected: ~p (~p) ~p (~p), ~p (~p), ~p (~p)", 
                 [ReqType, Type, ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             Req1 = case WsProto of
                 any -> 
@@ -445,7 +461,7 @@ execute([Filter|Rest], Req, Env) ->
                     Result
             end;
         false ->
-            lager:debug("NkPACKET Web Skipping: ~p (~p) ~p (~p), ~p (~p), ~p (~p)", 
+            ?DEBUG("skipping: ~p (~p) ~p (~p), ~p (~p), ~p (~p)", 
                 [ReqType, Type, ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             execute(Rest, Req, Env)
     end.

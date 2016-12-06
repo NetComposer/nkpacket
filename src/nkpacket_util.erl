@@ -132,12 +132,14 @@ tls_keys() ->
 
 make_web_proto(#{http_proto:={static, #{path:=DirPath}=Static}}=Opts) ->
     DirPath1 = nklib_parse:fullpath(filename:absname(DirPath)),
-    Static1 = Static#{path:=DirPath1},
+    Static1 = Static#{path:=DirPath1, debug=>maps:get(debug, Opts, false)},
     UrlPath = maps:get(path, Opts, <<>>),
     Route = {<<UrlPath/binary, "/[...]">>, nkpacket_cowboy_static, Static1},
     {custom, 
         #{
-            env => [{dispatch, cowboy_router:compile([{'_', [Route]}])}],
+            env => [
+                {dispatch, cowboy_router:compile([{'_', [Route]}])}
+            ],
             middlewares => [cowboy_router, cowboy_handler]
         }};
 

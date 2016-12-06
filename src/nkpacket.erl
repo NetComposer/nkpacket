@@ -111,6 +111,7 @@
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
+        debug => boolean(),
 
         % UDP options
         udp_starts_tcp => boolean(),            % UDP starts TCP on the same port
@@ -157,6 +158,7 @@
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
         base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
+        debug => boolean(),
 
         % TCP/TLS/WS/WSS options
         tcp_packet => 1 | 2 | 4 | raw,    
@@ -480,6 +482,10 @@ send(SendSpec, Msg) ->
 send(SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
+            case Opts1 of
+                #{debug:=true} -> put(nkpacket_debug, true);
+                _ -> ok
+            end,
             case nkpacket_transport:send(SendSpec, Msg, Opts1) of
                 {ok, {Pid, _Msg1}} -> {ok, Pid};
                 {error, Error} -> {error, Error}
@@ -494,7 +500,7 @@ send(SendSpec, Msg, Opts) ->
 
 %% @doc Forces a new outbound connection.
 -spec connect(user_connection() | [connection()], connect_opts()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, nkport()} | {error, term()}.
 
 connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
     connect([Conn], Opts);
@@ -502,6 +508,10 @@ connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
 connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
+            case Opts1 of
+                #{debug:=true} -> put(nkpacket_debug, true);
+                _ -> ok
+            end,
             nkpacket_transport:connect(Conns, Opts1);
         {error, Error} ->
             {error, Error}

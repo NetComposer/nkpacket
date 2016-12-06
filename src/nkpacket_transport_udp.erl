@@ -33,6 +33,17 @@
 -define(RECV_BURST, 100).
 
 
+%% To get debug info, start with debug=>true
+
+-define(DEBUG(Txt, Args),
+    case get(nkpacket_debug) of
+        true -> ?LLOG(debug, Txt, Args);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args), lager:Type("NkPACKET UDP "++Txt, Args)).
+
+
 %% ===================================================================
 %% Public
 %% ===================================================================
@@ -157,6 +168,8 @@ init([NkPort]) ->
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
+    Debug = maps:get(debug, Meta, false),
+    put(nkpacket_debug, Debug),
     try
         % ListenOpts = [binary, {reuseaddr, true}, {ip, ListenIp}, {active, once}],
         ListenOpts = [binary, {ip, ListenIp}, {active, once}],
@@ -180,7 +193,7 @@ init([NkPort]) ->
                     {ok, TcpPid0} -> 
                         TcpPid0;
                     {error, TcpError} -> 
-                        lager:warning("UDP transport could not open TCP port ~p: ~p",
+                        ?LLOG(warning, "could not open TCP port ~p: ~p",
                                       [LocalPort, TcpError]),
                         throw(could_not_open_tcp)
                 end;
@@ -217,7 +230,7 @@ init([NkPort]) ->
         {ok, State}
     catch
         throw:Throw ->
-            lager:error("could not start UDP transport on ~p:~p (~p)", 
+            ?LLOG(error, "could not start UDP transport on ~p:~p (~p)", 
                         [ListenIp, ListenPort, Throw]),
             {stop, Throw}
     end.
@@ -284,7 +297,7 @@ handle_info({udp, Socket, Ip, Port, <<0:2, _Header:158, _Msg/binary>>=Packet}, S
         {request, binding, TransId, _} when StunReply ->
             Response = nkpacket_stun:binding_response(TransId, Ip, Port),
             gen_udp:send(Socket, Ip, Port, Response),
-            lager:debug("sent STUN bind response to ~p:~p", [Ip, Port]),
+            ?DEBUG("sent STUN bind response to ~p:~p", [Ip, Port]),
             ok = inet:setopts(Socket, [{active, once}]),
             {noreply, State};
         {response, binding, TransId, Attrs} when Stuns/=[] ->
@@ -366,7 +379,7 @@ do_send_stun(Ip, Port, From, State) ->
     {Id, Packet} = nkpacket_stun:binding_request(),
     case gen_udp:send(Socket, Ip, Port, Packet) of
         ok -> 
-            lager:debug("sent STUN request to ~p", [{Ip, Port}]),
+            ?DEBUG("sent STUN request to ~p", [{Ip, Port}]),
             Stun = #stun{
                 id = Id,
                 dest = {Ip, Port},
@@ -377,7 +390,7 @@ do_send_stun(Ip, Port, From, State) ->
             },
             State#state{stuns=[Stun|Stuns]};
         {error, Error} ->
-            lager:notice("could not send UDP STUN request to ~p:~p: ~p", 
+            ?LLOG(info, "could not send UDP STUN request to ~p:~p: ~p", 
                          [Ip, Port, Error]),
             case From of
                 {call, CallFrom} -> gen_server:reply(CallFrom, error);
@@ -395,15 +408,15 @@ do_stun_retrans(Stun, State) ->
         true ->
             case gen_udp:send(Socket, Ip, Port, Packet) of
                 ok -> 
-                    lager:warning("sent STUN refresh", []),
+                    ?DEBUG("sent STUN refresh", []),
                     Stun1 = Stun#stun{
                         retrans_timer = erlang:start_timer(Next, self(), stun_retrans),
                         next_retrans = 2*Next
                     },
                     State#state{stuns=[Stun1|Stuns]};
                 {error, Error} ->
-                    lager:notice("could not send UDP STUN request to ~p:~p: ~p", 
-                                 [Ip, Port, Error]),
+                    ?LLOG(info, "could not send UDP STUN request to ~p:~p: ~p", 
+                          [Ip, Port, Error]),
                     do_stun_timeout(Stun, State)
             end;
         false ->
@@ -414,7 +427,7 @@ do_stun_retrans(Stun, State) ->
 %% @private
 do_stun_timeout(Stun, State) ->
     #stun{dest={Ip, Port}, from=From} = Stun,
-    lager:notice("STUN request to ~p timeout", [{Ip, Port}]),
+    ?LLOG(info, "STUN request to ~p timeout", [{Ip, Port}]),
     case From of
         {call, CallFrom} -> gen_server:reply(CallFrom, error);
         {msg, MsgPid} -> MsgPid ! {stun, error}
@@ -444,7 +457,7 @@ do_stun_response(TransId, Attrs, State) ->
             end,
             State#state{stuns=Stuns1};
         false ->
-            lager:notice("received unexpected STUN response", []),
+            ?LLOG(info, "received unexpected STUN response", []),
             State
     end.
 
@@ -460,7 +473,7 @@ read_packets(Ip, Port, Packet, #state{no_connections=true, nkport=NkPort}=State,
     #state{socket=Socket} = State,
     case call_protocol(listen_parse, [Ip, Port, Packet, NkPort], State) of
         undefined -> 
-            lager:warning("Received data for uknown protocol", []),
+            ?LLOG(warning, "received data for uknown protocol", []),
             {ok, State};
         {ok, State1} ->
             case N>0 andalso gen_udp:recv(Socket, 0, 0) of
