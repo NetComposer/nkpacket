@@ -76,7 +76,7 @@ init_file(Req, Opts, FilePath, IsDir) ->
 				Index ->
 					Index1 = nklib_util:to_binary(Index),
 					FilePath2 = <<FilePath/binary, "/", Index1/binary>>,
-					?LLOG(info, "ending index file ~s", [FilePath2]),
+					?DEBUG("sending index file ~s", [FilePath2]),
 					init_file(Req, maps:remove(index_file, Opts), FilePath2, false)
 			end;
 		{ok, #file_info{type=directory}} when not IsDir ->

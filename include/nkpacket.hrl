@@ -26,7 +26,7 @@
 %% ===================================================================
 
 -define(CONN_LISTEN_OPTS, 
-    [group, user, idle_timeout, host, path, ws_proto, refresh_fun]).
+    [group, user, idle_timeout, host, path, ws_proto, refresh_fun, debug]).
 
 -define(CONN_CLIENT_OPTS, [monitor|?CONN_LISTEN_OPTS]).
 
