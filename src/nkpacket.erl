@@ -738,6 +738,8 @@ resolve_scheme(#uri{scheme=Sc, opts=UriOpts}=Uri, Opts) ->
             Uri;
         {ok, Forced} when Sc==tcp; Sc==tls; Sc==ws; Sc==wss; Sc==http; Sc==https ->
             Uri#uri{scheme=Forced, opts=[{<<"transport">>, Sc}|UriOpts]};
+        {ok, Other} ->
+            throw({invalid_scheme, Other});
         error ->
             Uri
     end.
