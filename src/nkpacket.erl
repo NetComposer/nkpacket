@@ -111,6 +111,7 @@
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
+        force_scheme => nklib:scheme(),         % Allow using ws://...
         debug => boolean(),
 
         % UDP options
@@ -158,6 +159,7 @@
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
         base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
+        force_scheme => nklib:scheme(),     % Allow using ws://...
         debug => boolean(),
 
         % TCP/TLS/WS/WSS options
@@ -657,8 +659,15 @@ resolve(Uri) ->
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
-resolve(#uri{scheme=Scheme}=Uri, Opts) ->
-    #uri{domain=Host, path=Path, ext_opts=UriOpts, ext_headers=Headers} = Uri,
+resolve(#uri{}=Uri, Opts) ->
+    Uri2 = resolve_scheme(Uri, Opts),
+    #uri{
+        scheme = Scheme,
+        domain = Host, 
+        path = Path, 
+        ext_opts = UriOpts, 
+        ext_headers = Headers
+    } = Uri2,
     UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquote(V)} || {K, V} <- UriOpts],
     UriOpts2 = case Host of
         <<"0.0.0.0">> -> UriOpts1;
@@ -699,7 +708,7 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
             _ -> 
                 nkpacket:get_protocol(Scheme)
         end,
-        case nkpacket_dns:resolve(Uri, Opts2#{protocol=>Protocol}) of
+        case nkpacket_dns:resolve(Uri2, Opts2#{protocol=>Protocol}) of
             {ok, Addrs} ->
                 Conns = [ 
                     {Protocol, Transp, Addr, Port} 
@@ -719,6 +728,18 @@ resolve(Uri, Opts) ->
             resolve(Parsed, Opts);
         _ ->
             {error, {invalid_uri, Uri}}
+    end.
+
+
+%% @private
+resolve_scheme(#uri{scheme=Sc, opts=UriOpts}=Uri, Opts) ->
+    case maps:find(force_scheme, Opts) of
+        {ok, Sc} ->
+            Uri;
+        {ok, Forced} when Sc==tcp; Sc==tls; Sc==ws; Sc==wss; Sc==http; Sc==https ->
+            Uri#uri{scheme=Forced, opts=[{<<"transport">>, Sc}|UriOpts]};
+        error ->
+            Uri
     end.
 
 
