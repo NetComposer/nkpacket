@@ -111,7 +111,7 @@
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
-        force_scheme => nklib:scheme(),         % Allow using ws://...
+        implicit_scheme => nklib:scheme(),      % Allow using ws://...
         debug => boolean(),
 
         % UDP options
@@ -159,7 +159,7 @@
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
         base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
-        force_scheme => nklib:scheme(),     % Allow using ws://...
+        implicit_scheme => nklib:scheme(),  % Allow using ws://...
         debug => boolean(),
 
         % TCP/TLS/WS/WSS options
@@ -733,7 +733,7 @@ resolve(Uri, Opts) ->
 
 %% @private
 resolve_scheme(#uri{scheme=Sc, opts=UriOpts}=Uri, Opts) ->
-    case maps:find(force_scheme, Opts) of
+    case maps:find(implicit_scheme, Opts) of
         {ok, Sc} ->
             Uri;
         {ok, Forced} when Sc==tcp; Sc==tls; Sc==ws; Sc==wss; Sc==http; Sc==https ->
