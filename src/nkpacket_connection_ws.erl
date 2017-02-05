@@ -117,7 +117,8 @@ get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
                 | Headers2
             ]
     end,
-    Req = cow_http:request(<<"GET">>, Path, 'HTTP/1.1', Headers3),
+    Headers4 = Headers3 ++ maps:get(headers, Meta, []),
+    Req = cow_http:request(<<"GET">>, Path, 'HTTP/1.1', Headers4),
     {ok, Req, Key}.
     
 

@@ -24,6 +24,7 @@
 
 -export([app_syntax/0, app_defaults/0]).
 -export([syntax/0, uri_syntax/0, tls_syntax/0, tls_defaults/0]).
+-export([spec_http_proto/3, spec_headers/1]).
 
 -include("nkpacket.hrl").
 
@@ -97,7 +98,8 @@ syntax() ->
         get_headers => [boolean, {list, binary}],
         cowboy_opts => list,
         ws_proto => lower,
-        http_proto => fun spec_http_proto/3,
+        headers => fun ?MODULE:spec_headers/1,
+        http_proto => fun ?MODULE:spec_http_proto/3,
         force_new => boolean,
         pre_send_fun => {function, 2},
         resolve_type => {enum, [listen, connect]},
@@ -157,3 +159,22 @@ spec_http_proto(_, {custom, #{env:=_, middlewares:=_}}, _) -> ok;
 spec_http_proto(_, _, _) -> error.
 
 
+%% @private
+spec_headers(List) when is_list(List) ->
+    spec_headers(List, []);
+spec_headers(_) ->
+    error.
+
+
+%% @private
+spec_headers([], Acc) ->
+    {ok, Acc};
+spec_headers([{K, V}|Rest], Acc) ->
+    spec_headers(Rest, [{to_bin(K), to_bin(V)}|Acc]);
+spec_headers(_, _Acc) ->
+    error.
+
+
+
+%% @private
+to_bin(K) -> nklib_util:to_binary(K).

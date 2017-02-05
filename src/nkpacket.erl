@@ -169,7 +169,8 @@
         % WS/WSS
         host => string() | binary(),        % Host header to use
         path => string() | binary(),        % Path to use
-        ws_proto => string() | binary()     % Proto to use
+        ws_proto => string() | binary(),    % Proto to use
+        headers => [{string()|binary(), string()|binary()}]
     }.
 
 
