@@ -80,7 +80,7 @@ basic() ->
 	end,
 
 	Uri = "<test://localhost:"++integer_to_list(ListenPort1)++";transport=tcp>",
-	{ok, _} = nkpacket:send(Uri, msg1, M2#{idle_timeout=>5000, class=>dom2}),
+	{ok, _} = nkpacket:send(Uri, msg1, M2#{idle_timeout=>5000, class=>dom2, debug=>true}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -103,11 +103,11 @@ basic() ->
 			remote_ip={127,0,0,1}, remote_port=LPort2,
 			listen_ip={0,0,0,0}, listen_port=ListenPort1
 	}} = nkpacket:get_nkport(Conn1),
-				
+
 	Time1 = nkpacket_connection:get_timeout(Conn1),
 	true = Time1 > 0 andalso Time1 =< 1000,
 	Time2 = nkpacket_connection:get_timeout(Conn2),
-	true = Time2 > 4000 andalso Time2 =< 5000, 
+	true = Time2 > 4000 andalso Time2 =< 5000,
 
 	%% Connection 2 will stop after 1 sec, and will tear down conn1
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
@@ -217,7 +217,7 @@ send() ->
 		nkpacket:send({current, {test_protocol, tcp, {0,0,0,0}, Listen2}}, msg1),
 	{error, no_listening_transport} = 
 		nkpacket:send({test_protocol, sctp, {127,0,0,1}, Listen2}, msg1),
-	Msg = crypto:rand_bytes(5000),
+	Msg = crypto:strong_rand_bytes(5000),
 	{error, no_listening_transport} = 	% No class
 		nkpacket:send({test_protocol, udp, {127,0,0,1}, Listen2}, {msg1, Msg}, M1),
 	{error, udp_too_large} = 

@@ -70,7 +70,7 @@ basic() ->
 	% (Oops, in linux it allows to open it again, the old do not receive any more packets!)
 	Port2 = test_util:get_port(udp),
 	Conn = {test_protocol, udp, {0,0,0,0}, Port2},
-	{ok, LLisA} = nkpacket:start_listener(Conn, 
+	{ok, LLisA} = nkpacket:start_listener(Conn,
 										  #{class=>dom2, udp_starts_tcp=>true,
 										   tcp_listeners=>1}),
 	LisA = whereis(LLisA),
@@ -99,7 +99,7 @@ basic() ->
 	exit(ConnB, forced_stop),
 	timer:sleep(2000),		% We need this for Linux, it tries to use the same port, sometimes
 							% it has to retry
-	
+
 	[
 		#nkport{transp=tcp, local_port=Port4, pid=LisC},
 		#nkport{transp=udp, local_port=Port4, pid=ConnC}
@@ -120,10 +120,10 @@ basic() ->
 listen() ->
 	Port1 = test_util:get_port(udp),
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	{ok, LUdp1} = nkpacket:start_listener( 
+	{ok, LUdp1} = nkpacket:start_listener(
 		"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>",
 		M1#{class=><<"dom1">>}),
-	Udp1 = whereis(LUdp1),
+	_Udp1 = whereis(LUdp1),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, Socket} = gen_udp:open(0, [binary, {active, false}]),
@@ -135,16 +135,16 @@ listen() ->
 	[#nkport{local_ip={0,0,0,0}, local_port=Port1, remote_ip=undefined,
 			 remote_port=undefined, pid=Udp1, socket=UdpS1} = Listen] =
 		test_util:listeners(<<"dom1">>),
-	
+
 	[#nkport{local_ip={0,0,0,0}, local_port=Port1, remote_ip={127,0,0,1},
-			 remote_port=LocalPort, socket=UdpS1, pid=Conn1Pid} = Conn1] = 
+			 remote_port=LocalPort, socket=UdpS1, pid=_Conn1Pid} = Conn1] =
 		test_util:conns(<<"dom1">>),
-	
+
 	% Send a message back, directly through the connection
 	ok = nkpacket_connection:send(Conn1, <<"test2">>),
 	receive {Ref1, {encode, <<"test2">>}} -> ok after 1000 -> error(?LINE) end,
 	{ok, {{127,0,0,1}, Port1, Raw1}} = gen_udp:recv(Socket, 0, 5000),
-	<<"test2">> = binary_to_term(Raw1), 
+	<<"test2">> = binary_to_term(Raw1),
 
 	% Send a message directly to the raw connection
 	ok = nkpacket_connection_lib:raw_send(Conn1, <<"test3">>),
@@ -155,7 +155,7 @@ listen() ->
 	% We use the parse in test_protocol:listen_parse
 	{ok, {{127,0,0,1}, Port1, <<"test4">>}} = gen_udp:recv(Socket, 0, 5000),
 
-	[Conn1Pid] = 
+	[Conn1Pid] =
 		nkpacket_transport:get_connected({test_protocol, udp, {127,0,0,1}, LocalPort},
 										 #{class=><<"dom1">>}),
 	[Conn1Pid] = nkpacket_connection:get_all(<<"dom1">>),
@@ -188,8 +188,8 @@ listen() ->
 	receive {Ref2, listen_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),
 	[] = nkpacket:get_all(<<"dom1">>),
-	test_util:ensure([Ref1, Ref2]).
-
+	test_util:ensure([Ref1, Ref2]),
+	ok.
 
 stun() ->
 	Port1 = test_util:get_port(udp),

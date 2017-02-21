@@ -5,18 +5,15 @@
     {registered, []},
     {mod, {nkpacket_app, []}},
     {applications, [
-        kernel,
-        stdlib,
         crypto,
         sasl,
         ssl,
-        lager,
+        nklib,
         ssh,
         ranch,
         cowlib,
         cowboy,
-        gun,
-        nklib
+        gun
     ]},
     {env, [
     ]}

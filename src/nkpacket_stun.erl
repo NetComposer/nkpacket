@@ -130,7 +130,7 @@ decode(_) ->
     {Id::binary(), Msg::binary()}.
 
 binding_request() ->
-    Id = crypto:rand_bytes(12),
+    Id = crypto:strong_rand_bytes(12),
     {Id, <<16#0001:16, 0:16, 16#2112A442:32, Id/binary>>}.
 
 

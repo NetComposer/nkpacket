@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2017 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -22,7 +22,7 @@
 -module(nkpacket_syntax).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([app_syntax/0, app_defaults/0]).
+-export([app_syntax/0]).
 -export([syntax/0, uri_syntax/0, tls_syntax/0, tls_defaults/0]).
 -export([spec_http_proto/3, spec_headers/1]).
 
@@ -45,31 +45,27 @@ app_syntax() ->
         connect_timeout => nat_integer,
         sctp_out_streams => nat_integer,
         sctp_in_streams => nat_integer,
-        main_ip => [ip4, {enum, [auto]}],
-        main_ip6 => [ip6, {enum, [auto]}],
-        ext_ip => [ip4, {enum, [auto]}],
-        ext_ip6 => [ip6, {enum, [auto]}],
-        ?TLS_SYNTAX
-    }.
-
-
-
-app_defaults() ->
-    #{
-        max_connections =>  1024,
-        dns_cache_ttl => 30000,                 % msecs
-        udp_timeout => 30000,                   % 
-        tcp_timeout => 180000,                  % 
-        sctp_timeout => 180000,                 % 
-        ws_timeout => 180000,                   % 
-        http_timeout => 180000,                 % 
-        connect_timeout => 30000,               %
-        sctp_out_streams => 10,
-        sctp_in_streams => 10,
-        main_ip => auto,
-        main_ip6 => auto,
-        ext_ip => auto,
-        ext_ip6 => auto
+        main_ip => [ip4, {atom, [auto]}],
+        main_ip6 => [ip6, {atom, [auto]}],
+        ext_ip => [ip4, {atom, [auto]}],
+        ext_ip6 => [ip6, {atom, [auto]}],
+        ?TLS_SYNTAX,
+        '__defaults' => #{
+            max_connections =>  1024,
+            dns_cache_ttl => 30000,                 % msecs
+            udp_timeout => 30000,                   %
+            tcp_timeout => 180000,                  %
+            sctp_timeout => 180000,                 %
+            ws_timeout => 180000,                   %
+            http_timeout => 180000,                 %
+            connect_timeout => 30000,               %
+            sctp_out_streams => 10,
+            sctp_in_streams => 10,
+            main_ip => auto,
+            main_ip6 => auto,
+            ext_ip => auto,
+            ext_ip6 => auto
+        }
     }.
 
 
@@ -90,7 +86,7 @@ syntax() ->
         udp_no_connections => boolean,
         udp_stun_reply => boolean,
         udp_stun_t1 => nat_integer,
-        tcp_packet => [{enum, [raw]}, {integer, [1, 2, 4]}],
+        tcp_packet => [{atom, [raw]}, {integer, [1, 2, 4]}],
         tcp_max_connections => nat_integer,
         tcp_listeners => nat_integer,
         host => host,
@@ -102,7 +98,7 @@ syntax() ->
         http_proto => fun ?MODULE:spec_http_proto/3,
         force_new => boolean,
         pre_send_fun => {function, 2},
-        resolve_type => {enum, [listen, connect]},
+        resolve_type => {atom, [listen, connect]},
         base_nkport => [boolean, {record, nkport}],
         ?TLS_SYNTAX,
         user => any,

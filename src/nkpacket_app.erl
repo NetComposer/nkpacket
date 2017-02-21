@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2017 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -52,8 +52,7 @@ start() ->
 start(_Type, _Args) ->
     put(tls_defaults, nkpacket_syntax:tls_defaults()),
     Syntax = nkpacket_syntax:app_syntax(),
-    Defaults = nkpacket_syntax:app_defaults(),
-    case nklib_config:load_env(nkpacket, Syntax, Defaults) of
+    case nklib_config:load_env(nkpacket, Syntax) of
         {ok, _} ->
             get_auto_ips(),
             nkpacket:register_protocol(http, nkpacket_protocol_http),

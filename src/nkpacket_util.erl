@@ -169,8 +169,8 @@ parse_opts(Opts) ->
         _ ->
             nkpacket_syntax:syntax()
     end,
-    case nklib_config:parse_config(Opts, Syntax, #{return=>map}) of
-        {ok, Map, _} ->
+    case nklib_syntax:parse(Opts, Syntax) of
+        {ok, Map, _, _} ->
             {ok, Map};
         {error, Error} ->
             {error, Error}
@@ -188,17 +188,17 @@ parse_uri_opts(UriOpts, Opts) ->
         _ ->
             nkpacket_syntax:uri_syntax()
     end,
-    case nklib_config:parse_config(UriOpts, Syntax, #{return=>map}) of
-        {ok, Map, _} ->
+    case nklib_syntax:parse(UriOpts, Syntax) of
+        {ok, Map, _, _} ->
             {ok, Map};
         {error, Error} ->
             {error, Error}
     end.
 
 
-%% @private
+%% @private Check that stock nkpacket_config_cache has all keys!
 make_cache() ->
-    Defaults = nkpacket_syntax:app_defaults(),
+    Defaults = maps:get('__defaults', nkpacket_syntax:app_syntax()),
     Keys = [local_ips | maps:keys(Defaults)],
     nklib_config:make_cache(Keys, nkpacket, none, nkpacket_config_cache, none).
 

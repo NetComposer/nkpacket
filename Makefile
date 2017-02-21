@@ -1,8 +1,17 @@
+APP = nkpacket
 REBAR = rebar3
 
 .PHONY: rel stagedevrel package version all tree shell
 
-all: compile
+all: version compile
+
+
+version:
+	@echo "$(shell git symbolic-ref HEAD 2> /dev/null | cut -b 12-)-$(shell git log --pretty=format:'%h, %ad' -1)" > $(APP).version
+
+
+version_header: version
+	@echo "-define(VERSION, <<\"$(shell cat $(APP).version)\">>)." > include/$(APP)_version.hrl
 
 
 clean:
@@ -17,6 +26,10 @@ compile:
 	$(REBAR) compile
 
 
+tests:
+	$(REBAR) eunit
+
+
 dialyzer:
 	$(REBAR) dialyzer
 
@@ -25,13 +38,8 @@ xref:
 	$(REBAR) xref
 
 
-tests:
-	export ERL_FLAGS="-config test/app.config"; \
-	$(REBAR) eunit
-
-
 upgrade:
-	$(REBAR) upgrade 
+	$(REBAR) upgrade
 	make tree
 
 
@@ -51,6 +59,6 @@ docs:
 	$(REBAR) edoc
 
 
-shell:	
-	$(REBAR) shell --config config/shell.config --apps nkpacket
+shell:
+	$(REBAR) shell --config config/shell.config --name $(APP)@127.0.0.1 --setcookie nk --apps $(APP)
 

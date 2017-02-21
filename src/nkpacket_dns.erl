@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% Copyright (c) 2016 Carlos Gonzalez Florido.  All Rights Reserved.
+%% Copyright (c) 2017 Carlos Gonzalez Florido.  All Rights Reserved.
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -628,14 +628,30 @@ sort_select(Pos, [C|Rest], Acc) ->
 -include_lib("eunit/include/eunit.hrl").
 
 
-basic_test() ->
+basic_test_() ->
+    {setup,
+        fun() ->
+            ?debugFmt("Starting ~p", [?MODULE]),
+            nkpacket_app:start()
+        end,
+        fun(_) ->
+            ok
+        end,
+        [
+            {timeout, 60, fun basic/0},
+            {timeout, 60, fun weight/0}
+        ]
+    }.
+
+
+basic() ->
     Opts = #{no_dns_cache=>true},
     {ok, [
         {undefined, {1,2,3,4}, 0},
         {tcp, {4,3,2,1}, 25},
         {undefined, {0,0,0,0}, 1200},
         {tls, {1,0,0,0,0,0,0,5}, 0}
-    ]} = 
+    ]} =
         resolve("http://1.2.3.4, http://4.3.2.1:25;transport=tcp,"
                 "http://all:1200, <http://[1::5]>;transport=tls", Opts),
 
@@ -685,7 +701,7 @@ basic_test() ->
     ok.
 
 
-weigth_test() ->
+weight() ->
     ?debugMsg("DNS Weight Test"),
     []= groups([]),
     [[{1,a}]] = groups([{1,1,a}]),

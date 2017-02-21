@@ -13,3 +13,5 @@ rebar.lock
 =======
 rebar.lock
 >>>>>>> develop
+/nkpacket.version
+/.rebar3
