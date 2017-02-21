@@ -132,12 +132,14 @@ tls_keys() ->
 
 make_web_proto(#{http_proto:={static, #{path:=DirPath}=Static}}=Opts) ->
     DirPath1 = nklib_parse:fullpath(filename:absname(DirPath)),
-    Static1 = Static#{path:=DirPath1},
+    Static1 = Static#{path:=DirPath1, debug=>maps:get(debug, Opts, false)},
     UrlPath = maps:get(path, Opts, <<>>),
     Route = {<<UrlPath/binary, "/[...]">>, nkpacket_cowboy_static, Static1},
     {custom, 
         #{
-            env => [{dispatch, cowboy_router:compile([{'_', [Route]}])}],
+            env => [
+                {dispatch, cowboy_router:compile([{'_', [Route]}])}
+            ],
             middlewares => [cowboy_router, cowboy_handler]
         }};
 
@@ -342,11 +344,11 @@ call_protocol(Fun, Args, State, Pos) ->
                         {Class, Value, setelement(Pos+1, State, ProtoState1)}
                 end
             catch
-                Class:Reason ->
+                EClass:Reason ->
                     Stacktrace = erlang:get_stacktrace(),
                     lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
-                                [Class, Reason, Protocol, Fun, Args, Stacktrace]),
-                    erlang:Class([{reason, Reason}, {stacktrace, Stacktrace}])
+                                [EClass, Reason, Protocol, Fun, Args, Stacktrace]),
+                    erlang:EClass([{reason, Reason}, {stacktrace, Stacktrace}])
             end
     end.
 

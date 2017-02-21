@@ -84,7 +84,7 @@ basic() ->
 	% Should also work with kill
 	% exit(ConnA, kill),
 	exit(ConnA, forced_stop),
-	timer:sleep(500),
+	timer:sleep(2000),
 	[
 		#nkport{transp=tcp, local_port=Port3, pid=LisB},
 		#nkport{transp=udp, local_port=Port3, pid=ConnB}

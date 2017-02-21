@@ -68,7 +68,7 @@ http_init(HttpProto, _ConnPid, Req, Env) ->
  			Env1 = nklib_util:store_values(UserEnv, Env),
  			{ok, Req, Env1, Middlewares};
  		_ ->
- 			lager:warning("Invalid HTTP Protocol: ~p", [HttpProto]),
+ 			lager:warning("NkPACKET HTTP invalid protocol: ~p", [HttpProto]),
 			{stop, nkpacket_cowboy:reply(500, Req)}
  	end.
 

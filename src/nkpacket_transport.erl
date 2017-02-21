@@ -39,6 +39,17 @@
 -define(OPEN_ITERS, 5).
 
 
+%% To get debug info, the current process must hace 'nkpacket_debug=true'
+
+-define(DEBUG(Txt, Args),
+    case erlang:get(nkpacket_debug) of
+        true -> ?LLOG(debug, Txt, Args);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args), lager:Type("NkPACKET "++Txt, Args)).
+
+
 %% ===================================================================
 %% Public
 %% ===================================================================
@@ -114,10 +125,10 @@ send([Uri|Rest], Msg, Opts) when is_binary(Uri); is_list(Uri) ->
 send([#uri{}=Uri|Rest], Msg, Opts) ->
     case nkpacket:resolve(Uri, Opts) of
         {ok, RawConns, Opts1} ->
-            lager:debug("transport send to ~p (~p)", [RawConns, Rest]),
+            ?DEBUG("send to ~p (~p)", [RawConns, Rest]),
             send(RawConns++Rest, Msg, Opts1);
         {error, Error} ->
-            lager:notice("Error sending to ~p: ~p", [Uri, Error]),
+            ?LLOG(info, "error sending to ~p: ~p", [Uri, Error]),
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
 
@@ -127,7 +138,7 @@ send([#nkport{socket=undefined}=NkPort|Rest], Msg, Opts) ->
     send([{current, Conn}|Rest], Msg, Opts);
 
 send([Port|Rest], Msg, Opts) when is_pid(Port); is_record(Port, nkport) ->
-    lager:debug("transport send to nkport ~p", [Port]),
+    ?DEBUG("send to nkport ~p", [Port]),
     case do_send(Msg, [Port], Opts#{udp_to_tcp=>false}) of
         {ok, Res} -> {ok, Res};
         {error, Opts1} -> send(Rest, Msg, Opts1)
@@ -151,7 +162,7 @@ send([{Protocol, Transp, Ip, 0}|Rest], Msg, Opts) ->
 send([{connect, Conn}|Rest], Msg, Opts) ->
     RemoveOpts = [udp_to_tcp, last_error],
     ConnOpts = maps:without(RemoveOpts, Opts),
-    lager:debug("transport connecting to ~p (~p)", [Conn, ConnOpts]),
+    ?DEBUG("connecting to ~p (~p)", [Conn, ConnOpts]),
     case connect([Conn], ConnOpts) of
         {ok, Pid} ->
             case do_send(Msg, [Pid], Opts) of
@@ -164,7 +175,7 @@ send([{connect, Conn}|Rest], Msg, Opts) ->
                     send(Rest, Msg, Opts1)
             end;
         {error, Error} ->
-            lager:notice("Error connecting to ~p: ~p", [Conn, Error]),
+            ?LLOG(info, "error connecting to ~p: ~p", [Conn, Error]),
             send(Rest, Msg, Opts#{last_error=>Error})
     end;
 
@@ -175,11 +186,11 @@ send([{_, _, _, _}=Conn|Rest], Msg, #{class:=_}=Opts) ->
     end,
     case do_send(Msg, Pids, Opts) of
         {ok, Res} -> 
-            lager:debug("transport used previous connection to ~p (~p)", [Conn, Opts]),
+            ?DEBUG("used previous connection to ~p (~p)", [Conn, Opts]),
             {ok, Res};
         retry_tcp ->
             Conn1 = setelement(2, Conn, tcp), 
-            lager:debug("transport retrying with tcp", []),
+            ?DEBUG("retrying with tcp", []),
             send([Conn1|Rest], Msg, Opts);
         {error, Opts1} -> 
             send([{connect, Conn}|Rest], Msg, Opts1)
@@ -190,7 +201,7 @@ send([{_, _, _, _}=Conn|Rest], Msg, Opts) ->
     send([{connect, Conn}|Rest], Msg, Opts);
 
 send([Term|Rest], Msg, Opts) ->
-    lager:warning("Invalid send specification: ~p", [Term]),
+    ?LLOG(warning, "invalid send specification: ~p", [Term]),
     send(Rest, Msg, Opts#{last_error=>{invalid_send_specification, Term}});
 
 send([], _Msg, #{last_error:=Error}) -> 
@@ -232,11 +243,11 @@ do_send(Msg, [Port|Rest], Opts) ->
                 #{udp_to_tcp:=true} ->
                     retry_tcp;
                 _ ->
-                    lager:notice("Error sending msg: udp_too_large", []),
+                    ?LLOG(info, "error sending msg: udp_too_large", []),
                     do_send(Msg, Rest, Opts#{last_error=>udp_too_large})
             end;
         {error, Error} ->
-            lager:notice("Error sending msg to ~p: ~p", [Port, Error]),
+            ?LLOG(info, "error sending msg to ~p: ~p", [Port, Error]),
             do_send(Msg, Rest, Opts#{last_error=>Error})
     end.
 
@@ -257,7 +268,7 @@ get_msg_fun(Fun, Msg, Pid) when is_pid(Pid) ->
 
 %% @private Starts a new outbound connection.
 -spec connect([nkpacket:raw_connection()], nkpacket:connect_opts()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, nkpacket:nkport()} | {error, term()}.
 
 connect([], _Opts) ->
     {error, no_transports};
@@ -309,7 +320,7 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
         undefined when ListenOpt ->
             {error, no_listening_transport};
         _ ->
-            lager:debug("transport base port: ~p", [BasePort]),
+            ?DEBUG("base port: ~p", [BasePort]),
             % Our listening host and meta must not be used for the new connection
             Meta2 = maps:remove(host, Meta1),
             Meta3 = maps:remove(path, Meta2),
@@ -359,7 +370,7 @@ get_defport(Protocol, Transp) ->
                 Port when is_integer(Port), Port > 0 -> 
                     {ok, Port};
                 Other -> 
-                    lager:warning("Error calling ~p:default_port(~p): ~p",
+                    ?LLOG(warning, "error calling ~p:default_port(~p): ~p",
                                   [Protocol, Transp, Other]),
                     error
             end;
@@ -397,7 +408,7 @@ open_port(NkPort, Opts) ->
     end,
     case Port of
         0 when is_integer(DefPort) ->
-            lager:debug("Opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
+            ?DEBUG("opening ~p:~p (default, ~p)", [Module, DefPort, Opts]),
             case Module:Fun(DefPort, Opts) of
                 {ok, Socket} ->
                     {ok, Socket};
@@ -415,12 +426,12 @@ open_port(NkPort, Opts) ->
     {ok, port()} | {error, term()}.
 
 open_port(Ip, Port, Module, Fun, Opts, Iter) ->
-    lager:debug("Opening ~p:~p (~p)", [Module, Port, Opts]),
+    ?DEBUG("opening ~p:~p (~p)", [Module, Port, Opts]),
     case Module:Fun(Port, Opts) of
         {ok, Socket} ->
             {ok, Socket};
         {error, eaddrinuse} when Iter > 0 ->
-            lager:notice("~p port ~p is in use, waiting (~p)", 
+            ?LLOG(info, "~p port ~p is in use, waiting (~p)", 
                          [Module, Port, Iter]),
             timer:sleep(1000),
             open_port(Ip, Port, Module, Fun, Opts, Iter-1);

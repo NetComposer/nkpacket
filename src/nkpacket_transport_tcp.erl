@@ -32,6 +32,19 @@
 -include("nkpacket.hrl").
 
 
+%% To get debug info, start with debug=>true
+
+-define(DEBUG(Txt, Args),
+    case get(nkpacket_debug) of
+        true -> ?LLOG(debug, Txt, Args);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args), lager:Type("NkPACKET TCP "++Txt, Args)).
+
+
+
+
 %% ===================================================================
 %% Private
 %% ===================================================================
@@ -63,13 +76,15 @@ connect(NkPort) ->
         remote_port = Port,
         meta = Meta
     } = NkPort,
+    Debug = maps:get(debug, Meta, false),
+    put(nkpacket_debug, Debug),
     SocketOpts = outbound_opts(NkPort),
     {InetMod, TranspMod, _} = get_modules(Transp),
     ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
         undefined -> nkpacket_config_cache:connect_timeout();
         Timeout0 -> Timeout0
     end,
-    lager:debug("TCP connect to: ~p:~p:~p (~p)", [Transp, Ip, Port, SocketOpts]),
+    ?DEBUG("connect to: ~p:~p:~p (~p)", [Transp, Ip, Port, SocketOpts]),
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} -> 
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
@@ -119,6 +134,8 @@ init([NkPort]) ->
         meta = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
+    Debug = maps:get(debug, Meta, false),
+    put(nkpacket_debug, Debug),
     ListenOpts = listen_opts(NkPort),
     case nkpacket_transport:open_port(NkPort, ListenOpts) of
         {ok, Socket}  ->
@@ -171,7 +188,7 @@ init([NkPort]) ->
             },
             {ok, State};
         {error, Error} ->
-            lager:error("could not start ~p transport on ~p:~p (~p)", 
+            ?LLOG(error, "could not start ~p transport on ~p:~p (~p)", 
                    [Transp, ListenIp, ListenPort, Error]),
             {stop, Error}
     end.
@@ -246,7 +263,7 @@ terminate(Reason, State) ->
         ranch_pid = RanchPid,
         nkport = #nkport{transp=Transp, socket=Socket} = NkPort
     } = State,
-    lager:debug("TCP/TLS listener stop: ~p", [Reason]),
+    ?DEBUG("listener stop: ~p", [Reason]),
     catch call_protocol(listen_stop, [Reason, NkPort], State),
     exit(RanchPid, shutdown),
     timer:sleep(100),   %% Give time to ranch to close acceptors

@@ -278,6 +278,9 @@ ips(Host, Opts) ->
     case get_cache({ips, Host1}, Opts) of
         undefined ->
             case inet:getaddrs(Host1, inet) of
+                {ok, [Ip, Ip]} ->
+                    lager:debug("Duplicted IP from inet:getaddrs/2"),
+                    Ips = [Ip];
                 {ok, Ips} -> 
                     ok;
                 {error, _} -> 

@@ -24,7 +24,14 @@
 -type state() :: {file, #file_info{}, opts()} | {error, atom()}.
 
 
--define(LOG(Txt, List), lager:notice("Webserver "++Txt, List)).
+-define(DEBUG(Txt, Args),
+    case get(nkpacket_debug) of
+        true -> ?LLOG(debug, Txt, Args);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args), lager:Type("NkPACKET Static "++Txt, Args)).
+
 
 
 %% ===================================================================
@@ -36,6 +43,10 @@
 	{cowboy_rest, cowboy_req:req(), state()}.
 
 init(Req, #{path:=DirPath}=Opts) ->
+	case Opts of
+		#{debug:=true} -> put(nkpacket_debug, true);
+		_ -> ok
+	end,
 	Req1 = cowboy_req:set_resp_header(<<"server">>, <<"NkPACKET">>, Req),
 	PathInfo = cowboy_req:path_info(Req),
 	FilePath = nklib_parse:fullpath(filename:join([DirPath|PathInfo])),
@@ -46,7 +57,7 @@ init(Req, #{path:=DirPath}=Opts) ->
 			IsDir = binary:last(cowboy_req:url(Req)) == $/,
 			init_file(Req1, Opts, FilePath, IsDir);
 		_ ->
-			lager:warning("Webserver trying to access forbidden ~s", [FilePath]),
+			?LLOG(warning, "trying to access forbidden ~s", [FilePath]),
 			{cowboy_rest, Req1, {error, malformed}}
 	end.
 
@@ -60,25 +71,25 @@ init_file(Req, Opts, FilePath, IsDir) ->
 		{ok, #file_info{type=directory}} when IsDir ->
 			case maps:get(index_file, Opts, undefined) of
 				undefined -> 
-					lager:debug("Webserver didn't allow directory ~s", [FilePath]),
+					?LLOG(info, "didn't allow directory ~s", [FilePath]),
 					{cowboy_rest, Req, {error, forbidden}};
 				Index ->
 					Index1 = nklib_util:to_binary(Index),
 					FilePath2 = <<FilePath/binary, "/", Index1/binary>>,
-					lager:debug("Webserver sending index file ~s", [FilePath2]),
+					?DEBUG("sending index file ~s", [FilePath2]),
 					init_file(Req, maps:remove(index_file, Opts), FilePath2, false)
 			end;
 		{ok, #file_info{type=directory}} when not IsDir ->
 			Url = <<(cowboy_req:url(Req))/binary, "/">>,
-			lager:debug("Webserver sent redirect to ~s", [Url]),
+			?LLOG(info, "sent redirect to ~s", [Url]),
 			Req2 = cowboy_req:set_resp_header(<<"location">>, Url, Req),
 			Req3 = cowboy_req:reply(301, Req2),
 			{ok, Req3, Opts};
 		{ok, #file_info{}=File} ->
-			lager:debug("Webserver found file ~s", [FilePath]),
+			?DEBUG("found file ~s", [FilePath]),
 			{cowboy_rest, Req, {file, File, Opts#{path:=FilePath}}};
 		{error, enoent} ->
-			lager:info("Webserver didn't find file ~s", [FilePath]),
+			?LLOG(info, "didn't find file ~s", [FilePath]),
 			{cowboy_rest, Req, {error, not_found}};
 		_ ->
 			{cowboy_rest, Req, {error, forbidden}}

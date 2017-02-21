@@ -110,16 +110,7 @@ get_auto_ips() ->
     end,
     case nkpacket_app:get(ext_ip) of
         auto -> 
-            ExtIp = case nkpacket_stun:ext_ip() of
-                {ok, ExtIp2} -> 
-                    ExtIp2;
-                {port_changed, ExtIp2} ->
-                    lager:warning("Current NAT is changing ports"),
-                    ExtIp2;
-                {error, ExtError} ->
-                    lager:error("Error detecting external ip: ~p", [ExtError]),
-                    {127,0,0,1}
-            end,
+            ExtIp = nkpacket_stun:ext_ip(),
             nkpacket_app:put(ext_ip, ExtIp);
         _ ->
             ok

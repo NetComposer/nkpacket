@@ -25,6 +25,16 @@
 -include("nkpacket.hrl").
 
 
+-define(DEBUG(Txt, Args),
+    case erlang:get(nkpacket_debug) of
+        true -> ?LLOG(debug, Txt, Args);
+        _ -> ok
+    end).
+
+-define(LLOG(Type, Txt, Args), 
+        lager:Type("NkPACKET Conn "++Txt, Args)).
+
+
 -record(payload, {
     type = undefined :: cow_ws:frame_type(),
     rsv = undefined :: cow_ws:rsv(),
@@ -63,12 +73,12 @@ start_handshake(NkPort) ->
         ws -> ranch_tcp;
         wss -> ranch_ssl
     end,
-    lager:debug("sending ws request: ~s", [print_headers(list_to_binary(Req))]),
+    ?DEBUG("sending ws request: ~s", [print_headers(list_to_binary(Req))]),
     case TranspMod:send(Socket, Req) of
         ok ->
             case recv(TranspMod, Socket, <<>>) of
                 {ok, Data} ->
-                    lager:debug("received ws reply: ~s", [print_headers(Data)]),
+                    ?DEBUG("received ws reply: ~s", [print_headers(Data)]),
                     case get_handshake_resp(Data, Key) of
                         {ok, WsProto, Rest} ->
                             {ok, WsProto, Rest};
@@ -107,7 +117,8 @@ get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
                 | Headers2
             ]
     end,
-    Req = cow_http:request(<<"GET">>, Path, 'HTTP/1.1', Headers3),
+    Headers4 = Headers3 ++ maps:get(headers, Meta, []),
+    Req = cow_http:request(<<"GET">>, Path, 'HTTP/1.1', Headers4),
     {ok, Req, Key}.
     
 

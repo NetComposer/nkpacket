@@ -111,6 +111,8 @@
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
+        implicit_scheme => nklib:scheme(),      % Allow using ws://...
+        debug => boolean(),
 
         % UDP options
         udp_starts_tcp => boolean(),            % UDP starts TCP on the same port
@@ -157,6 +159,8 @@
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
         base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
+        implicit_scheme => nklib:scheme(),  % Allow using ws://...
+        debug => boolean(),
 
         % TCP/TLS/WS/WSS options
         tcp_packet => 1 | 2 | 4 | raw,    
@@ -165,7 +169,8 @@
         % WS/WSS
         host => string() | binary(),        % Host header to use
         path => string() | binary(),        % Path to use
-        ws_proto => string() | binary()     % Proto to use
+        ws_proto => string() | binary(),    % Proto to use
+        headers => [{string()|binary(), string()|binary()}]
     }.
 
 
@@ -176,7 +181,7 @@
         % Specific options
         force_new => boolean(),             % Forces a new connection
         udp_to_tcp => boolean(),            % Change to TCP for large packets
-        udp_max_size => pos_integer(),
+        udp_max_size => pos_integer(),      % Used only for this sent request
         pre_send_fun => pre_send_fun()
     }.
 
@@ -480,6 +485,10 @@ send(SendSpec, Msg) ->
 send(SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
+            case Opts1 of
+                #{debug:=true} -> put(nkpacket_debug, true);
+                _ -> ok
+            end,
             case nkpacket_transport:send(SendSpec, Msg, Opts1) of
                 {ok, {Pid, _Msg1}} -> {ok, Pid};
                 {error, Error} -> {error, Error}
@@ -494,7 +503,7 @@ send(SendSpec, Msg, Opts) ->
 
 %% @doc Forces a new outbound connection.
 -spec connect(user_connection() | [connection()], connect_opts()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, nkport()} | {error, term()}.
 
 connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
     connect([Conn], Opts);
@@ -502,6 +511,10 @@ connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
 connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts) ->
     case nkpacket_util:parse_opts(Opts) of
         {ok, Opts1} ->
+            case Opts1 of
+                #{debug:=true} -> put(nkpacket_debug, true);
+                _ -> ok
+            end,
             nkpacket_transport:connect(Conns, Opts1);
         {error, Error} ->
             {error, Error}
@@ -647,8 +660,15 @@ resolve(Uri) ->
     {ok, [raw_connection()], map()} |
     {error, term()}.
 
-resolve(#uri{scheme=Scheme}=Uri, Opts) ->
-    #uri{domain=Host, path=Path, ext_opts=UriOpts, ext_headers=Headers} = Uri,
+resolve(#uri{}=Uri, Opts) ->
+    Uri2 = resolve_scheme(Uri, Opts),
+    #uri{
+        scheme = Scheme,
+        domain = Host, 
+        path = Path, 
+        ext_opts = UriOpts, 
+        ext_headers = Headers
+    } = Uri2,
     UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquote(V)} || {K, V} <- UriOpts],
     UriOpts2 = case Host of
         <<"0.0.0.0">> -> UriOpts1;
@@ -689,7 +709,7 @@ resolve(#uri{scheme=Scheme}=Uri, Opts) ->
             _ -> 
                 nkpacket:get_protocol(Scheme)
         end,
-        case nkpacket_dns:resolve(Uri, Opts2#{protocol=>Protocol}) of
+        case nkpacket_dns:resolve(Uri2, Opts2#{protocol=>Protocol}) of
             {ok, Addrs} ->
                 Conns = [ 
                     {Protocol, Transp, Addr, Port} 
@@ -709,6 +729,20 @@ resolve(Uri, Opts) ->
             resolve(Parsed, Opts);
         _ ->
             {error, {invalid_uri, Uri}}
+    end.
+
+
+%% @private
+resolve_scheme(#uri{scheme=Sc, opts=UriOpts}=Uri, Opts) ->
+    case maps:find(implicit_scheme, Opts) of
+        {ok, Sc} ->
+            Uri;
+        {ok, Forced} when Sc==tcp; Sc==tls; Sc==ws; Sc==wss; Sc==http; Sc==https ->
+            Uri#uri{scheme=Forced, opts=[{<<"transport">>, Sc}|UriOpts]};
+        {ok, Other} ->
+            throw({invalid_scheme, Other});
+        error ->
+            Uri
     end.
 
 

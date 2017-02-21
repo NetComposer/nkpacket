@@ -8,4 +8,8 @@ rel
 log
 .rebar
 _build
+<<<<<<< HEAD
 rebar.lock
+=======
+rebar.lock
+>>>>>>> develop
