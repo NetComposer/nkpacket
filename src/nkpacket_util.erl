@@ -18,10 +18,11 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @doc Common library utility funcions
+%% @doc Common library utility functions
 -module(nkpacket_util).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
+-export([get_plugin_net_syntax/1, get_plugin_net_opts/1]).
 -export([get_id/1, get_id/4]).
 -export([listen_print_all/0, conn_print_all/0]).
 -export([make_web_proto/1]).
@@ -39,6 +40,33 @@
 %% ===================================================================
 %% Public
 %% =================================================================
+
+%% @doc
+get_plugin_net_syntax(Syntax) ->
+    Syntax#{
+        ?TLS_SYNTAX,
+        ?PACKET_SYNTAX
+    }.
+
+get_plugin_net_opts(Config) ->
+    Data = lists:filtermap(
+        fun({Key, Val}) ->
+            case nklib_util:to_binary(Key) of
+                <<"packet_", Rest/binary>> ->
+                    {true, {nklib_util:to_existing_atom(Rest), Val}};
+                <<"tls_", _/binary>> ->
+                    {true, {Key, Val}};
+                _ ->
+                    false
+            end
+        end,
+        maps:to_list(Config)),
+    maps:from_list(Data).
+
+
+
+
+
 
 
 %% @doc
