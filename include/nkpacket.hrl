@@ -72,6 +72,24 @@
 ).
 
 
+%% packet_ prefix must be removed
+-define(PACKET_SYNTAX,
+    packet_idle_timeout => pos_integer,
+    packet_connect_timeout => nat_integer,
+    packet_sctp_out_streams => nat_integer,
+    packet_sctp_in_streams => nat_integer,
+    packet_no_dns_cache => boolean
+).
+
+-define(PACKET_TYPES,
+    packet_idle_timeout => integer()
+    packet_connect_timeout => integer(),
+    packet_sctp_out_streams => integer(),
+    packet_sctp_in_streams => integer,
+    packet_no_dns_cache => integer(),
+).
+
+
 %% ===================================================================
 %% Records
 %% ===================================================================

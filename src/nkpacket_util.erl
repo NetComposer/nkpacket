@@ -64,11 +64,6 @@ get_plugin_net_opts(Config) ->
     maps:from_list(Data).
 
 
-
-
-
-
-
 %% @doc
 -spec get_id(nkpacket:nkport()) ->
     nkpacket:listen_id().
