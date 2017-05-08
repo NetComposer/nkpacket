@@ -193,7 +193,7 @@ parse_opts(Opts) ->
             nkpacket_syntax:syntax()
     end,
     case nklib_syntax:parse(Opts, Syntax) of
-        {ok, Map, _, _} ->
+        {ok, Map, _} ->
             {ok, Map};
         {error, Error} ->
             {error, Error}
@@ -212,7 +212,7 @@ parse_uri_opts(UriOpts, Opts) ->
             nkpacket_syntax:uri_syntax()
     end,
     case nklib_syntax:parse(UriOpts, Syntax) of
-        {ok, Map, _, _} ->
+        {ok, Map, _} ->
             {ok, Map};
         {error, Error} ->
             {error, Error}
