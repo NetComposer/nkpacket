@@ -141,8 +141,6 @@ init([NkPort]) ->
         {ok, Socket}  ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
-            Id = binary_to_atom(nklib_util:hash({tcp, LocalIp, LocalPort}), latin1),
-            true = register(Id, self()),
             NkPort1 = NkPort#nkport{
                 local_ip = LocalIp,
                 local_port = LocalPort, 
@@ -163,7 +161,10 @@ init([NkPort]) ->
                 ],
                 ?MODULE,
                 [RanchPort]),
-            nklib_proc:put(nkpacket_listeners, {Id, Class}),
+            % We take the 'real' port (in case it is '0')
+            Name = nkpacket_util:get_id(NkPort1),
+            true = register(Name, self()),
+            nklib_proc:put(nkpacket_listeners, {Name, Class}),
             ConnMetaOpts = [tcp_packet | ?CONN_LISTEN_OPTS],
             % ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),

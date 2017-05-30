@@ -126,7 +126,7 @@ send(Pid, Ip, Port, Data) when is_pid(Pid) ->
 %% ===================================================================
 
 %% @private
-start_link(NkPort) -> 
+start_link(NkPort) ->
     gen_server:start_link(?MODULE, [NkPort], []).
 
 
@@ -200,9 +200,9 @@ init([NkPort]) ->
             _ ->
                 undefined
         end,
-        Id = binary_to_atom(nklib_util:hash({udp, LocalIp, LocalPort}), latin1),
-        true = register(Id, Self),
-        nklib_proc:put(nkpacket_listeners, {Id, Class}),
+        Name = nkpacket_util:get_id(NkPort1),
+        true = register(Name, self()),
+        nklib_proc:put(nkpacket_listeners, {Name, Class}),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},
         ListenType = case size(ListenIp) of

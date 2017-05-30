@@ -130,7 +130,6 @@ connect(NkPort) ->
 }).
 
 
-%% @private
 start_link(NkPort) ->
     gen_server:start_link(?MODULE, [NkPort], []).
     
@@ -172,9 +171,9 @@ init([NkPort]) ->
         Host = maps:get(host, Meta, any),
         Path = maps:get(path, Meta, any),
         WsProto = maps:get(ws_proto, Meta, any),
-        Id = binary_to_atom(nklib_util:hash({tcp, LocalIp, LocalPort, Path}), latin1),
-        true = register(Id, self()),
-        nklib_proc:put(nkpacket_listeners, {Id, Class}),
+        Name = nkpacket_util:get_id(ConnPort),
+        true = register(Name, self()),
+        nklib_proc:put(nkpacket_listeners, {Name, Class}),
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6

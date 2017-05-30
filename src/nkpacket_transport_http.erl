@@ -124,11 +124,10 @@ init([NkPort]) ->
             listen_port = Port1,
             socket = SharedPid,
             meta = ConnMeta
-        },   
-        Path = maps:get(path, Meta, <<>>),
-        Id = binary_to_atom(nklib_util:hash({tcp, Ip, Port1, Path}), latin1),
-        true = register(Id, self()),
-        nklib_proc:put(nkpacket_listeners, {Id, Class}),
+        },
+        Name = nkpacket_util:get_id(ConnPort),
+        true = register(Name, self()),
+        nklib_proc:put(nkpacket_listeners, {Name, Class}),
         % We don't yet support HTTP outgoing connections, but for the future...
         ListenType = case size(Ip) of
             4 -> nkpacket_listen4;

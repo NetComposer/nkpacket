@@ -68,7 +68,7 @@ get_plugin_net_opts(Config) ->
 -spec get_id(nkpacket:nkport()) ->
     nkpacket:listen_id().
 
-get_id(#nkport{transp=Transp, local_ip=Ip, local_port=Port, meta=Meta}) ->
+get_id(#nkport{transp=Transp, listen_ip=Ip, listen_port=Port, meta=Meta}) ->
     get_id(Transp, Ip, Port, Meta).
 
 
@@ -77,17 +77,17 @@ get_id(#nkport{transp=Transp, local_ip=Ip, local_port=Port, meta=Meta}) ->
     nkpacket:listen_id().
 
 get_id(Transp, Ip, Port, Meta) ->
-    {Sock, Res} = case Transp of
-        udp -> {udp, <<>>};
-        tcp -> {tcp, <<>>};
-        tls -> {tcp, <<>>};
-        sctp -> {sctp, <<>>};
+    Sock = case Transp of
+        udp -> udp;
+        tcp -> tcp;
+        tls -> tcp;
+        sctp -> sctp;
         ws -> {tcp, maps:get(path, Meta, <<>>)};
         wss -> {tcp, maps:get(path, Meta, <<>>)};
         http -> {tcp, maps:get(path, Meta, <<>>)};
         https -> {tcp, maps:get(path, Meta, <<>>)}
     end,
-    Bin = nklib_util:hash({Sock, Ip, Port, Res}),
+    Bin = nklib_util:hash({Sock, Ip, Port}),
     binary_to_atom(Bin, latin1).
 
 
