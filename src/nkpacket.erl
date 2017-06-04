@@ -703,7 +703,7 @@ resolve(#uri{}=Uri, Opts) ->
         _ ->
             case Pass of
                 <<>> -> [{user, User}|UriOpts2];
-                _ -> [{user, User}, {pass, Pass}|UriOpts2]
+                _ -> [{user, User}, {password, Pass}|UriOpts2]
             end
     end,
     UriOpts4 = case Path of

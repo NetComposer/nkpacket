@@ -117,6 +117,8 @@ uri_syntax() ->
         tcp_listeners => nat_integer,
         host => host,
         path => path,
+        user => binary,
+        password => binary,
         ws_proto => lower,
         tls_certfile => string,
         tls_keyfile => string,
