@@ -36,7 +36,7 @@
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
 -export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1, get_local_bin/1]).
 -export([get_meta/1, get_user/1]).
--export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2]).
+-export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2, parse_urls/3]).
 
 -export_type([listen_id/0, class/0, transport/0, protocol/0, nkport/0, netspec/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
@@ -682,6 +682,8 @@ resolve(#uri{}=Uri, Opts) ->
     Uri2 = resolve_scheme(Uri, Opts),
     #uri{
         scheme = Scheme,
+        user = User,
+        pass = Pass,
         domain = Host, 
         path = Path, 
         ext_opts = UriOpts, 
@@ -695,21 +697,30 @@ resolve(#uri{}=Uri, Opts) ->
         <<"all">> -> UriOpts1;
         _ -> [{host, Host}|UriOpts1]            % Host to listen on for WS/HTTP
     end,
-    UriOpts3 = case Path of
-        <<>> -> UriOpts2;
-        _ -> [{path, Path}|UriOpts2]            % Path to listen on for WS/HTTP
+    UriOpts3 = case User of
+        <<>> ->
+            UriOpts2;
+        _ ->
+            case Pass of
+                <<>> -> [{user, User}|UriOpts2];
+                _ -> [{user, User}, {pass, Pass}|UriOpts2]
+            end
     end,
-    UriOpts4 = case Headers of 
-        [] -> UriOpts3;
-        _ -> [{user, Headers}|UriOpts3]
+    UriOpts4 = case Path of
+        <<>> -> UriOpts3;
+        _ -> [{path, Path}|UriOpts3]            % Path to listen on for WS/HTTP
+    end,
+    UriOpts5 = case Headers of
+        [] -> UriOpts4;
+        _ -> [{user, Headers}|UriOpts4]
     end,
     try
-        UriOpts5 = case nkpacket_util:parse_uri_opts(UriOpts4, Opts) of
+        UriOpts6 = case nkpacket_util:parse_uri_opts(UriOpts5, Opts) of
             {ok, ParsedUriOpts} -> ParsedUriOpts;
             {error, Error1} -> throw(Error1) 
         end,
         Opts1 = case nkpacket_util:parse_opts(Opts) of
-            {ok, CoreOpts} -> maps:merge(UriOpts5, CoreOpts);
+            {ok, CoreOpts} -> maps:merge(UriOpts6, CoreOpts);
             {error, Error2} -> throw(Error2) 
         end,
         Opts2 = case Opts1 of
@@ -820,6 +831,53 @@ apply_nkport(Id, Fun) when is_pid(Id); is_atom(Id) ->
     end.
 
 
+%% @doc Parses an url that can use a Proto+Transports or uses Transport as Scheme
+-spec parse_urls(atom(), [atom()], term()) ->
+    {ok, [{[raw_connection()], map()}]} |
+    {error, term()}.
+
+parse_urls(Proto, Transports, Url) ->
+    case nklib_parse:uris(Url) of
+        error ->
+            {error, invalid_url};
+        List ->
+            case do_parse_urls(Proto, Transports, List, []) of
+                error ->
+                    {error, invalid_url};
+                List2 ->
+                    multi_resolve(List2, #{resolve_type=>listen})
+            end
+    end.
+
+
+
+%% @private
+do_parse_urls(_Proto, _Transports, [], Acc) ->
+    lists:reverse(Acc);
+
+do_parse_urls(Proto, Transports, [#uri{scheme=Proto, opts=Opts, ext_opts=ExtOpts}=Uri|Rest], Acc) ->
+    Transp1 = case nklib_util:get_value(<<"transport">>, Opts) of
+        undefined ->
+            nklib_util:get_value(<<"transport">>, ExtOpts);
+        T1 ->
+            T1
+    end,
+    Transp2 = (catch nklib_util:to_existing_atom(Transp1)),
+    case Transp2==undefined orelse lists:member(Transp2, Transports) of
+        true ->
+            do_parse_urls(Proto, Transports, Rest, [Uri|Acc]);
+        false ->
+            error
+    end;
+
+do_parse_urls(Proto, Transports, [#uri{scheme=Sc, ext_opts=Opts}=Uri|Rest], Acc) ->
+    case lists:member(Sc, Transports) of
+        true ->
+            Uri2 = Uri#uri{scheme=Proto, opts=[{<<"transport">>, Sc}|Opts]},
+            do_parse_urls(Proto, Transports, Rest, [Uri2|Acc]);
+        false ->
+            error
+    end.
 
 
 
