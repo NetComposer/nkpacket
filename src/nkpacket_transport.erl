@@ -215,8 +215,12 @@ do_send(_Msg, [], Opts) ->
 
 do_send(Msg, [Port|Rest], #{pre_send_fun:=Fun}=Opts) ->
     Msg1 = get_msg_fun(Fun, Msg, Port),
-    do_send(Msg1, [Port|Rest], maps:remove(pre_send_fun, Opts));
-
+    case do_send(Msg1, [Port|Rest], maps:remove(pre_send_fun, Opts)) of
+        { ok, _ } = Result ->
+            Result;
+        { error, Opts1 } ->
+            { error, Opts1#{ pre_send_fun => Fun } }
+    end;
 do_send(Msg, [Port|Rest], Opts) ->
     SendOpts = case maps:find(udp_max_size, Opts) of
         {ok, MaxSize} -> #{udp_max_size=>MaxSize};
