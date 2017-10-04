@@ -79,7 +79,7 @@ syntax() ->
         sctp_in_streams => nat_integer,
         no_dns_cache => boolean,
         refresh_fun => {function, 1},
-        valid_schemes => {list, atom},
+        %valid_schemes => {list, atom},
         udp_starts_tcp => boolean,
         udp_to_tcp => boolean,
         udp_max_size => nat_integer,            % Only used for sending packets

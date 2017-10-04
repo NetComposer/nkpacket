@@ -104,14 +104,15 @@
 -type listener_opts() ::
     #{
         % Common options
+        protocol => protocol(),                 % Force protocol (instead of guessing from url)
         class => class(),                       % Class (see above)
         user => term(),                         % User metadata
         parse_syntax => map(),                  % Allows to update the syntax
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
-        valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
-        implicit_scheme => nklib:scheme(),      % Allow using ws://...
+        %valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
+        %implicit_scheme => nklib:scheme(),      % Allow using ws://...
         debug => boolean(),
 
         % UDP options
@@ -150,6 +151,7 @@
     #{
         % Common options
         class => class(),                   % Class (see above)
+        protocol => protocol(),                 % Force protocol (instead of guessing from url)
         user => term(),                     % User metadata
         parse_syntax => map(),              % Allows to update the syntax
         monitor => atom() | pid(),          % Connection will monitor this
@@ -158,8 +160,8 @@
         idle_timeout => integer(),          % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
         base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
-        valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
-        implicit_scheme => nklib:scheme(),  % Allow using ws://...
+        %valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
+        %implicit_scheme => nklib:scheme(),  % Allow using ws://...
         debug => boolean(),
 
         % TCP/TLS/WS/WSS options
@@ -679,7 +681,7 @@ resolve(Uri) ->
     {error, term()}.
 
 resolve(#uri{}=Uri, Opts) ->
-    Uri2 = resolve_scheme(Uri, Opts),
+    %Uri2 = resolve_scheme(Uri, Opts),
     #uri{
         scheme = Scheme,
         user = User,
@@ -688,7 +690,7 @@ resolve(#uri{}=Uri, Opts) ->
         path = Path, 
         ext_opts = UriOpts, 
         ext_headers = Headers
-    } = Uri2,
+    } = Uri,
     UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquote(V)} || {K, V} <- UriOpts],
     UriOpts2 = case Host of
         <<"0.0.0.0">> -> UriOpts1;
@@ -723,28 +725,30 @@ resolve(#uri{}=Uri, Opts) ->
             {ok, CoreOpts} -> maps:merge(UriOpts6, CoreOpts);
             {error, Error2} -> throw(Error2) 
         end,
-        Opts2 = case Opts1 of
-            #{valid_schemes:=ValidSchemes} ->
-                case lists:member(Scheme, ValidSchemes) of
-                    true -> maps:remove(valid_schemes, Opts1);
-                    false -> throw({invalid_scheme, Scheme})
-                end;
-            _ ->
-                Opts1
-        end,
-        Protocol = case Opts2 of
+%%        Opts2 = case Opts1 of
+%%            #{valid_schemes:=ValidSchemes} ->
+%%                case lists:member(Scheme, ValidSchemes) of
+%%                    true -> maps:remove(valid_schemes, Opts1);
+%%                    false -> throw({invalid_scheme, Scheme})
+%%                end;
+%%            _ ->
+%%                Opts1
+%%        end,
+        Protocol = case Opts1 of
+            #{protocol:=Protocol0} ->
+                Protocol0;
             #{class:=Class} -> 
                 nkpacket:get_protocol(Class, Scheme);
             _ -> 
                 nkpacket:get_protocol(Scheme)
         end,
-        case nkpacket_dns:resolve(Uri2, Opts2#{protocol=>Protocol}) of
+        case nkpacket_dns:resolve(Uri, Opts1#{protocol=>Protocol}) of
             {ok, Addrs} ->
                 Conns = [ 
                     {Protocol, Transp, Addr, Port} 
                     || {Transp, Addr, Port} <- Addrs
                 ],
-                {ok, Conns, maps:remove(resolve_type, Opts2)};
+                {ok, Conns, maps:remove(resolve_type, Opts1)};
             {error, Error} ->
                 {error, Error}
         end
@@ -761,18 +765,18 @@ resolve(Uri, Opts) ->
     end.
 
 
-%% @private
-resolve_scheme(#uri{scheme=Sc, opts=UriOpts}=Uri, Opts) ->
-    case maps:find(implicit_scheme, Opts) of
-        {ok, Sc} ->
-            Uri;
-        {ok, Forced} when Sc==tcp; Sc==tls; Sc==ws; Sc==wss; Sc==http; Sc==https ->
-            Uri#uri{scheme=Forced, opts=[{<<"transport">>, Sc}|UriOpts]};
-        {ok, Other} ->
-            throw({invalid_scheme, Other});
-        error ->
-            Uri
-    end.
+%%%% @private
+%%resolve_scheme(#uri{scheme=Sc, opts=UriOpts}=Uri, Opts) ->
+%%    case maps:find(implicit_scheme, Opts) of
+%%        {ok, Sc} ->
+%%            Uri;
+%%        {ok, Forced} when Sc==tcp; Sc==tls; Sc==ws; Sc==wss; Sc==http; Sc==https ->
+%%            Uri#uri{scheme=Forced, opts=[{<<"transport">>, Sc}|UriOpts]};
+%%        {ok, Other} ->
+%%            throw({invalid_scheme, Other});
+%%        error ->
+%%            Uri
+%%    end.
 
 
 %% @private
