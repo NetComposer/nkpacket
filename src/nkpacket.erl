@@ -40,7 +40,7 @@
 
 -export_type([listen_id/0, class/0, transport/0, protocol/0, nkport/0, netspec/0]).
 -export_type([listener_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
--export_type([connection/0, raw_connection/0, send_spec/0]).
+-export_type([connection/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
 
 -include_lib("nklib/include/nklib.hrl").
@@ -139,7 +139,7 @@
         % WS/WSS
         ws_proto => string() | binary(),        % Listen only on this protocol
         % ws_opts => map(),                     % See nkpacket_connection_ws
-        %                                       % (i.e. #{compress=>true})
+                                                % (i.e. #{compress=>true})
         % HTTP/HTTPS
         http_proto => http_proto()
     }.
@@ -201,16 +201,12 @@
 
 %% Connection specification
 -type connection() :: 
-    nklib:uri() | raw_connection().
-
-
--type raw_connection() :: 
-    {protocol(), transport(), inet:ip_address(), inet:port_number()}.
+    nklib:uri() | netspec().
 
 
 %% Sending remote specification options
 -type send_spec() :: 
-    user_connection() | {current, raw_connection()} | {connect, raw_connection()} |
+    user_connection() | {current, netspec()} | {connect, netspec()} |
     pid() | nkport().
 
 
@@ -666,7 +662,7 @@ is_local_ip(Ip) ->
 
 %% @private
 -spec resolve(nklib:user_uri()) -> 
-    {ok, [raw_connection()], map()} |
+    {ok, [netspec()], map()} |
     {error, term()}.
 
 resolve(Uri) ->
@@ -675,7 +671,7 @@ resolve(Uri) ->
 
 %% @private
 -spec resolve(nklib:user_uri(), resolve_opts()) -> 
-    {ok, [raw_connection()], map()} |
+    {ok, [netspec()], map()} |
     {error, term()}.
 
 resolve(#uri{}=Uri, Opts) ->
@@ -777,7 +773,7 @@ resolve_scheme(#uri{scheme=Sc, opts=UriOpts}=Uri, Opts) ->
 
 %% @private
 -spec multi_resolve(nklib:user_uri()|[nklib:user_uri()]) -> 
-    {ok, [{[raw_connection()], map()}]} |
+    {ok, [{[netspec()], map()}]} |
     {error, term()}.
 
 multi_resolve(Uri) ->
@@ -786,7 +782,7 @@ multi_resolve(Uri) ->
 
 %% @private
 -spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], resolve_opts()) -> 
-    {ok, [{[raw_connection()], map()}]} |
+    {ok, [{[netspec()], map()}]} |
     {error, term()}.
    
 multi_resolve([], _Opts) ->
@@ -833,7 +829,7 @@ apply_nkport(Id, Fun) when is_pid(Id); is_atom(Id) ->
 
 %% @doc Parses an url that can use a Proto+Transports or uses Transport as Scheme
 -spec parse_urls(atom(), [atom()], term()) ->
-    {ok, [{[raw_connection()], map()}]} |
+    {ok, [{[netspec()], map()}]} |
     {error, term()}.
 
 parse_urls(Proto, Transports, Url) ->

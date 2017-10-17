@@ -56,7 +56,7 @@
 
 
 %% @private Finds a connected transport
--spec get_connected(nkpacket:raw_connection()) ->
+-spec get_connected(nkpacket:netspec()) ->
     [pid()].
 
 get_connected(Conn) ->
@@ -64,7 +64,7 @@ get_connected(Conn) ->
 
 
 %% @private Finds a connected transport
--spec get_connected(nkpacket:raw_connection(), map()) ->
+-spec get_connected(nkpacket:netspec(), map()) ->
     [pid()].
 
 get_connected({_Proto, Transp, _Ip, _Port}, _Opts) when Transp==http; Transp==https ->
@@ -267,7 +267,7 @@ get_msg_fun(Fun, Msg, Pid) when is_pid(Pid) ->
 
 
 %% @private Starts a new outbound connection.
--spec connect([nkpacket:raw_connection()], nkpacket:connect_opts()) ->
+-spec connect([nkpacket:netspec()], nkpacket:connect_opts()) ->
     {ok, nkpacket:nkport()} | {error, term()}.
 
 connect([], _Opts) ->
@@ -299,7 +299,7 @@ connect([Conn|Rest], Opts) ->
 %% @private Starts a new connection to a remote server
 %% Tries to find an associated listening transport, 
 %% to use the listening address, port and meta from it
--spec do_connect(nkpacket:raw_connection(), nkpacket:connect_opts()) ->
+-spec do_connect(nkpacket:netspec(), nkpacket:connect_opts()) ->
     {ok, pid()} | {error, term()}.
          
 do_connect({Protocol, Transp, Ip, Port}, Opts) ->
