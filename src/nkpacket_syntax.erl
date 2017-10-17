@@ -73,6 +73,7 @@ syntax() ->
     #{
         class => any,
         monitor => proc,
+        protocol => module,
         idle_timeout => pos_integer,
         connect_timeout => nat_integer,
         sctp_out_streams => nat_integer,
@@ -102,13 +103,13 @@ syntax() ->
         base_nkport => [boolean, {record, nkport}],
         ?TLS_SYNTAX,
         user => any,
-        debug => boolean,
-        parse_syntax => ignore
+        debug => boolean
     }.
 
 
 uri_syntax() ->
     #{
+        protocol => module,
         idle_timeout => pos_integer,
         connect_timeout => nat_integer,
         sctp_out_streams => nat_integer,

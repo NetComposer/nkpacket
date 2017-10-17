@@ -106,12 +106,12 @@
         % Common options
         class => class(),                       % Class (see above)
         user => term(),                         % User metadata
+        protocol => protocol(),                 % If not supplied, scheme must be registered
         parse_syntax => map(),                  % Allows to update the syntax. See bellow
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
-        implicit_scheme => nklib:scheme(),      % Allow using ws://...
         debug => boolean(),
 
         % UDP options
@@ -145,11 +145,13 @@
     }.
 
 %% NOTES
+%% -----
+%%
+%% - Each listener must follow a protocol() (see nkpacket_protocol)
+%%   If not supplied, it will be guessed from the scheme if it has been registered
+%%
 %% - if you use parse_syntax, that syntax will be added to nkpacket_syntax:syntax() when
 %%   parsing these options (to add new options)
-
-
-
 
 
 %% Options for connections
@@ -158,6 +160,7 @@
         % Common options
         class => class(),                   % Class (see above)
         user => term(),                     % User metadata
+        protocol => protocol(),             % If not supplied, scheme must be registered
         parse_syntax => map(),              % Allows to update the syntax. See above.
         monitor => atom() | pid(),          % Connection will monitor this
         connect_timeout => integer(),       % MSecs, default in config
@@ -166,7 +169,6 @@
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
         base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
         valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
-        implicit_scheme => nklib:scheme(),  % Allow using ws://...
         debug => boolean(),
 
         % TCP/TLS/WS/WSS options
@@ -196,8 +198,10 @@
 %% Options for resolving
 -type resolve_opts() ::
     #{
-        resolve_type => listen | connect
-    }                                      % used to process options
+        resolve_type =>
+            listen |                    % Do not attempt SRV or NAPTR to resolve host
+            connect                     % Try SRV/NAPTR if port=0
+    }
     | listen_opts()
     | send_opts().
 
@@ -548,6 +552,7 @@ connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts
 connect(Uri, Opts) when is_map(Opts) ->
     case resolve(Uri, Opts) of
         {ok, Conns, Opts1} ->
+            lager:error("NKLOG RR ~p ~p", [Conns, Opts1]),
             connect(Conns, Opts1);
         {error, Error} ->
             {error, Error}
@@ -669,6 +674,13 @@ is_local_ip(Ip) ->
 %% Internal
 %% ===================================================================
 
+%% Resolving an user_uri()
+%% -----------------------
+%%
+%% - This function converts an user_uri() into a serie of netspec() specifications, and
+%%   updates the options in resolve_opts() adding info found in the uri
+%%   (see nkpacket_syntax:uri_syntax())
+%%   Options in resolve_opts() have higher priority to them found in the Uri
 
 
 %% @private
@@ -686,7 +698,6 @@ resolve(Uri) ->
     {error, term()}.
 
 resolve(#uri{}=Uri, Opts) ->
-    Uri2 = resolve_scheme(Uri, Opts),
     #uri{
         scheme = Scheme,
         user = User,
@@ -695,57 +706,68 @@ resolve(#uri{}=Uri, Opts) ->
         path = Path, 
         ext_opts = UriOpts, 
         ext_headers = Headers
-    } = Uri2,
+    } = Uri,
     UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquote(V)} || {K, V} <- UriOpts],
+    % Let's see if we want to listen or connect to a specific host
     UriOpts2 = case Host of
-        <<"0.0.0.0">> -> UriOpts1;
-        <<"0:0:0:0:0:0:0:0">> -> UriOpts1;
-        <<"::0">> -> UriOpts1;
-        <<"all">> -> UriOpts1;
-        _ -> [{host, Host}|UriOpts1]            % Host to listen on for WS/HTTP
+        <<"0.0.0.0">> ->
+            UriOpts1;
+        <<"0:0:0:0:0:0:0:0">> ->
+            UriOpts1;
+        <<"::0">> ->
+            UriOpts1;
+        <<"all">> ->
+            UriOpts1;
+        _ ->
+            [{host, Host}|UriOpts1]            % Host to listen on for WS/HTTP
     end,
     UriOpts3 = case User of
         <<>> ->
             UriOpts2;
         _ ->
             case Pass of
-                <<>> -> [{user, User}|UriOpts2];
-                _ -> [{user, User}, {password, Pass}|UriOpts2]
+                <<>> ->
+                    [{user, User}|UriOpts2];
+                _ ->
+                    [{user, User}, {password, Pass}|UriOpts2]
             end
     end,
     UriOpts4 = case Path of
-        <<>> -> UriOpts3;
-        _ -> [{path, Path}|UriOpts3]            % Path to listen on for WS/HTTP
+        <<>> ->
+            UriOpts3;
+        _ ->
+            [{path, Path}|UriOpts3]            % Path to listen on for WS/HTTP
     end,
     UriOpts5 = case Headers of
-        [] -> UriOpts4;
-        _ -> [{user, Headers}|UriOpts4]
+        [] ->
+            UriOpts4;
+        _ ->
+            [{user, Headers}|UriOpts4]          % TODO Is this right?
     end,
     try
+        % Opts is used here only for parse_syntax
         UriOpts6 = case nkpacket_util:parse_uri_opts(UriOpts5, Opts) of
-            {ok, ParsedUriOpts} -> ParsedUriOpts;
-            {error, Error1} -> throw(Error1) 
+            {ok, ParsedUriOpts} ->
+                ParsedUriOpts;
+            {error, Error1} ->
+                throw(Error1)
         end,
-        Opts1 = case nkpacket_util:parse_opts(Opts) of
-            {ok, CoreOpts} -> maps:merge(UriOpts6, CoreOpts);
-            {error, Error2} -> throw(Error2) 
+        Opts2 = case nkpacket_util:parse_opts(Opts) of
+            {ok, CoreOpts} ->
+                maps:merge(UriOpts6, CoreOpts);
+            {error, Error2} ->
+                throw(Error2)
         end,
-        Opts2 = case Opts1 of
-            #{valid_schemes:=ValidSchemes} ->
-                case lists:member(Scheme, ValidSchemes) of
-                    true -> maps:remove(valid_schemes, Opts1);
-                    false -> throw({invalid_scheme, Scheme})
-                end;
-            _ ->
-                Opts1
-        end,
+        % Now we have all the options, from the uri and the supplied options
         Protocol = case Opts2 of
-            #{class:=Class} -> 
+            #{protocol:=UserProtocol} ->
+                UserProtocol;
+            #{class:=Class} ->
                 nkpacket:get_protocol(Class, Scheme);
             _ -> 
                 nkpacket:get_protocol(Scheme)
         end,
-        case nkpacket_dns:resolve(Uri2, Opts2#{protocol=>Protocol}) of
+        case nkpacket_dns:resolve(Uri, Opts2#{protocol=>Protocol}) of
             {ok, Addrs} ->
                 Conns = [ 
                     {Protocol, Transp, Addr, Port} 
@@ -767,19 +789,6 @@ resolve(Uri, Opts) ->
             {error, {invalid_uri, Uri}}
     end.
 
-
-%% @private
-resolve_scheme(#uri{scheme=Sc, opts=UriOpts}=Uri, Opts) ->
-    case maps:find(implicit_scheme, Opts) of
-        {ok, Sc} ->
-            Uri;
-        {ok, Forced} when Sc==tcp; Sc==tls; Sc==ws; Sc==wss; Sc==http; Sc==https ->
-            Uri#uri{scheme=Forced, opts=[{<<"transport">>, Sc}|UriOpts]};
-        {ok, Other} ->
-            throw({invalid_scheme, Other});
-        error ->
-            Uri
-    end.
 
 
 %% @private

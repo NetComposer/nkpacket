@@ -201,12 +201,13 @@ parse_opts(Opts) ->
 
 
 %% @private
--spec parse_uri_opts(map()|list(), map()|list()) ->
+-spec parse_uri_opts(map()|list(), #{parse_syntax=>map()}) ->
     {ok, map()} | {error, term()}.
 
 parse_uri_opts(UriOpts, Opts) ->
     Syntax = case Opts of
-        #{syntax:=UserSyntax} -> 
+        % It was syntax...
+        #{parse_syntax:=UserSyntax} ->
             maps:merge(UserSyntax, nkpacket_syntax:uri_syntax());
         _ ->
             nkpacket_syntax:uri_syntax()

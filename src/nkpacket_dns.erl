@@ -61,13 +61,23 @@ resolve(Uri) ->
 
 
 %% @doc Finds transports, ips and ports to try for `Uri', following RFC3263
+%%
+%%
 %% If the option 'protocol' is used, it must be a NkPACKET protocol, and will
 %% be used for:
+%%
 %% - get default transports
+%%      - function Protocol:transports(Scheme) must return a list of valid transports
+%%      - supplied "transport" options must fit
+%%      - if no transport is found, the first of the list is selected
+%       - if function is not exported, but the scheme is a valid transport, it is used as so
 %% - get default ports
+%%      - function Protocol:default_port(Transp) is called if no port is used in url
 %% - perform NAPTR queries
 %%
--spec resolve(nklib:user_uri(), opts()) -> 
+%% If resolve_type = listen, no NAPTR o SRV address resolution is attempted
+
+-spec resolve(nklib:user_uri(), opts()) ->
     {ok, [{uri_transp(), inet:ip_address(), inet:port_number()}]}.
 
 resolve([], _Opts) ->
@@ -434,17 +444,37 @@ get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
                             Transp;
                         false -> 
                             case lists:keyfind(Transp, 1, Valid) of
-                                {Transp, NewTransp} -> NewTransp;
-                                _ -> throw({invalid_transport, Transp})
+                                {Transp, NewTransp} ->
+                                    NewTransp;
+                                _ ->
+                                    throw({invalid_transport, Transp})
                             end
                     end
             end;
+        false when Transp==undefined ->
+            get_standard_transp(Scheme);
         false ->
             Transp
     end;
 
+% No protocol
+get_transp(Scheme, undefined, _Opts) ->
+    get_standard_transp(Scheme);
+
 get_transp(_Scheme, Transp, _Opts) ->
     Transp.
+
+
+%% @private
+get_standard_transp(udp) -> udp;
+get_standard_transp(tcp) -> tcp;
+get_standard_transp(tls) -> tls;
+get_standard_transp(sctp) -> sctp;
+get_standard_transp(http) -> http;
+get_standard_transp(https) -> https;
+get_standard_transp(ws) -> ws;
+get_standard_transp(wss) -> wss;
+get_standard_transp(_) -> undefined.
 
 
 %% @private
@@ -453,8 +483,10 @@ get_port(0, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
         true ->
             % lager:warning("P: ~p, ~p", [Protocol, Transp]),
             case Protocol:default_port(Transp) of
-                Port when is_integer(Port) -> Port;
-                _ -> throw({invalid_transport, Transp})
+                Port when is_integer(Port) ->
+                    Port;
+                _ ->
+                    throw({invalid_transport, Transp})
             end;
         false ->
             0
