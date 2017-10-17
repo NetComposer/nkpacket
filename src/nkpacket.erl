@@ -39,7 +39,7 @@
 -export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2, parse_urls/3]).
 
 -export_type([listen_id/0, class/0, transport/0, protocol/0, nkport/0, netspec/0]).
--export_type([listener_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
+-export_type([listen_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connection/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
 
@@ -101,12 +101,12 @@
         }}.
 
 %% Options for listeners
--type listener_opts() ::
+-type listen_opts() ::
     #{
         % Common options
         class => class(),                       % Class (see above)
         user => term(),                         % User metadata
-        parse_syntax => map(),                  % Allows to update the syntax
+        parse_syntax => map(),                  % Allows to update the syntax. See bellow
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
@@ -144,6 +144,13 @@
         http_proto => http_proto()
     }.
 
+%% NOTES
+%% - if you use parse_syntax, that syntax will be added to nkpacket_syntax:syntax() when
+%%   parsing these options (to add new options)
+
+
+
+
 
 %% Options for connections
 -type connect_opts() ::
@@ -151,7 +158,7 @@
         % Common options
         class => class(),                   % Class (see above)
         user => term(),                     % User metadata
-        parse_syntax => map(),              % Allows to update the syntax
+        parse_syntax => map(),              % Allows to update the syntax. See above.
         monitor => atom() | pid(),          % Connection will monitor this
         connect_timeout => integer(),       % MSecs, default in config
         no_dns_cache => boolean(),          % Avoid DNS cache
@@ -191,13 +198,14 @@
     #{
         resolve_type => listen | connect
     }                                      % used to process options
-    | listener_opts()
+    | listen_opts()
     | send_opts().
 
 
 %% Connection specification
 -type user_connection() :: 
     nklib:user_uri() | connection().
+
 
 %% Connection specification
 -type connection() :: 
@@ -233,7 +241,10 @@
 %% ===================================================================
 
 
-%% doc Registers a new 'default' protocol
+%% @doc Registers a new 'default' protocol (using 'none' domain)
+%% Protocols are used only in resolve/2
+%% If one is registered, you can use scheme://... and the corresponding protocol will be used
+%% If you use register_protocol/3, with a class, 'class' option will be used when calling resolve/2
 -spec register_protocol(nklib:scheme(), nkpacket:protocol()) ->
     ok.
 
@@ -242,7 +253,7 @@ register_protocol(Scheme, Protocol) when is_atom(Scheme), is_atom(Protocol) ->
     nklib_config:put(nkpacket, {protocol, Scheme}, Protocol).
 
 
-%% doc Registers a new protocol for an specific class
+%% @doc Registers a new protocol for an specific class (using it as domain)
 -spec register_protocol(class(), nklib:scheme(), protocol()) ->
     ok.
 
@@ -262,7 +273,7 @@ get_protocol(Class, Scheme) ->
 
 
 %% @doc Starts a new listening transport.
--spec start_listener(user_connection(), listener_opts()) ->
+-spec start_listener(user_connection(), listen_opts()) ->
     {ok, listen_id()} | {error, term()}.
 
 start_listener(UserConn, Opts) ->
@@ -281,7 +292,7 @@ start_listener(UserConn, Opts) ->
 
 
 %% @doc Gets a listening supervisor specification
--spec get_listener(user_connection(), listener_opts()) ->
+-spec get_listener(user_connection(), listen_opts()) ->
     {ok, supervisor:child_spec()} | {error, term()}.
 
 get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->

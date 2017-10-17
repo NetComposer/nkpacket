@@ -81,16 +81,16 @@ stop(_) ->
 
 %% Config Management
 get(Key) ->
-    nklib_config:get(nkpacket, Key).
+    nklib_config:get(?APP, Key).
 
 get(Key, Default) ->
-    nklib_config:get(nkpacket, Key, Default).
+    nklib_config:get(?APP, Key, Default).
 
 get_srv(Class, Key) ->
-    nklib_config:get_domain(nkpacket, Class, Key).
+    nklib_config:get_domain(?APP, Class, Key).
 
 put(Key, Val) ->
-    nklib_config:put(nkpacket, Key, Val).
+    nklib_config:put(?APP, Key, Val).
 
 
 %% @private

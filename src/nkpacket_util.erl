@@ -150,7 +150,7 @@ tls_keys() ->
     maps:keys(#{?TLS_SYNTAX}).
 
 %% @private
--spec make_web_proto(nkpacket:listener_opts()) ->
+-spec make_web_proto(nkpacket:listen_opts()) ->
     nkpacket:http_proto().
 
 make_web_proto(#{http_proto:={static, #{path:=DirPath}=Static}}=Opts) ->
