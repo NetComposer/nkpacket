@@ -564,7 +564,6 @@ connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts
 connect(Uri, Opts) when is_map(Opts) ->
     case resolve(Uri, Opts) of
         {ok, Conns, Opts1} ->
-            lager:error("NKLOG RR ~p ~p", [Conns, Opts1]),
             connect(Conns, Opts1);
         {error, Error} ->
             {error, Error}
@@ -779,13 +778,14 @@ resolve(#uri{}=Uri, Opts) ->
             _ -> 
                 nkpacket:get_protocol(Scheme)
         end,
+        Opts3 = maps:without([resolve_type, protocol], Opts2),
         case nkpacket_dns:resolve(Uri, Opts2#{protocol=>Protocol}) of
             {ok, Addrs} ->
                 Conns = [ 
                     {Protocol, Transp, Addr, Port} 
                     || {Transp, Addr, Port} <- Addrs
                 ],
-                {ok, Conns, Opts2};
+                {ok, Conns, Opts3};
             {error, Error} ->
                 {error, Error}
         end
