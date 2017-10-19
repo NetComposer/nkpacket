@@ -426,14 +426,22 @@ transp(Other) ->
         Atom -> transp(Atom)
     end.
 
+%% @private
+%% If we set no transport, and the scheme is valid transport, use it
+get_transp(Scheme, undefined, Opts)
+        when Scheme==udp; Scheme==tcp; Scheme==tls; Scheme==sctp; Scheme==http; Scheme==https;
+             Scheme==ws; Scheme==wss ->
+    get_transp(Scheme, Scheme, Opts);
 
 %% @private
 get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
     case erlang:function_exported(Protocol, transports, 1) of
         true ->
+            % We have a set of valid transports
             Valid = Protocol:transports(Scheme),
             case Transp of
                 undefined ->
+                    % If no transports (and no standard scheme) use the first valid one
                     case Valid of
                         [Transp1|_] -> Transp1;
                         [] -> undefined
@@ -451,30 +459,24 @@ get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
                             end
                     end
             end;
-        false when Transp==undefined ->
-            get_standard_transp(Scheme);
         false ->
             Transp
     end;
-
-% No protocol
-get_transp(Scheme, undefined, _Opts) ->
-    get_standard_transp(Scheme);
 
 get_transp(_Scheme, Transp, _Opts) ->
     Transp.
 
 
-%% @private
-get_standard_transp(udp) -> udp;
-get_standard_transp(tcp) -> tcp;
-get_standard_transp(tls) -> tls;
-get_standard_transp(sctp) -> sctp;
-get_standard_transp(http) -> http;
-get_standard_transp(https) -> https;
-get_standard_transp(ws) -> ws;
-get_standard_transp(wss) -> wss;
-get_standard_transp(_) -> undefined.
+%%%% @private
+%%get_standard_transp(udp) -> udp;
+%%get_standard_transp(tcp) -> tcp;
+%%get_standard_transp(tls) -> tls;
+%%get_standard_transp(sctp) -> sctp;
+%%get_standard_transp(http) -> http;
+%%get_standard_transp(https) -> https;
+%%get_standard_transp(ws) -> ws;
+%%get_standard_transp(wss) -> wss;
+%%get_standard_transp(_) -> undefined.
 
 
 %% @private

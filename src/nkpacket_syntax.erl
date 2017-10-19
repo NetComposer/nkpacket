@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([app_syntax/0]).
--export([syntax/0, uri_syntax/0, tls_syntax/0, tls_defaults/0]).
+-export([syntax/0, safe_syntax/0, tls_syntax/0, tls_defaults/0, packet_syntax/0]).
 -export([spec_http_proto/3, spec_headers/1]).
 
 -include("nkpacket.hrl").
@@ -49,7 +49,6 @@ app_syntax() ->
         main_ip6 => [ip6, {atom, [auto]}],
         ext_ip => [ip4, {atom, [auto]}],
         ext_ip6 => [ip6, {atom, [auto]}],
-        ?TLS_SYNTAX,
         '__defaults' => #{
             max_connections =>  1024,
             dns_cache_ttl => 30000,                 % msecs
@@ -70,7 +69,7 @@ app_syntax() ->
 
 
 syntax() ->
-    #{
+    Base = #{
         class => any,
         monitor => proc,
         protocol => module,
@@ -80,7 +79,6 @@ syntax() ->
         sctp_in_streams => nat_integer,
         no_dns_cache => boolean,
         refresh_fun => {function, 1},
-        valid_schemes => {list, atom},
         udp_starts_tcp => boolean,
         udp_to_tcp => boolean,
         udp_max_size => nat_integer,            % Only used for sending packets
@@ -101,39 +99,63 @@ syntax() ->
         pre_send_fun => {function, 2},
         resolve_type => {atom, [listen, connect]},
         base_nkport => [boolean, {record, nkport}],
-        ?TLS_SYNTAX,
         user => any,
         debug => boolean
-    }.
+    },
+    add_tls_syntax(Base).
 
 
-uri_syntax() ->
+safe_syntax() ->
+    Opts = [
+        idle_timeout,
+        connect_timeout,
+        no_dns_cache,
+        udp_max_size,
+        tcp_packet,
+        host,
+        path,
+        get_headers,
+        ws_proto,
+        debug
+    ] ++ maps:keys(tls_syntax()),
+    Syntax = syntax(),
+    maps:with(Opts, Syntax).
+
+
+
+%%uri_syntax() ->
+%%    #{
+%%        idle_timeout => pos_integer,
+%%        connect_timeout => nat_integer,
+%%        no_dns_cache => boolean,
+%%        host => host,
+%%        path => path,
+%%        %user => binary,
+%%        %password => binary,
+%%        ws_proto => lower,
+%%        tls_certfile => string,
+%%        tls_keyfile => string,
+%%        tls_cacertfile => string,
+%%        tls_password => string,
+%%        tls_verify => boolean,
+%%        tls_depth => {integer, 0, 16}
+%%    }.
+
+
+tls_syntax() ->
     #{
-        protocol => module,
-        idle_timeout => pos_integer,
-        connect_timeout => nat_integer,
-        sctp_out_streams => nat_integer,
-        sctp_in_streams => nat_integer,
-        no_dns_cache => boolean,
-        tcp_listeners => nat_integer,
-        host => host,
-        path => path,
-        user => binary,
-        password => binary,
-        ws_proto => lower,
         tls_certfile => string,
         tls_keyfile => string,
         tls_cacertfile => string,
         tls_password => string,
         tls_verify => boolean,
-        tls_depth => {integer, 0, 16}
+        tls_depth => {integer, 0, 16},
+        tls_versions => {list, atom}
     }.
 
 
-tls_syntax() ->
-    #{
-        ?TLS_SYNTAX
-    }.
+add_tls_syntax(Syntax) ->
+    maps:merge(Syntax, tls_syntax()).
 
 
 tls_defaults() ->
@@ -148,7 +170,17 @@ tls_defaults() ->
     end,
     %% Avoid SSLv3
     Base#{versions => ['tlsv1.2', 'tlsv1.1', 'tlsv1']}.
-    
+
+
+packet_syntax() ->
+    #{
+        packet_idle_timeout => pos_integer,
+        packet_connect_timeout => nat_integer,
+        packet_sctp_out_streams => nat_integer,
+        packet_sctp_in_streams => nat_integer,
+        packet_no_dns_cache => boolean
+    }.
+
 
 
 %% @private

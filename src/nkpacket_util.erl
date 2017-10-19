@@ -43,10 +43,12 @@
 
 %% @doc
 get_plugin_net_syntax(Syntax) ->
-    Syntax#{
-        ?TLS_SYNTAX,
-        ?PACKET_SYNTAX
-    }.
+    S0 = maps:merge(
+        nkpacket_syntax:tls_syntax(),
+        nkpacket_syntax:packet_syntax()
+    ),
+    maps:merge(Syntax, S0).
+
 
 get_plugin_net_opts(Config) ->
     Data = lists:filtermap(
@@ -147,7 +149,8 @@ make_tls_opts(Opts) ->
 
 
 tls_keys() ->
-    maps:keys(#{?TLS_SYNTAX}).
+    maps:keys(nkpacket_syntax:tls_syntax()).
+
 
 %% @private
 -spec make_web_proto(nkpacket:listen_opts()) ->
@@ -205,13 +208,8 @@ parse_opts(Opts) ->
     {ok, map()} | {error, term()}.
 
 parse_uri_opts(UriOpts, Opts) ->
-    Syntax = case Opts of
-        % It was syntax...
-        #{parse_syntax:=UserSyntax} ->
-            maps:merge(UserSyntax, nkpacket_syntax:uri_syntax());
-        _ ->
-            nkpacket_syntax:uri_syntax()
-    end,
+    Base = maps:get(parse_syntax, Opts, #{}),
+    Syntax = maps:merge(Base, nkpacket_syntax:safe_syntax()),
     case nklib_syntax:parse(UriOpts, Syntax) of
         {ok, Map, _} ->
             {ok, Map};

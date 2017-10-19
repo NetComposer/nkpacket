@@ -51,43 +51,14 @@
     ?DO_LOG(error, Domain, Text, List)).
 
 
--define(TLS_SYNTAX,
-    tls_certfile => string,
-    tls_keyfile => string,
-    tls_cacertfile => string,
-    tls_password => string,
-    tls_verify => boolean,
-    tls_depth => {integer, 0, 16},
-    tls_versions => {list, atom}
-).
 
--define(TLS_TYPES,
-    tls_certfile => string(),
-    tls_keyfile => string(),
-    tls_cacertfile => string(),
-    tls_password => string(),
-    tls_verify => boolean(),
-    tls_depth => 0..16,
-    tls_versions => [atom()]
-).
-
-
-%% packet_ prefix must be removed
--define(PACKET_SYNTAX,
-    packet_idle_timeout => pos_integer,
-    packet_connect_timeout => nat_integer,
-    packet_sctp_out_streams => nat_integer,
-    packet_sctp_in_streams => nat_integer,
-    packet_no_dns_cache => boolean
-).
-
--define(PACKET_TYPES,
-    packet_idle_timeout => integer()
-    packet_connect_timeout => integer(),
-    packet_sctp_out_streams => integer(),
-    packet_sctp_in_streams => integer,
-    packet_no_dns_cache => integer(),
-).
+%%-define(PACKET_TYPES,
+%%    packet_idle_timeout => integer()
+%%    packet_connect_timeout => integer(),
+%%    packet_sctp_out_streams => integer(),
+%%    packet_sctp_in_streams => integer,
+%%    packet_no_dns_cache => integer(),
+%%).
 
 
 %% ===================================================================

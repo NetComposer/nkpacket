@@ -111,7 +111,6 @@
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
-        valid_schemes => [nklib:scheme()],       % Fail if not valid protocol (for URIs)
         debug => boolean(),
 
         % UDP options
@@ -128,7 +127,6 @@
         tcp_packet => 1 | 2 | 4 | raw,          %
         tcp_max_connections => integer(),       % Default 1024
         tcp_listeners => integer(),             % Default 100
-        ?TLS_TYPES,
 
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
@@ -142,7 +140,9 @@
                                                 % (i.e. #{compress=>true})
         % HTTP/HTTPS
         http_proto => http_proto()
-    }.
+    }
+    | tls_types().
+
 
 %% NOTES
 %% -----
@@ -168,19 +168,31 @@
         idle_timeout => integer(),          % MSecs, default in config
         refresh_fun => fun((nkport()) -> boolean()),   % Will be called on timeout
         base_nkport => boolean()| nkport(), % Select (or disables auto) base NkPort
-        valid_schemes => [nklib:scheme()],  % Fail if not valid protocol (for URIs)
         debug => boolean(),
 
         % TCP/TLS/WS/WSS options
         tcp_packet => 1 | 2 | 4 | raw,    
-        ?TLS_TYPES,
 
         % WS/WSS
         host => string() | binary(),        % Host header to use
         path => string() | binary(),        % Path to use
         ws_proto => string() | binary(),    % Proto to use
         headers => [{string()|binary(), string()|binary()}]
+    }
+    | tls_types().
+
+
+-type tls_types() ::
+    #{
+        tls_certfile => string(),
+        tls_keyfile => string(),
+        tls_cacertfile => string(),
+        tls_password => string(),
+        tls_verify => boolean(),
+        tls_depth => 0..16,
+        tls_versions => [atom()]
     }.
+
 
 
 %% Options for sending
@@ -677,7 +689,7 @@ is_local_ip(Ip) ->
 %% Resolving an user_uri()
 %% -----------------------
 %%
-%% - This function converts an user_uri() into a serie of netspec() specifications, and
+%% - This function converts an user_uri() into a series of netspec() specifications, and
 %%   updates the options in resolve_opts() adding info found in the uri
 %%   (see nkpacket_syntax:uri_syntax())
 %%   Options in resolve_opts() have higher priority to them found in the Uri
@@ -773,7 +785,7 @@ resolve(#uri{}=Uri, Opts) ->
                     {Protocol, Transp, Addr, Port} 
                     || {Transp, Addr, Port} <- Addrs
                 ],
-                {ok, Conns, maps:remove(resolve_type, Opts2)};
+                {ok, Conns, Opts2};
             {error, Error} ->
                 {error, Error}
         end
