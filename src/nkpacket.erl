@@ -313,25 +313,30 @@ start_listener(UserConn, Opts) ->
 
 get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
     case nkpacket_util:parse_opts(Opts) of
-        {ok, Opts1} ->
-            Opts2 = case Transp==http orelse Transp==https of
-                true ->
-                    WebProto = nkpacket_util:make_web_proto(Opts1),
-                    Opts1#{http_proto=>WebProto};
-                _ ->
-                    Opts1
-            end,
-            % We cannot yet generate id, port can be 0
-            NkPort = #nkport{
-                id = maps:get(id, Opts2),
-                class = maps:get(class, Opts2, none),
-                protocol = Protocol,
-                transp = Transp,
-                listen_ip = Ip,
-                listen_port = Port,
-                meta = Opts2
-            },
-            nkpacket_transport:get_listener(NkPort);
+        {ok, #{id:=Id}=Opts1} ->
+            case pid(Id) of
+                undefined ->
+                    Opts2 = case Transp==http orelse Transp==https of
+                        true ->
+                            WebProto = nkpacket_util:make_web_proto(Opts1),
+                            Opts1#{http_proto=>WebProto};
+                        _ ->
+                            Opts1
+                    end,
+                    % We cannot yet generate id, port can be 0
+                    NkPort = #nkport{
+                        id = maps:get(id, Opts2),
+                        class = maps:get(class, Opts2, none),
+                        protocol = Protocol,
+                        transp = Transp,
+                        listen_ip = Ip,
+                        listen_port = Port,
+                        meta = Opts2
+                    },
+                    nkpacket_transport:get_listener(NkPort);
+                Pid ->
+                    {error, {already_started, Pid}}
+            end;
         {error, Error} ->
             {error, Error}
     end;
