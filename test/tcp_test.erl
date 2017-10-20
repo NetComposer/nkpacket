@@ -46,12 +46,10 @@ tcp_test_() ->
 
 basic() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	{ok, LTcp1} = nkpacket:start_listener({test_protocol, tcp, {0,0,0,0}, 0},
+	{ok, Tcp1} = nkpacket:start_listener({test_protocol, tcp, {0,0,0,0}, 0},
 						   			     M1#{class=>dom1, idle_timeout=>1000}),
-	Tcp1 = whereis(LTcp1),
-	{ok, LTcp2} = nkpacket:start_listener({test_protocol, tcp, {0,0,0,0}, 0},
+	{ok, Tcp2} = nkpacket:start_listener({test_protocol, tcp, {0,0,0,0}, 0},
 						   			     M2#{class=>dom2}),
-	Tcp2 = whereis(LTcp2),	
 	timer:sleep(100),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
@@ -123,10 +121,9 @@ basic() ->
 tls() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	ok = nkpacket:register_protocol(test, test_protocol),
-	{ok, LTls1} = nkpacket:start_listener({test_protocol, tls, {0,0,0,0}, 0},
+	{ok, Tls1} = nkpacket:start_listener({test_protocol, tls, {0,0,0,0}, 0},
 						   			     M1#{class=>dom1, tcp_listeners=>1}),
-	Tls1 = whereis(LTls1),
-	{ok, {_, _, _, ListenPort1}} = nkpacket:get_local(Tls1),	
+	{ok, {_, _, _, ListenPort1}} = nkpacket:get_local(Tls1),
 	case ListenPort1 of
 		1236 -> ok;
 		_ -> lager:warning("Could not open port 1236")
@@ -183,7 +180,8 @@ tls() ->
 
 	% Wait for the timeout
 	timer:sleep(1500),
-	[LTls1] = nkpacket:get_all(),
+	[IdTls1] = nkpacket:get_all(),
+	Tls1 = nkpacket:pid(IdTls1),
 	ok = nkpacket:stop_listener(Tls1),
 	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_stop} -> ok after 1000 -> error(?LINE) end,

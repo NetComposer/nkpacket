@@ -271,20 +271,16 @@ multi() ->
 	% Listener 2 on {0,0,0,0}, all hosts, path /dom2
 	% Listener 3 on {0,0,0,0}, localhost, path /dom3 and proto 'proto1'
 
-	{ok, LWs1} = nkpacket:start_listener({test_protocol, ws, {0,0,0,0}, 0},
+	{ok, Ws1} = nkpacket:start_listener({test_protocol, ws, {0,0,0,0}, 0},
 						   			    M1#{class=>dom1, path=>"/dom1/more"}),
-	Ws1 = whereis(LWs1),
 	{ok, {_, ws, {0,0,0,0}, P1}} = nkpacket:get_local(Ws1),
 	P1S = integer_to_list(P1),
 
-	{ok, LWs2} = nkpacket:start_listener("<test://all:"++P1S++"/dom2;transport=ws>",
+	{ok, Ws2} = nkpacket:start_listener("<test://all:"++P1S++"/dom2;transport=ws>",
 										M2#{class=>dom2, idle_timeout=>1000}),
-	Ws2 = whereis(LWs2),
-
 	Url3 = "test://all:"++P1S++"/any;transport=ws;host=localhost; path= \"dom3\"; "
 		 "ws_proto=proto1",
-	{ok, LWs3} = nkpacket:start_listener(Url3, M3#{class=>dom3}),
-	Ws3 = whereis(LWs3),
+	{ok, Ws3} = nkpacket:start_listener(Url3, M3#{class=>dom3}),
 
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,

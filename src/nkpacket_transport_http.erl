@@ -40,10 +40,10 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=Transp}=NkPort) 
+get_listener(#nkport{id=Id, transp=Transp}=NkPort)
         when Transp==http; Transp==https ->
     {
-        {{Transp, Ip, Port}, make_ref()},
+        Id,
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -106,9 +106,9 @@ init([NkPort]) ->
         },
         Filter1 = maps:with([host, path, get_headers], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
-        case nkpacket_cowboy:start(NkPort1, Filter2) of
-            {ok, SharedPid} -> ok;
-            {error, Error} -> SharedPid = throw(Error)
+        SharedPid = case nkpacket_cowboy:start(NkPort1, Filter2) of
+            {ok, SharedPid0} -> SharedPid0;
+            {error, Error} -> throw(Error)
         end,
         erlang:monitor(process, SharedPid),
         case Port of
@@ -125,9 +125,10 @@ init([NkPort]) ->
             socket = SharedPid,
             meta = ConnMeta
         },
-        Name = nkpacket_util:get_id(ConnPort),
-        true = register(Name, self()),
-        nklib_proc:put(nkpacket_listeners, {Name, Class}),
+%%        Name = nkpacket_util:get_id(ConnPort),
+%%        true = register(Name, self()),
+%%        nklib_proc:put(nkpacket_listeners, {Name, Class}),
+        nkpacket_util:register_listener(NkPort),
         % We don't yet support HTTP outgoing connections, but for the future...
         ListenType = case size(Ip) of
             4 -> nkpacket_listen4;

@@ -59,10 +59,9 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=Transp}=NkPort) 
-        when Transp==ws; Transp==wss ->
+get_listener(#nkport{id=Id, transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
     {
-        {{Transp, Ip, Port}, make_ref()},
+        Id,
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -154,9 +153,9 @@ init([NkPort]) ->
         NkPort1 = NkPort#nkport{pid = self()},
         Filter1 = maps:with([Class, host, path, ws_proto, get_headers], Meta),
         Filter2 = Filter1#{id=>self(), module=>?MODULE},
-        case nkpacket_cowboy:start(NkPort1, Filter2) of
-            {ok, SharedPid} -> ok;
-            {error, Error} -> SharedPid = throw(Error)
+        SharedPid = case nkpacket_cowboy:start(NkPort1, Filter2) of
+            {ok, SharedPid0} -> SharedPid0;
+            {error, Error} -> throw(Error)
         end,
         erlang:monitor(process, SharedPid),
         {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(SharedPid),
@@ -171,9 +170,10 @@ init([NkPort]) ->
         Host = maps:get(host, Meta, any),
         Path = maps:get(path, Meta, any),
         WsProto = maps:get(ws_proto, Meta, any),
-        Name = nkpacket_util:get_id(ConnPort),
-        true = register(Name, self()),
-        nklib_proc:put(nkpacket_listeners, {Name, Class}),
+%%        Name = nkpacket_util:get_id(ConnPort),
+%%        true = register(Name, self()),
+%%        nklib_proc:put(nkpacket_listeners, {Name, Class}),
+        nkpacket_util:register_listener(NkPort),
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6

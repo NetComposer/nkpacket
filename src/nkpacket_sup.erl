@@ -31,14 +31,12 @@
 
 %% @private Adds a supervised listener
 -spec add_listener(supervisor:child_spec()) ->
-    {ok, pid()} | {ok, pid(), term()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 add_listener(Spec) ->
     case supervisor:start_child(nkpacket_listen_sup, Spec) of
         {ok, Pid} -> 
             {ok, Pid};
-        {ok, Pid, Info} -> 
-            {ok, Pid, Info};
         {error, already_present} ->
             Id = element(1, Spec),
             ok = supervisor:delete_child(nkpacket_listen_sup, Id),

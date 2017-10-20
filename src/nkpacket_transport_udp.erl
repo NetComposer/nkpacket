@@ -75,9 +75,9 @@ send_stun_async(Pid, Ip, Port) ->
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{listen_ip=Ip, listen_port=Port, transp=udp}=NkPort) ->
+get_listener(#nkport{id=Id, transp=udp}=NkPort) ->
     {
-        {{udp, Ip, Port}, make_ref()},
+        Id,
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -159,6 +159,7 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
+        id = Id,
         class = Class,
         protocol = Protocol, 
         transp = udp,
@@ -188,7 +189,7 @@ init([NkPort]) ->
         },
         TcpPid = case Meta of
             #{udp_starts_tcp:=true} -> 
-                TcpNkPort = NkPort1#nkport{transp=tcp},
+                TcpNkPort = NkPort1#nkport{id={udp_to_tcp, Id}, transp=tcp},
                 case nkpacket_transport_tcp:start_link(TcpNkPort) of
                     {ok, TcpPid0} -> 
                         TcpPid0;
@@ -200,9 +201,10 @@ init([NkPort]) ->
             _ ->
                 undefined
         end,
-        Name = nkpacket_util:get_id(NkPort1),
-        true = register(Name, self()),
-        nklib_proc:put(nkpacket_listeners, {Name, Class}),
+%%        Name = nkpacket_util:get_id(NkPort1),
+%%        true = register(Name, self()),
+%%        nklib_proc:put(nkpacket_listeners, {Name, Class}),
+        nkpacket_util:register_listener(NkPort),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{meta=ConnMeta},
         ListenType = case size(ListenIp) of
@@ -441,13 +443,15 @@ do_stun_response(TransId, Attrs, State) ->
     case lists:keytake(TransId, #stun.id, Stuns) of
         {value, #stun{retrans_timer=Retrans, from=From}, Stuns1} ->
             nklib_util:cancel_timer(Retrans),
-            case nklib_util:get_value(xor_mapped_address, Attrs) of
-                {StunIp, StunPort} -> 
-                    ok;
+            {StunIp, StunPort} = case nklib_util:get_value(xor_mapped_address, Attrs) of
+                {StunIp0, StunPort0} ->
+                    {StunIp0, StunPort0};
                 _ ->
                     case nklib_util:get_value(mapped_address, Attrs) of
-                        {StunIp, StunPort} -> ok;
-                        _ -> StunIp = StunPort = undefined
+                        {StunIp0, StunPort0} ->
+                            {StunIp0, StunPort0};
+                        _ ->
+                            {undefined, undefined}
                     end
             end,
             Msg = {ok, StunIp, StunPort},

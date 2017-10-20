@@ -70,6 +70,7 @@ app_syntax() ->
 
 syntax() ->
     Base = #{
+        id => any,
         class => any,
         monitor => proc,
         protocol => module,
@@ -107,6 +108,7 @@ syntax() ->
 
 safe_syntax() ->
     Opts = [
+        id,
         idle_timeout,
         connect_timeout,
         no_dns_cache,

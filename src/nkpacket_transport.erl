@@ -325,6 +325,7 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
             Meta2 = maps:remove(host, Meta1),
             Meta3 = maps:remove(path, Meta2),
             ConnPort = BasePort#nkport{
+                id = maps:get(id, Opts),
                 class = maps:get(class, Opts, none),
                 transp = Transp, 
                 protocol = Protocol,

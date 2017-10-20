@@ -52,13 +52,11 @@ basic() ->
  	
  	Url1 = "<http://all:"++integer_to_list(Port)++"/test1>",
 	Proto1 = {dispatch, #{routes => [{'_', [{"/test1", test_cowboy_handler, [M1]}]}]}},
-	{ok, LHttp1} = nkpacket:start_listener(Url1, M1#{class=>dom1, http_proto=>Proto1}),
-	Http1 = whereis(LHttp1),
- 	
+	{ok, Http1} = nkpacket:start_listener(Url1, M1#{class=>dom1, http_proto=>Proto1}),
+
  	Url2 = "<http://all:"++integer_to_list(Port)++"/test2/>",
 	Proto2 = {dispatch, #{routes => [{'_', [{"/test2", test_cowboy_handler, [M2]}]}]}},
-	{ok, LHttp2} = nkpacket:start_listener(Url2, M2#{class=>dom2, http_proto=>Proto2}),
-	Http2 = whereis(LHttp2),
+	{ok, Http2} = nkpacket:start_listener(Url2, M2#{class=>dom2, http_proto=>Proto2}),
 
  	Url3 = "<http://0.0.0.0:"++integer_to_list(Port)++">",
 	Proto3 = {dispatch, #{routes => 
@@ -67,13 +65,12 @@ basic() ->
 			{'_', [{"/test3/a/2", test_cowboy_handler, [M3]}]}
 
 		]}},
-	{ok, LHttp3} = nkpacket:start_listener(Url3, M3#{
+	{ok, Http3} = nkpacket:start_listener(Url3, M3#{
 		class => dom3,
 		host => "localhost",
 		path => "/test3/a",
 		http_proto => Proto3
 	}),
-	Http3 = whereis(LHttp3),
 	timer:sleep(100),
 
 	[Listen1] = nkpacket:get_all(dom1),
@@ -140,7 +137,7 @@ basic() ->
 	<<"NkPACKET">> = nklib_util:get_value(<<"server">>, H4),
 
 	ok = nkpacket:stop_listener(Http1),
-	ok = nkpacket:stop_listener(LHttp2),
+	ok = nkpacket:stop_listener(Http2),
 	ok.
 
 

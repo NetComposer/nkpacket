@@ -48,8 +48,7 @@ basic() ->
 	_ = test_util:reset_2(),
 	Conn1 = {test_protocol, udp, {0,0,0,0}, 0},
 	% First '0' port try to open default transport port (1234)
-	{ok, LUdpP1} = nkpacket:start_listener(Conn1, #{}),	% No class
-	UdpP1 = whereis(LUdpP1),
+	{ok, UdpP1} = nkpacket:start_listener(Conn1, #{}),	% No class
 	{ok, {_, udp, {0,0,0,0}, Port1}} = nkpacket:get_local(UdpP1),
 	case Port1 of
 		1234 -> ok;
@@ -70,10 +69,9 @@ basic() ->
 	% (Oops, in linux it allows to open it again, the old do not receive any more packets!)
 	Port2 = test_util:get_port(udp),
 	Conn = {test_protocol, udp, {0,0,0,0}, Port2},
-	{ok, LLisA} = nkpacket:start_listener(Conn,
+	{ok, LisA} = nkpacket:start_listener(Conn,
 										  #{class=>dom2, udp_starts_tcp=>true,
 										   tcp_listeners=>1}),
-	LisA = whereis(LLisA),
 	timer:sleep(100),
 	[
 		#nkport{transp=tcp, local_port=Port2, pid=ConnA},
@@ -120,10 +118,9 @@ basic() ->
 listen() ->
 	Port1 = test_util:get_port(udp),
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	{ok, LUdp1} = nkpacket:start_listener(
+	{ok, Udp1} = nkpacket:start_listener(
 		"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>",
 		M1#{class=><<"dom1">>}),
-	_Udp1 = whereis(LUdp1),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, Socket} = gen_udp:open(0, [binary, {active, false}]),

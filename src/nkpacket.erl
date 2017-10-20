@@ -38,7 +38,7 @@
 -export([get_meta/1, get_user/1]).
 -export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2, parse_urls/3]).
 
--export_type([listen_id/0, class/0, transport/0, protocol/0, nkport/0, netspec/0]).
+-export_type([id/0, class/0, transport/0, protocol/0, nkport/0, netspec/0]).
 -export_type([listen_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connection/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
@@ -51,8 +51,10 @@
 %% Types
 %% ===================================================================
 
-%% Each listening transport has an unique id, generated from transp, ip, port and path
--type listen_id() :: atom().
+%% Each listener and connection will have an id
+%% If none is used in opts, a random binary will be generated
+%% You can later refer to the listener or connection by id, pid or nkport()
+-type id() :: term().
 
 %% Listeners and connections have an associated class.
 %% When sending a message, if a previous connection to the same remote
@@ -72,38 +74,16 @@
 %% An opened port (listener or connection)
 -type nkport() :: #nkport{}.
 
-%% 
+%% Raw connection specification
 -type netspec() :: {protocol(), transport(), inet:ip_address(), inet:port_number()}.
 
 
--type cowboy_opts() :: 
-    [
-        {max_empty_lines, non_neg_integer()} | 
-        {max_header_name_length, non_neg_integer()} | 
-        {max_header_value_length, non_neg_integer()} | 
-        {max_headers, non_neg_integer()} | 
-        {max_keepalive, non_neg_integer()} | 
-        {max_request_line_length, non_neg_integer()} | 
-        {onresponse, cowboy:onresponse_fun()}
-    ].
-
--type http_proto() ::
-    {static, 
-        nkpacket_cowboy_static:opts()} |
-    {dispatch, 
-        #{
-            routes => cowboy_router:routes()
-        }} |
-    {custom, 
-        #{
-            env => cowboy_middleware:env(),
-            middlewares => [module()]
-        }}.
 
 %% Options for listeners
 -type listen_opts() ::
     #{
         % Common options
+        id => id(),                             % See above
         class => class(),                       % Class (see above)
         user => term(),                         % User metadata
         protocol => protocol(),                 % If not supplied, scheme must be registered
@@ -158,6 +138,7 @@
 -type connect_opts() ::
     #{
         % Common options
+        id => id(),                         % See above
         class => class(),                   % Class (see above)
         user => term(),                     % User metadata
         protocol => protocol(),             % If not supplied, scheme must be registered
@@ -252,6 +233,31 @@
     fun((term(), nkport()) -> term()).
 
 
+-type cowboy_opts() ::
+    [
+        {max_empty_lines, non_neg_integer()} |
+        {max_header_name_length, non_neg_integer()} |
+        {max_header_value_length, non_neg_integer()} |
+        {max_headers, non_neg_integer()} |
+        {max_keepalive, non_neg_integer()} |
+        {max_request_line_length, non_neg_integer()} |
+        {onresponse, cowboy:onresponse_fun()}
+    ].
+
+-type http_proto() ::
+    {static,
+        nkpacket_cowboy_static:opts()} |
+    {dispatch,
+        #{
+            routes => cowboy_router:routes()
+        }} |
+    {custom,
+        #{
+            env => cowboy_middleware:env(),
+            middlewares => [module()]
+    }}.
+
+
 %% ===================================================================
 %% Public functions
 %% ===================================================================
@@ -290,18 +296,12 @@ get_protocol(Class, Scheme) ->
 
 %% @doc Starts a new listening transport.
 -spec start_listener(user_connection(), listen_opts()) ->
-    {ok, listen_id()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 start_listener(UserConn, Opts) ->
     case get_listener(UserConn, Opts) of
         {ok, Spec} ->
-            case nkpacket_sup:add_listener(Spec) of
-                {ok, Pid} -> 
-                    {registered_name, Id} = process_info(Pid, registered_name),
-                    {ok, Id};
-                {error, Error} -> 
-                    {error, Error}
-            end;
+            nkpacket_sup:add_listener(Spec);
         {error, Error} ->
             {error, Error}
     end.
@@ -323,7 +323,8 @@ get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
             end,
             % We cannot yet generate id, port can be 0
             NkPort = #nkport{
-                class = maps:get(class, Opts, none),
+                id = maps:get(id, Opts2),
+                class = maps:get(class, Opts2, none),
                 protocol = Protocol,
                 transp = Transp,
                 listen_ip = Ip,
@@ -348,19 +349,21 @@ get_listener(Uri, Opts) when is_map(Opts) ->
 
 
 %% @doc Stops a locally started listener (only for standard supervisor)
--spec stop_listener(nkport()|listen_id()|pid()) ->
+-spec stop_listener(id()|pid()|nkport()) ->
     ok | {error, term()}.
 
-stop_listener(Id) when is_pid(Id); is_atom(Id) ->
-    nklib_util:call(Id, nkpacket_stop, 30000);
+stop_listener(Id) ->
+    case nkpacket_util:find_id(Id) of
+        {ok, Pid} ->
+            nklib_util:call(Pid, nkpacket_stop, 30000);
+        not_found ->
+            {error, listener_not_found}
+    end.
     
-stop_listener(#nkport{pid=Pid}) ->
-    stop_listener(Pid).
-
 
 %% @doc Gets all registered transports
 -spec get_all() -> 
-    [listen_id()].
+    [id()].
 
 get_all() ->
     [Id || {{Id, _Class}, _Pid} <- nklib_proc:values(nkpacket_listeners)].
@@ -376,7 +379,7 @@ get_all(Class) ->
 
 %% @doc Gets all classes having registered listeners
 -spec get_class() -> 
-    #{class() => [listen_id()]}.
+    #{class() => [id()]}.
 
 get_class() ->
     lists:foldl(
@@ -389,7 +392,7 @@ get_class() ->
 
 %% @doc Gets all classes having registered listeners
 -spec get_class(class()) -> 
-    [listen_id()].
+    [id()].
 
 get_class(Class) ->
     All = get_class(),
@@ -412,37 +415,37 @@ stop_all(Class) ->
 
 
 %% @doc Gets the current nkport of a listener or connection
--spec get_nkport(listen_id()|pid()) ->
+-spec get_nkport(id()|pid()|nkport()) ->
     {ok, nkport()} | error.
 
 get_nkport(#nkport{}=NkPort) ->
     {ok, NkPort};
-get_nkport(Id) when is_pid(Id); is_atom(Id) ->
+get_nkport(Id) ->
     apply_nkport(Id, fun get_nkport/1).
 
 
 %% @doc Gets the current port number of a listener or connection
--spec get_local(listen_id()|pid()|nkport()) ->
+-spec get_local(id()|pid()|nkport()) ->
     {ok, netspec()} | error.
 
 get_local(#nkport{protocol=Proto, transp=Transp, local_ip=Ip, local_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
-get_local(Id) when is_pid(Id); is_atom(Id) ->
+get_local(Id) ->
     apply_nkport(Id, fun get_local/1).
 
 
 %% @doc Gets the current remote peer address and port
--spec get_remote(listen_id()|pid()|nkport()) ->
+-spec get_remote(id()|pid()|nkport()) ->
     {ok, netspec()} | error.
 
 get_remote(#nkport{protocol=Proto, transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
-get_remote(Id) when is_pid(Id); is_atom(Id) ->
+get_remote(Id) ->
     apply_nkport(Id, fun get_remote/1).
 
 
 %% @doc Gets the current remote peer address and port
--spec get_remote_bin(listen_id()|pid()|nkport()) ->
+-spec get_remote_bin(id()|pid()|nkport()) ->
     {ok, binary()} | error.
 
 get_remote_bin(Term) ->
@@ -460,7 +463,7 @@ get_remote_bin(Term) ->
 
 
 %% @doc Gets the current local peer address and port
--spec get_local_bin(listen_id()|pid()|nkport()) ->
+-spec get_local_bin(id()|pid()|nkport()) ->
     {ok, binary()} | error.
 
 get_local_bin(Term) ->
@@ -478,7 +481,7 @@ get_local_bin(Term) ->
 
 
 %% @doc Gets the user metadata of a listener or connection
--spec get_meta(listen_id()|pid()|nkport()) ->
+-spec get_meta(id()|pid()|nkport()) ->
     {ok, map()} | error.
 
 get_meta(#nkport{meta=Meta}) ->
@@ -488,25 +491,24 @@ get_meta(Id) when is_pid(Id); is_atom(Id) ->
 
 
 %% @doc Gets the user metadata of a listener or connection
--spec get_user(listen_id()|pid()|nkport()) ->
+-spec get_user(id()|pid()|nkport()) ->
     {ok, term(), term()} | error.
 
 get_user(#nkport{class=Class, meta=Meta}) ->
     {ok, Class, maps:get(user, Meta, undefined)};
-get_user(Id) when is_pid(Id); is_atom(Id) ->
+get_user(Id) ->
     apply_nkport(Id, fun get_user/1).
 
 
 %% @doc Gets the current pid() of a listener or connection
--spec pid(listen_id()|pid()|nkport()) ->
-    pid().
+-spec pid(id()|nkport()) ->
+    pid() | undefined.
 
-pid(Id) when is_atom(Id) ->
-    pid(whereis(Id));
-pid(Pid) when is_pid(Pid) ->
-    Pid;
-pid(#nkport{pid=Pid}) ->
-    Pid.
+pid(Id) ->
+    case nkpacket_util:find_id(Id) of
+        {ok, Pid} -> Pid;
+        not_found -> undefined
+    end.
 
 
 %% @doc Sends a message to a connection.
@@ -718,6 +720,21 @@ resolve(#uri{}=Uri, Opts) ->
         ext_opts = UriOpts, 
         ext_headers = Headers
     } = Uri,
+    Protocol = case Opts of
+        #{protocol:=UserProtocol} ->
+            UserProtocol;
+        #{class:=Class} ->
+            nkpacket:get_protocol(Class, Scheme);
+        _ ->
+            nkpacket:get_protocol(Scheme)
+    end,
+    Opts2 = case erlang:function_exported(Protocol, resolve_opts, 0) of
+        true ->
+            ProtOpts = Protocol:resolve_opts(),
+            maps:merge(ProtOpts, Opts);
+        false ->
+            Opts
+    end,
     UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquote(V)} || {K, V} <- UriOpts],
     % Let's see if we want to listen or connect to a specific host
     UriOpts2 = case Host of
@@ -763,29 +780,21 @@ resolve(#uri{}=Uri, Opts) ->
             {error, Error1} ->
                 throw(Error1)
         end,
-        Opts2 = case nkpacket_util:parse_opts(Opts) of
+        Opts3 = case nkpacket_util:parse_opts(Opts2) of
             {ok, CoreOpts} ->
                 maps:merge(UriOpts6, CoreOpts);
             {error, Error2} ->
                 throw(Error2)
         end,
         % Now we have all the options, from the uri and the supplied options
-        Protocol = case Opts2 of
-            #{protocol:=UserProtocol} ->
-                UserProtocol;
-            #{class:=Class} ->
-                nkpacket:get_protocol(Class, Scheme);
-            _ -> 
-                nkpacket:get_protocol(Scheme)
-        end,
-        Opts3 = maps:without([resolve_type, protocol], Opts2),
-        case nkpacket_dns:resolve(Uri, Opts2#{protocol=>Protocol}) of
+        Opts4 = maps:without([resolve_type, protocol], Opts3),
+        case nkpacket_dns:resolve(Uri, Opts3#{protocol=>Protocol}) of
             {ok, Addrs} ->
                 Conns = [ 
                     {Protocol, Transp, Addr, Port} 
                     || {Transp, Addr, Port} <- Addrs
                 ],
-                {ok, Conns, Opts3};
+                {ok, Conns, Opts4};
             {error, Error} ->
                 {error, Error}
         end
@@ -849,13 +858,18 @@ multi_resolve([Uri|Rest], Opts, Acc) ->
 
 
 %% @private
--spec apply_nkport(listen_id()|pid(), fun((nkport()) -> {ok, term()}))  ->
+-spec apply_nkport(id()|pid(), fun((nkport()) -> {ok, term()}))  ->
     term() | error.
 
-apply_nkport(Id, Fun) when is_pid(Id); is_atom(Id) ->
-    case catch gen_server:call(Id, {nkpacket_apply_nkport, Fun}, 180000) of
-        {'EXIT', _} -> error;
-        Other -> Other
+apply_nkport(Id, Fun) ->
+    case nkpacket_util:find_id(Id) of
+        {ok, Pid} ->
+            case catch gen_server:call(Pid, {nkpacket_apply_nkport, Fun}, 180000) of
+                {'EXIT', _} -> error;
+                Other -> Other
+            end;
+        not_found ->
+            {error, id_not_found}
     end.
 
 

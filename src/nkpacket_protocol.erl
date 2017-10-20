@@ -26,7 +26,7 @@
 -module(nkpacket_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([transports/1, default_port/1, naptr/2]).
+-export([transports/1, default_port/1, resolve_opts/0, naptr/2]).
 -export([conn_init/1, conn_parse/3, conn_encode/3, conn_encode/2, conn_bridge/4, 
 		 conn_handle_call/4, conn_handle_cast/3, conn_handle_info/3, conn_stop/3]).
 -export([listen_init/1, listen_parse/5, listen_handle_call/4,
@@ -81,6 +81,16 @@ transports(_) ->
 
 default_port(_) ->
     invalid.
+
+
+
+%% @doc If you implement this function, it will be used when calling to nkpacket:resolve()
+
+-spec resolve_opts() ->
+    nkpacket:resolve_opts().
+
+resolve_opts() ->
+    #{}.
 
 
 %% @doc Implement this function to allow NAPTR DNS queries.
