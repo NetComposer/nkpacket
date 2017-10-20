@@ -657,7 +657,7 @@ sort_select(Pos, [C|Rest], Acc) ->
 %% ===================================================================
 
 
-% -define(TEST, true).
+%-define(TEST, true).
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -681,9 +681,9 @@ basic_test_() ->
 basic() ->
     Opts = #{no_dns_cache=>true},
     {ok, [
-        {undefined, {1,2,3,4}, 0},
+        {http, {1,2,3,4}, 0},
         {tcp, {4,3,2,1}, 25},
-        {undefined, {0,0,0,0}, 1200},
+        {http, {0,0,0,0}, 1200},
         {tls, {1,0,0,0,0,0,0,5}, 0}
     ]} =
         resolve("http://1.2.3.4, http://4.3.2.1:25;transport=tcp,"
@@ -710,9 +710,9 @@ basic() ->
 
    
     {ok, [
-        {undefined, {127,0,0,1}, 0},
-        {undefined, {127,0,0,1}, 0},
-        {undefined, {127,0,0,1}, 25},
+        {http, {127,0,0,1}, 0},
+        {https, {127,0,0,1}, 0},
+        {http, {127,0,0,1}, 25},
         {tls, {127,0,0,1}, 0},
         {udp, {127,0,0,1}, 1234}
     ]} = 
