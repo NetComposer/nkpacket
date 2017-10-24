@@ -30,7 +30,7 @@
 
 
 init(Req, Opts) ->
-	[#{user:={Pid, Ref}}] = Opts,
+	[#{user_state:={Pid, Ref}}] = Opts,
 	Pid ! {Ref, http_init, self()},
     Req2 = cowboy_req:reply(200, [
         {<<"content-type">>, <<"text/plain">>}
@@ -38,7 +38,7 @@ init(Req, Opts) ->
     {ok, Req2, Opts}.
 
 
-terminate(_Reason, _Req, [#{user:={Pid, Ref}}]) ->
+terminate(_Reason, _Req, [#{user_state:={Pid, Ref}}]) ->
 	Pid ! {Ref, http_terminate, self()},
 	ok.
 

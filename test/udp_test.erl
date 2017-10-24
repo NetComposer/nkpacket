@@ -55,8 +55,8 @@ basic() ->
 		_ -> lager:warning("Could not open port 1234")
 	end,
 	[Listen1] = nkpacket:get_all(),
-	[Listen1] = nkpacket:get_all(none),
-	[] = nkpacket:get_all(dom1),
+	[Listen1] = nkpacket:get_class_ids(none),
+	[] = nkpacket:get_class_ids(dom1),
 	{ok, #nkport{
 			transp = udp,
     	    local_ip = {0,0,0,0}, local_port = Port1,
@@ -109,8 +109,8 @@ basic() ->
  	ok = nkpacket:stop_all(none),
  	ok = nkpacket:stop_all(dom2),
 	timer:sleep(500),
-	[] = nkpacket:get_all(none),
-	[] = nkpacket:get_all(dom2),
+	[] = nkpacket:get_class_ids(none),
+	[] = nkpacket:get_class_ids(dom2),
 	[] = nkpacket:get_all(),
 	ok.
 
@@ -166,7 +166,7 @@ listen() ->
 	ok = nkpacket:stop_listeners(Udp1),
 	receive {Ref1, listen_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),
-	[] = nkpacket:get_all(<<"dom1">>),
+	[] = nkpacket:get_class_ids(<<"dom1">>),
 	[] = nkpacket:get_all(),
 
 	% Now testing UDP without creating connections
@@ -184,7 +184,7 @@ listen() ->
 	ok = nkpacket:stop_listeners(Udp2),
 	receive {Ref2, listen_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),
-	[] = nkpacket:get_all(<<"dom1">>),
+	[] = nkpacket:get_class_ids(<<"dom1">>),
 	test_util:ensure([Ref1, Ref2]),
 	ok.
 

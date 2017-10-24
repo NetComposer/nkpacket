@@ -88,12 +88,12 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        class = Class,
-        protocol = Protocol,
-        transp = Transp, 
-        listen_ip = Ip, 
-        listen_port = Port,
-        meta = Meta
+        class      = Class,
+        protocol   = Protocol,
+        transp     = Transp,
+        listen_ip  = Ip,
+        listen_port= Port,
+        opts       = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     Debug = maps:get(debug, Meta, false),
@@ -119,11 +119,11 @@ init([NkPort]) ->
         end,
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
-            local_ip = Ip,
+            local_ip   = Ip,
             local_port = Port1,
-            listen_port = Port1,
-            socket = SharedPid,
-            meta = ConnMeta
+            listen_port= Port1,
+            socket     = SharedPid,
+            opts       = ConnMeta
         },
 %%        Name = nkpacket_util:get_id(ConnPort),
 %%        true = register(Name, self()),
@@ -169,12 +169,12 @@ handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
 
 handle_call({nkpacket_start, Ip, Port, _UserMeta, Pid}, _From, State) ->
     #state{nkport=NkPort, http_proto=HttpProto} = State,
-    #nkport{protocol=Protocol, meta=Meta} = NkPort,
+    #nkport{protocol=Protocol, opts=Meta} = NkPort,
     NkPort1 = NkPort#nkport{
-        remote_ip = Ip,
-        remote_port = Port,
-        socket = Pid,
-        meta = maps:without([host, path], Meta)
+        remote_ip  = Ip,
+        remote_port= Port,
+        socket     = Pid,
+        opts       = maps:without([host, path], Meta)
     },
     % See comment on nkpacket_transport_ws for removal of host and path
     case erlang:function_exported(Protocol, http_init, 4) of

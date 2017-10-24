@@ -76,13 +76,13 @@ basic() ->
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, #nkport{
-       	class = dom2,
-		transp = ws, 
-		local_ip = {127,0,0,1}, local_port = Port1,
-        remote_ip = {127,0,0,1}, remote_port = LPort1,
-        listen_ip = undefined, listen_port = undefined,
-        protocol = test_protocol,
-        meta = #{path := <<"/">>}
+		class    = dom2,
+		transp   = ws,
+		local_ip = {127,0,0,1}, local_port= Port1,
+		remote_ip= {127,0,0,1}, remote_port= LPort1,
+		listen_ip= undefined, listen_port= undefined,
+		protocol = test_protocol,
+		opts     = #{path := <<"/">>}
 	}} = nkpacket:get_nkport(Conn1),
 
 	[
@@ -131,12 +131,12 @@ basic() ->
 	receive {Ref1, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, #nkport{
-       	class = dom2,
-		transp=ws, 
-		local_ip={127,0,0,1}, local_port=Port2,
-        remote_ip={127,0,0,1}, remote_port=LPort1,
-        listen_ip=undefined, listen_port=undefined,
-        meta=#{
+		class    = dom2,
+		transp   =ws,
+		local_ip ={127,0,0,1}, local_port=Port2,
+		remote_ip={127,0,0,1}, remote_port=LPort1,
+		listen_ip=undefined, listen_port=undefined,
+		opts     =#{
         	path := <<"/a/b">>,
         	host := <<"127.0.0.1">>
         }
@@ -289,35 +289,35 @@ multi() ->
 
 	[
 		#nkport{
-	       	class = dom1,
-			transp = ws,
-			local_ip = {0,0,0,0}, local_port = P1,
-			remote_ip = undefined, remote_port = undefined,
-			listen_ip = {0,0,0,0}, listen_port = P1,
-			protocol = test_protocol, pid = Ws1, 
-          	socket = Cow1,
-			meta = #{path := <<"/dom1/more">>}
+			class    = dom1,
+			transp   = ws,
+			local_ip = {0,0,0,0}, local_port= P1,
+			remote_ip= undefined, remote_port= undefined,
+			listen_ip= {0,0,0,0}, listen_port= P1,
+			protocol = test_protocol, pid= Ws1,
+			socket   = Cow1,
+			opts     = #{path := <<"/dom1/more">>}
 		} = Listen1
 	] = test_util:listeners(dom1),
  	[
  		#nkport{
-	       	class = dom2,
- 			transp = ws,
-          	local_ip = {0,0,0,0},local_port = P1,
-          	listen_ip = {0,0,0,0},listen_port = P1,
-          	protocol = test_protocol, pid = Ws2, 
-          	socket = Cow1,
-          	meta = #{path := <<"/dom2">>}
+			class    = dom2,
+			transp   = ws,
+			local_ip = {0,0,0,0}, local_port= P1,
+			listen_ip= {0,0,0,0}, listen_port= P1,
+			protocol = test_protocol, pid= Ws2,
+			socket   = Cow1,
+			opts     = #{path := <<"/dom2">>}
         } = Listen2
     ] = test_util:listeners(dom2),
  	[
- 		#nkport{transp = ws,
-       		class = dom3,
-			local_ip = {0,0,0,0}, local_port = P1,
-			listen_ip = {0,0,0,0},listen_port = P1,
-			protocol = test_protocol, pid = Ws3, 
-          	socket = Cow1,
-			meta = #{
+ 		#nkport{transp   = ws,
+				class    = dom3,
+				local_ip = {0,0,0,0}, local_port= P1,
+				listen_ip= {0,0,0,0}, listen_port= P1,
+				protocol = test_protocol, pid= Ws3,
+				socket   = Cow1,
+				opts     = #{
 				host := <<"localhost">>,
 				path := <<"/dom3">>
 			}
@@ -340,12 +340,12 @@ multi() ->
 	% Conn1B = Conn1#nkport{meta=maps:remove(idle_timeout, Conn1#nkport.meta)},
     [#nkport{pid=Conn1}] = test_util:conns(dom5),
 	{ok, #nkport{
-       	class = dom5,
-		transp = ws,
-        local_ip = {127,0,0,1}, local_port = Conn1Port,
-        remote_ip = {127,0,0,1}, remote_port = P1,
-        listen_ip = undefined, listen_port = undefined,
-        meta = #{path := <<"/dom1/more">>}
+		class    = dom5,
+		transp   = ws,
+		local_ip = {127,0,0,1}, local_port= Conn1Port,
+		remote_ip= {127,0,0,1}, remote_port= P1,
+		listen_ip= undefined, listen_port= undefined,
+		opts     = #{path := <<"/dom1/more">>}
     }} = nkpacket:get_nkport(Conn1),
     [
     	#nkport{
@@ -377,13 +377,13 @@ multi() ->
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
 	{ok, #nkport{
-		class = dom1,
-		transp = ws,
-        local_ip = {127,0,0,1}, local_port = Conn2Port,
-        remote_ip = {127,0,0,1}, remote_port = P1,
-        listen_ip = {0,0,0,0}, listen_port = P1,
-        protocol = test_protocol,
-        meta = #{
+		class    = dom1,
+		transp   = ws,
+		local_ip = {127,0,0,1}, local_port= Conn2Port,
+		remote_ip= {127,0,0,1}, remote_port= P1,
+		listen_ip= {0,0,0,0}, listen_port= P1,
+		protocol = test_protocol,
+		opts     = #{
         	host := <<"127.0.0.1">>,		% We included it in call
         	path := <<"/dom2">>
         }

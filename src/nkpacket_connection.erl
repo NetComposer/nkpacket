@@ -294,14 +294,14 @@ ranch_start_link(NkPort, Ref) ->
 
 init([NkPort]) ->
     #nkport{
-        class = Class,
-        protocol = Protocol,
-        transp = Transp, 
-        remote_ip = Ip, 
-        remote_port = Port, 
-        pid = ListenPid,
-        socket = Socket,
-        meta = Opts
+        class      = Class,
+        protocol   = Protocol,
+        transp     = Transp,
+        remote_ip  = Ip,
+        remote_port= Port,
+        pid        = ListenPid,
+        socket     = Socket,
+        opts       = Opts
     } = NkPort,
     process_flag(trap_exit, true),          % Allow call to terminate/2
     nklib_proc:put(nkpacket_connections, Class),
@@ -352,7 +352,7 @@ init([NkPort]) ->
     NkPort1 = NkPort#nkport{pid=self()},
     % We need to store some meta in case someone calls get_nkport
     StoredNkPort = NkPort1#nkport{
-                        meta=maps:with([host, path, ws_proto, debug], Opts)},
+        opts=maps:with([host, path, ws_proto, debug], Opts)},
     State = #state{
         transp = Transp,
         nkport = StoredNkPort,

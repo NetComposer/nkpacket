@@ -70,10 +70,10 @@ get_listener(#nkport{id=Id, transp=Transp}=NkPort) when Transp==tcp; Transp==tls
          
 connect(NkPort) ->
     #nkport{
-        transp = Transp, 
-        remote_ip = Ip, 
-        remote_port = Port,
-        meta = Meta
+        transp     = Transp,
+        remote_ip  = Ip,
+        remote_port= Port,
+        opts       = Meta
     } = NkPort,
     Debug = maps:get(debug, Meta, false),
     put(nkpacket_debug, Debug),
@@ -125,12 +125,12 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        class = Class,
-        protocol = Protocol,
-        transp = Transp, 
-        listen_ip = ListenIp, 
-        listen_port = ListenPort,
-        meta = Meta
+        class      = Class,
+        protocol   = Protocol,
+        transp     = Transp,
+        listen_ip  = ListenIp,
+        listen_port= ListenPort,
+        opts       = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     Debug = maps:get(debug, Meta, false),
@@ -149,7 +149,7 @@ init([NkPort]) ->
                 socket = Socket
             },
             RanchId = {Transp, ListenIp, LocalPort},
-            RanchPort = NkPort1#nkport{meta=maps:with(?CONN_LISTEN_OPTS, Meta)},
+            RanchPort = NkPort1#nkport{opts=maps:with(?CONN_LISTEN_OPTS, Meta)},
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
                 maps:get(tcp_listeners, Meta, 100),
@@ -168,7 +168,7 @@ init([NkPort]) ->
             ConnMetaOpts = [tcp_packet | ?CONN_LISTEN_OPTS],
             % ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),
-            ConnPort = NkPort1#nkport{meta=ConnMeta},
+            ConnPort = NkPort1#nkport{opts=ConnMeta},
             ListenType = case size(ListenIp) of
                 4 -> nkpacket_listen4;
                 8 -> nkpacket_listen6
@@ -284,7 +284,7 @@ terminate(Reason, State) ->
 -spec start_link(term(), term(), atom(), term()) ->
     {ok, pid()}.
 
-start_link(Ref, Socket, TranspModule, [#nkport{meta=Meta}=NkPort]) ->
+start_link(Ref, Socket, TranspModule, [#nkport{opts=Meta} = NkPort]) ->
     {ok, {LocalIp, LocalPort}} = TranspModule:sockname(Socket),
     {ok, {RemoteIp, RemotePort}} = TranspModule:peername(Socket),
     NkPort1 = NkPort#nkport{
@@ -316,13 +316,13 @@ start_link(Ref, Socket, TranspModule, [#nkport{meta=Meta}=NkPort]) ->
 -spec outbound_opts(#nkport{}) ->
     list().
 
-outbound_opts(#nkport{transp=tcp, meta=Opts}) ->
+outbound_opts(#nkport{transp=tcp, opts=Opts}) ->
     [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         binary, {active, false}, {nodelay, true}, {keepalive, true}
     ];
 
-outbound_opts(#nkport{transp=tls, meta=Opts}) ->
+outbound_opts(#nkport{transp=tls, opts=Opts}) ->
     [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         binary, {active, false}, {nodelay, true}, {keepalive, true}
@@ -334,7 +334,7 @@ outbound_opts(#nkport{transp=tls, meta=Opts}) ->
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{transp=tcp, listen_ip=Ip, meta=Opts}) ->
+listen_opts(#nkport{transp=tcp, listen_ip=Ip, opts=Opts}) ->
     [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, false}, binary,
@@ -342,7 +342,7 @@ listen_opts(#nkport{transp=tcp, listen_ip=Ip, meta=Opts}) ->
         {reuseaddr, true}, {backlog, 1024}
     ];
 
-listen_opts(#nkport{transp=tls, listen_ip=Ip, meta=Opts}) ->
+listen_opts(#nkport{transp=tls, listen_ip=Ip, opts=Opts}) ->
     [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, once}, binary,

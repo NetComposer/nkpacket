@@ -63,7 +63,7 @@ basic() ->
 	timer:sleep(100),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end, 
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
-	[Listen1] = nkpacket:get_all(dom1),
+	[Listen1] = nkpacket:get_class_ids(dom1),
 	{ok, #nkport{
        	class = dom1,
 		transp=sctp, 
@@ -72,7 +72,7 @@ basic() ->
 		remote_ip=undefined, remote_port=undefined,
 		pid=Sctp1, socket={_Port1, 0}
 	}} = nkpacket:get_nkport(Listen1),
-	[Listen2] = nkpacket:get_all(dom2),
+	[Listen2] = nkpacket:get_class_ids(dom2),
 	{ok, #nkport{
        	class = dom2,
 		transp=sctp, 
@@ -124,8 +124,8 @@ basic() ->
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
 	receive {Ref1, conn_stop} -> ok after 2000 -> error(?LINE) end,
 	timer:sleep(50),
-	[Listen2] = nkpacket:get_all(dom2),
-	[Listen1] = nkpacket:get_all(dom1),
+	[Listen2] = nkpacket:get_class_ids(dom2),
+	[Listen1] = nkpacket:get_class_ids(dom1),
 	test_util:ensure([Ref1, Ref2]),
 	ok.
 

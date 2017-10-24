@@ -31,12 +31,12 @@
 -export([get_protocol/1, get_protocol/2]).
 -export([start_listener/1, start_listener/2, get_listener/1, get_listener/2, stop_listeners/1]).
 -export([connect/1, connect/2]).
--export([get_all/0, get_all/1, get_class/0, get_class/1]).
+-export([get_all/0, get_class_ids/1, get_classes/0, get_class_ids2/1]).
 -export([stop_all/0, stop_all/1]).
 -export([get_id_pids/1, send/2, send/3]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
 -export([get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1, get_local_bin/1]).
--export([get_meta/1, get_user/1]).
+-export([get_class/1, get_id/1, get_user_state/1]).
 
 -export_type([id/0, class/0, transport/0, protocol/0, nkport/0, nkconn/0]).
 -export_type([listen_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
@@ -61,7 +61,7 @@
 %% and class exists, it will be reused.
 %% When starting an outgoing connection, if a suitable listening transport 
 %% is found with the same class, some values from listener's metadata will 
-%% be copied to the new connection: user, idle_timeout, host, path, ws_proto, 
+%% be copied to the new connection: user_state, idle_timeout, host, path, ws_proto,
 %% refresh_fun, tcp_packet, tls_opts
 -type class() :: term().
 
@@ -85,7 +85,7 @@
         % Common options
         id => id(),                             % See above
         class => class(),                       % Class (see above)
-        user => term(),                         % User metadata
+        user_state => term(),                   % Initial user state
         protocol => protocol(),                 % If not supplied, scheme must be registered
         parse_syntax => map(),                  % Allows to update the syntax. See bellow
         monitor => atom() | pid(),              % Connection will monitor this
@@ -140,7 +140,7 @@
         % Common options
         id => id(),                         % See above
         class => class(),                   % Class (see above)
-        user => term(),                     % User metadata
+        user_state => term(),               % Initial user state
         protocol => protocol(),             % If not supplied, scheme must be registered
         parse_syntax => map(),              % Allows to update the syntax. See above.
         monitor => atom() | pid(),          % Connection will monitor this
@@ -186,6 +186,8 @@
         udp_max_size => pos_integer(),      % Used only for this sent request
         pre_send_fun => pre_send_fun()
     }.
+
+-type user_state() :: term().
 
 
 %% Options for resolving
@@ -343,7 +345,8 @@ get_listener(Conn, Opts) ->
                         transp     = Transp,
                         listen_ip  = Ip,
                         listen_port= Port,
-                        meta       = Opts3
+                        opts       = maps:without([id, class, user_state], Opts3),
+                        user_state = maps:get(user_state, Opts3, undefined)
                     },
                     nkpacket_transport:get_listener(NkPort);
                 [Pid|_] ->
@@ -480,18 +483,18 @@ get_all() ->
 
 
 %% @doc Gets all registered transports for a class.
--spec get_all(class()) -> 
+-spec get_class_ids(class()) ->
     [pid()].
 
-get_all(Class) ->
+get_class_ids(Class) ->
     [Id || {{Id, C}, _Pid} <- nklib_proc:values(nkpacket_listeners), C==Class].
 
 
 %% @doc Gets all classes having registered listeners
--spec get_class() -> 
+-spec get_classes() ->
     #{class() => [id()]}.
 
-get_class() ->
+get_classes() ->
     lists:foldl(
         fun({{Id, Class}, _Pid}, Acc) ->
             maps:put(Class, [Id|maps:get(Class, Acc, [])], Acc) 
@@ -501,11 +504,11 @@ get_class() ->
 
 
 %% @doc Gets all classes having registered listeners
--spec get_class(class()) -> 
+-spec get_class_ids2(class()) ->
     [id()].
 
-get_class(Class) ->
-    All = get_class(),
+get_class_ids2(Class) ->
+    All = get_classes(),
     maps:get(Class, All, []).
 
 
@@ -520,7 +523,7 @@ stop_all() ->
 stop_all(Class) ->
     lists:foreach(
         fun(Pid) -> stop_listeners(Pid) end,
-        get_all(Class)).
+        get_class_ids(Class)).
 
 
 
@@ -590,28 +593,34 @@ get_local_bin(Term) ->
     end.
 
 
-%% @doc Gets the user metadata of a listener or connection
--spec get_meta(id()|pid()|nkport()) ->
-    {ok, map()} | error.
+%% @doc
+-spec get_class(id()|pid()|nkport()) ->
+    {ok, class()} | error.
 
-get_meta(#nkport{meta=Meta}) ->
-    {ok, Meta};
-get_meta(Id) when is_pid(Id); is_atom(Id) ->
-    apply_nkport(Id, fun get_meta/1).
-
-
-%% @doc Gets the user metadata of a listener or connection
--spec get_user(id()|pid()|nkport()) ->
-    {ok, term(), term()} | error.
-
-get_user(#nkport{class=Class, meta=Meta}) ->
-    {ok, Class, maps:get(user, Meta, undefined)};
-get_user(Id) ->
-    apply_nkport(Id, fun get_user/1).
+get_class(#nkport{class=Class}) ->
+    {ok, Class};
+get_class(Id) ->
+    apply_nkport(Id, fun get_class/1).
 
 
+%% @doc
+-spec get_id(id()|pid()|nkport()) ->
+    {ok, class(), id()} | error.
+
+get_id(#nkport{id=Id, class=Class}) ->
+    {ok, Class, Id};
+get_id(Id) ->
+    apply_nkport(Id, fun get_user_state/1).
 
 
+%% @doc
+-spec get_user_state(id()|pid()|nkport()) ->
+    {ok, user_state(), term()} | error.
+
+get_user_state(#nkport{user_state=UserState}) ->
+    {ok, UserState};
+get_user_state(Id) ->
+    apply_nkport(Id, fun get_user_state/1).
 
 
 %% @private Finds a listening transport of Proto.

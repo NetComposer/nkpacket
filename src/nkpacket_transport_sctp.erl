@@ -103,12 +103,12 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        class = Class,
-        transp = sctp,
-        listen_ip = Ip, 
-        listen_port = Port,
-        protocol = Protocol,
-        meta = Meta
+        class      = Class,
+        transp     = sctp,
+        listen_ip  = Ip,
+        listen_port= Port,
+        protocol   = Protocol,
+        opts       = Meta
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
@@ -131,7 +131,7 @@ init([NkPort]) ->
 %%            nklib_proc:put(nkpacket_listeners, {Name, Class}),
             nkpacket_util:register_listener(NkPort),
             ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
-            ConnPort = NkPort1#nkport{meta=ConnMeta},
+            ConnPort = NkPort1#nkport{opts=ConnMeta},
             ListenType = case size(Ip) of
                 4 -> nkpacket_listen4;
                 8 -> nkpacket_listen6
@@ -166,9 +166,9 @@ init([NkPort]) ->
 
 handle_call({nkpacket_connect, ConnPort}, From, State) ->
     #nkport{
-        remote_ip = Ip, 
-        remote_port = Port, 
-        meta = Meta
+        remote_ip  = Ip,
+        remote_port= Port,
+        opts       = Meta
     } = ConnPort,
     #state{
         socket = Socket, 
@@ -333,7 +333,7 @@ terminate(Reason, #state{nkport=NkPort, socket=Socket}=State) ->
 -spec listen_opts(#nkport{}) ->
     list().
 
-listen_opts(#nkport{listen_ip=Ip, meta=Meta}) ->
+listen_opts(#nkport{listen_ip=Ip, opts=Meta}) ->
     Timeout = case maps:get(idle_timeout, Meta, undefined) of
         undefined -> nkpacket_config_cache:sctp_timeout();
         Timeout0 -> Timeout0
@@ -362,7 +362,7 @@ do_connect(Ip, Port, AssocId, State) ->
 %% @private
 do_connect(Ip, Port, AssocId, Meta, State) ->
     #state{nkport=NkPort, socket=Socket} = State,
-    #nkport{class=Class, protocol=Proto, meta=ListenMeta} = NkPort,
+    #nkport{class=Class, protocol=Proto, opts=ListenMeta} = NkPort,
     Conn = #nkconn{protocol=Proto, transp=sctp, ip=Ip, port=Port, opts=#{class=>Class}},
     case nkpacket_transport:get_connected(Conn) of
         [Pid|_] -> 
@@ -373,10 +373,10 @@ do_connect(Ip, Port, AssocId, Meta, State) ->
                 _ -> maps:merge(ListenMeta, Meta)
             end,
             NkPort1 = NkPort#nkport{
-                remote_ip = Ip, 
-                remote_port = Port,
-                socket = {Socket, AssocId},
-                meta = Meta1
+                remote_ip  = Ip,
+                remote_port= Port,
+                socket     = {Socket, AssocId},
+                opts       = Meta1
             },
             % Connection will monitor us using nkport's pid
             nkpacket_connection:start(NkPort1)

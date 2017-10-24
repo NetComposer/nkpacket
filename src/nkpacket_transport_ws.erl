@@ -79,7 +79,7 @@ connect(NkPort) ->
         transp     = Transp,
         remote_ip  = Ip,
         remote_port= Port,
-        meta       = Opts
+        opts       = Opts
     } = NkPort,
     Debug = maps:get(debug, Opts, false),
     put(nkpacket_debug, Debug),
@@ -97,7 +97,7 @@ connect(NkPort) ->
                 local_ip  = LocalIp,
                 local_port= LocalPort,
                 socket    = Socket,
-                meta      = Opts1
+                opts      = Opts1
             },
             case nkpacket_connection_ws:start_handshake(NkPort1) of
                 {ok, WsProto, Rest} -> 
@@ -106,7 +106,7 @@ connect(NkPort) ->
                         _ -> Opts1#{ws_proto=>WsProto}
                     end,
                     TranspMod:setopts(Socket, [{active, once}]),
-                    {ok, NkPort1#nkport{meta=Opts2}, Rest};
+                    {ok, NkPort1#nkport{opts=Opts2}, Rest};
                 {error, Error} ->
                     {error, Error}
             end;
@@ -143,7 +143,7 @@ init([NkPort]) ->
         transp     = Transp,
         listen_ip  = ListenIp,
         listen_port= ListenPort,
-        meta       = Meta,
+        opts       = Meta,
         protocol   = Protocol
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
@@ -165,7 +165,7 @@ init([NkPort]) ->
             local_port = LocalPort,
             listen_port= LocalPort,
             socket     = SharedPid,
-            meta       = ConnMeta
+            opts       = ConnMeta
         },   
         Host = maps:get(host, Meta, any),
         Path = maps:get(path, Meta, any),
@@ -214,7 +214,7 @@ handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call({nkpacket_start, Ip, Port, UserMeta, Pid}, _From, State) ->
-    #state{nkport=#nkport{meta=Meta} = NkPort} = State,
+    #state{nkport=#nkport{opts=Meta} = NkPort} = State,
     % We remove host and path because the connection we are going to start
     % is not related (from the remote point of view) of the local host and path
     % In case to be reused, they should not be taken into account.
@@ -228,7 +228,7 @@ handle_call({nkpacket_start, Ip, Port, UserMeta, Pid}, _From, State) ->
         remote_ip  = Ip,
         remote_port= Port,
         socket     = Pid,
-        meta       = Meta2
+        opts       = Meta2
     },
     case nkpacket_connection:start(NkPort1) of
         {ok, #nkport{pid=ConnPid}=NkPort2} ->
@@ -421,7 +421,7 @@ terminate(Reason, _Req, ConnPid) ->
 outbound_opts(#nkport{transp=ws}) ->
     [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}];
 
-outbound_opts(#nkport{transp=wss, meta=Opts}) ->
+outbound_opts(#nkport{transp=wss, opts=Opts}) ->
     [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}]
     ++ nkpacket_util:make_tls_opts(Opts).
 

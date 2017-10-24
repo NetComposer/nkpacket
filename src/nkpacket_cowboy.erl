@@ -199,11 +199,11 @@ reply(Code, Hds, Body, Req) ->
 
 init([NkPort, Filter]) ->
     #nkport{
-        transp = Transp, 
-        listen_ip = ListenIp, 
-        listen_port = ListenPort,
-        pid = ListenPid,
-        meta = Meta
+        transp     = Transp,
+        listen_ip  = ListenIp,
+        listen_port= ListenPort,
+        pid        = ListenPid,
+        opts       = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     Debug = maps:get(debug, Meta, false),
@@ -214,13 +214,13 @@ init([NkPort, Filter]) ->
             {InetMod, _, RanchMod} = get_modules(Transp),
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
             Shared = NkPort#nkport{
-                local_ip = LocalIp,
-                local_port = LocalPort, 
-                listen_port = LocalPort,
-                pid = self(),
-                protocol = undefined,
-                socket = Socket,
-                meta = #{}
+                local_ip   = LocalIp,
+                local_port = LocalPort,
+                listen_port= LocalPort,
+                pid        = self(),
+                protocol   = undefined,
+                socket     = Socket,
+                opts       = #{}
             },
             RanchId = {ListenIp, LocalPort},
             Timeout = case Meta of
@@ -485,7 +485,7 @@ listen_opts(#nkport{transp=Transp, listen_ip=Ip})
         {reuseaddr, true}, {backlog, 1024}
     ];
 
-listen_opts(#nkport{transp=Transp, listen_ip=Ip, meta=Opts}) 
+listen_opts(#nkport{transp=Transp, listen_ip=Ip, opts=Opts})
         when Transp==wss; Transp==https ->
     [
         {ip, Ip}, {active, false}, binary,

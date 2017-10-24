@@ -56,7 +56,7 @@ is_max() ->
 -spec raw_send(nkpacket:nkport(), nkpacket:outcoming()) ->
     ok | {error, term()}.
     
-raw_send(#nkport{transp=udp, meta=Opts}=NkPort, Data) ->
+raw_send(#nkport{transp=udp, opts=Opts} = NkPort, Data) ->
     MaxSize = maps:get(udp_max_size, Opts, ?UDP_MAX_SIZE),
     case byte_size(Data) > MaxSize of
         true ->
@@ -171,7 +171,7 @@ raw_stop(_) ->
 -spec apply_msg_fun(term(), #nkport{}) ->
     term().
 
-apply_msg_fun(Msg, #nkport{meta=Opts}=NkPort) ->
+apply_msg_fun(Msg, #nkport{opts=Opts} = NkPort) ->
     case Opts of
         #{pre_send_fun:=Fun} ->
             Fun(Msg, NkPort);

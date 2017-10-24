@@ -94,7 +94,7 @@ start_handshake(NkPort) ->
 
 
 %% @private
-get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, meta=Meta}) ->
+get_handshake_req(#nkport{remote_ip=Ip, remote_port=Port, opts=Meta}) ->
     Host = case maps:get(host, Meta, undefined) of
         undefined -> nklib_util:to_host(Ip);
         Host0 -> Host0

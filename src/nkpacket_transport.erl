@@ -109,12 +109,12 @@ get_connected(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=O
     {ok, {pid(), term()}} | {error, term()}.
 
 % Used when we don't want to reuse the same exact connection (stateless proxies)
-send([#nkport{socket=undefined, meta=Opts}=NkPort|Rest], Msg) ->
+send([#nkport{socket=undefined, opts=Opts} = NkPort|Rest], Msg) ->
     {ok, {Protocol, Transp, Ip, Port}} = nkpacket:get_remote(NkPort),
     Conn = #nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts},
     send([{current, Conn}|Rest], Msg);
 
-send([#nkport{meta=Opts}=NkPort|Rest], Msg) ->
+send([#nkport{opts=Opts} = NkPort|Rest], Msg) ->
     case do_send([NkPort], Msg, Opts) of
         {ok, Pid2} ->
             {ok, Pid2};
@@ -277,23 +277,24 @@ do_connect(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts
         #{debug:=true} -> put(nkpacket_debug, true);
         _ -> ok
     end,
-    #nkport{listen_ip=ListenIp, meta=Meta1} = BasePort,
+    #nkport{listen_ip=ListenIp, opts=BaseMeta} = BasePort,
     case ListenIp of
         undefined when ListenOpt ->
             {error, no_listening_transport};
         _ ->
             ?DEBUG("base port: ~p", [BasePort]),
             % Our listening host and meta must not be used for the new connection
-            Meta2 = maps:remove(host, Meta1),
-            Meta3 = maps:remove(path, Meta2),
+            BaseMeta2 = maps:without([host, path], BaseMeta),
+            Opts2 = maps:merge(BaseMeta2, Opts),
             ConnPort = BasePort#nkport{
-                id = maps:get(id, Opts),
-                class = maps:get(class, Opts, none),
-                transp = Transp, 
-                protocol = Protocol,
-                remote_ip = Ip, 
-                remote_port = Port,
-                meta = maps:remove(class, maps:merge(Meta3, Opts))
+                id         = maps:get(id, Opts),
+                class      = maps:get(class, Opts, none),
+                transp     = Transp,
+                protocol   = Protocol,
+                remote_ip  = Ip,
+                remote_port= Port,
+                opts       = maps:without([id, class, user_state], Opts2),
+                user_state = maps:get(user_state, Opts2, undefined)
             },
             % If we found a listening transport, connection will monitor it
             nkpacket_connection:connect(ConnPort)

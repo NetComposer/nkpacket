@@ -100,7 +100,7 @@ syntax() ->
         pre_send_fun => {function, 2},
         resolve_type => {atom, [listen, connect, send]},
         base_nkport => [boolean, {record, nkport}],
-        user => any,
+        user_state => any,
         debug => boolean
     },
     add_tls_syntax(Base).

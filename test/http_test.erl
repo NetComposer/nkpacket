@@ -73,32 +73,32 @@ basic() ->
 	}),
 	timer:sleep(100),
 
-	[Listen1] = nkpacket:get_all(dom1),
+	[Listen1] = nkpacket:get_class_ids(dom1),
 	{ok, #nkport{
-			class = dom1,
-			transp = http,
-			local_ip = {0,0,0,0}, local_port = Port,
-			listen_ip = {0,0,0,0}, listen_port = Port,
-			protocol = nkpacket_protocol_http, pid=Http1, socket = CowPid,
-			meta = #{path := <<"/test1">>}
+		class    = dom1,
+		transp   = http,
+		local_ip = {0,0,0,0}, local_port= Port,
+		listen_ip= {0,0,0,0}, listen_port= Port,
+		protocol = nkpacket_protocol_http, pid=Http1, socket= CowPid,
+		opts     = #{path := <<"/test1">>}
 	}} = nkpacket:get_nkport(Listen1),
-	[Listen2] = nkpacket:get_all(dom2),
+	[Listen2] = nkpacket:get_class_ids(dom2),
 	{ok, #nkport{
-			class = dom2,
- 			transp = http,
-			local_ip = {0,0,0,0}, local_port = Port,
-			listen_ip = {0,0,0,0}, listen_port = Port,
-			pid = Http2, socket = CowPid,
-			meta = #{path := <<"/test2">>}
+		class    = dom2,
+		transp   = http,
+		local_ip = {0,0,0,0}, local_port= Port,
+		listen_ip= {0,0,0,0}, listen_port= Port,
+		pid      = Http2, socket= CowPid,
+		opts     = #{path := <<"/test2">>}
 	}} = nkpacket:get_nkport(Listen2),
-	[Listen3] = nkpacket:get_all(dom3),
+	[Listen3] = nkpacket:get_class_ids(dom3),
 	{ok, #nkport{
-			class = dom3,
-			transp = http,
-			local_ip = {0,0,0,0}, local_port = Port,
-			listen_ip = {0,0,0,0}, listen_port = Port,
-			pid = Http3, socket = CowPid,
-			meta = #{
+		class    = dom3,
+		transp   = http,
+		local_ip = {0,0,0,0}, local_port= Port,
+		listen_ip= {0,0,0,0}, listen_port= Port,
+		pid      = Http3, socket= CowPid,
+		opts     = #{
 				host := <<"localhost">>,
 				path := <<"/test3/a">>
 			}

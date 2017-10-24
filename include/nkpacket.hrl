@@ -80,7 +80,8 @@
     listen_port :: inet:port_number(),
     pid :: pid(),
     socket :: nkpacket_transport:socket(),
-    meta= #{} :: map()
+    opts = #{} :: nkpacket:listen_opts() | nkpacket:send_opts(),
+    user_state = undefined :: nkpacket:user_state()
 }).
 
 

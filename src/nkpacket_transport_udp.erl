@@ -165,7 +165,7 @@ init([NkPort]) ->
         transp     = udp,
         listen_ip  = ListenIp,
         listen_port= ListenPort,
-        meta       = Meta
+        opts       = Meta
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
@@ -206,7 +206,7 @@ init([NkPort]) ->
 %%        nklib_proc:put(nkpacket_listeners, {Name, Class}),
         nkpacket_util:register_listener(NkPort),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
-        ConnPort = NkPort1#nkport{meta=ConnMeta},
+        ConnPort = NkPort1#nkport{opts=ConnMeta},
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
@@ -247,7 +247,7 @@ handle_call({nkpacket_connect, ConnPort}, _From, State) ->
     #nkport{
         remote_ip  = Ip,
         remote_port= Port,
-        meta       = Meta
+        opts       = Meta
     } = ConnPort,
     {reply, do_connect(Ip, Port, Meta, State), State};
 
@@ -512,7 +512,7 @@ do_connect(Ip, Port, State) ->
 
 %% @private
 do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
-    #nkport{class=Class, protocol=Proto, meta=ListenMeta} = NkPort,
+    #nkport{class=Class, protocol=Proto, opts=ListenMeta} = NkPort,
     Conn = #nkconn{protocol=Proto, transp=sctp, ip=Ip, port=Port, opts=#{class=>Class}},
     case nkpacket_transport:get_connected(Conn) of
         [Pid|_] -> 
@@ -525,7 +525,7 @@ do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
             NkPort1 = NkPort#nkport{
                 remote_ip  = Ip,
                 remote_port= Port,
-                meta       = Meta1
+                opts       = Meta1
             },
             % Connection will monitor us using nkport's pid
             nkpacket_connection:start(NkPort1)

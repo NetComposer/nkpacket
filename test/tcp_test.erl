@@ -54,7 +54,7 @@ basic() ->
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
 	
-	[Listen1] = nkpacket:get_all(dom1),
+	[Listen1] = nkpacket:get_class_ids(dom1),
 	{ok, #nkport{transp=tcp, 
 	       	class = dom1,
 			local_ip={0,0,0,0}, local_port=ListenPort1, 
@@ -62,7 +62,7 @@ basic() ->
 			remote_ip=undefined, remote_port=undefined, pid=Tcp1
 	}} = nkpacket:get_nkport(Listen1),
 
-	[Listen2] = nkpacket:get_all(dom2),
+	[Listen2] = nkpacket:get_class_ids(dom2),
 	{ok, #nkport{transp=tcp, 
 	       	class = dom2,
 			local_port=ListenPort2, pid=Tcp2, 
@@ -111,8 +111,8 @@ basic() ->
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
 	receive {Ref1, conn_stop} -> ok after 2000 -> error(?LINE) end,
 	timer:sleep(50),
-	[Listen2] = nkpacket:get_all(dom2),
-	[Listen1] = nkpacket:get_all(dom1),
+	[Listen2] = nkpacket:get_class_ids(dom2),
+	[Listen1] = nkpacket:get_class_ids(dom1),
 	test_util:ensure([Ref1, Ref2]),
 	ok.
 
@@ -139,7 +139,7 @@ tls() ->
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
-	[Listen1] = nkpacket:get_all(dom1),
+	[Listen1] = nkpacket:get_class_ids(dom1),
 	{ok, #nkport{
 	       	class = dom1,
 			transp = tls, 
