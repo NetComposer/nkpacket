@@ -149,7 +149,7 @@ basic() ->
 	receive {Ref1, conn_stop} -> ok after 1500 -> error(?LINE) end,
 	receive {Ref2, conn_stop} -> ok after 1500 -> error(?LINE) end,
 
-	ok = nkpacket:stop_listener(Ws1),
+	ok = nkpacket:stop_listeners(Ws1),
 	receive {Ref1, listen_stop} -> ok after 1000 -> error(?LINE) end,
 	test_util:ensure([Ref1, Ref2]),
 	ok.
@@ -201,7 +201,7 @@ wss() ->
 	receive {Ref1, {encode, msg1c}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {parse, {binary, msg1c}}} -> ok after 1000 -> error(?LINE) end,
 
-	ok = nkpacket:stop_listener(Ws1),
+	ok = nkpacket:stop_listeners(Ws1),
 	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_stop} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, listen_stop} -> ok after 1000 -> error(?LINE) end,
@@ -235,7 +235,7 @@ ping() ->
 	receive {Ref1, conn_stop}  -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_stop}  -> ok after 1000 -> error(?LINE) end,
 
-	ok = nkpacket:stop_listener(Ws1),
+	ok = nkpacket:stop_listeners(Ws1),
 	receive {Ref1, listen_stop}  -> ok after 1000 -> error(?LINE) end,
 	test_util:ensure([Ref1, Ref2]).
 
@@ -258,7 +258,7 @@ large() ->
 	receive {Ref1, conn_stop}  -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_stop}  -> ok after 1000 -> error(?LINE) end,
 
-	ok = nkpacket:stop_listener(Ws1),
+	ok = nkpacket:stop_listeners(Ws1),
 	receive {Ref1, listen_stop}  -> ok after 1000 -> error(?LINE) end,
 	test_util:ensure([Ref1, Ref2]).
 
@@ -271,8 +271,8 @@ multi() ->
 	% Listener 2 on {0,0,0,0}, all hosts, path /dom2
 	% Listener 3 on {0,0,0,0}, localhost, path /dom3 and proto 'proto1'
 
-	{ok, Ws1} = nkpacket:start_listener({test_protocol, ws, {0,0,0,0}, 0},
-						   			    M1#{class=>dom1, path=>"/dom1/more"}),
+	{ok, Ws1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=ws, ip={0,0,0,0}, port=0,
+						   			    opts=M1#{class=>dom1, path=>"/dom1/more"}}),
 	{ok, {_, ws, {0,0,0,0}, P1}} = nkpacket:get_local(Ws1),
 	P1S = integer_to_list(P1),
 
@@ -331,8 +331,9 @@ multi() ->
 	{Ws1, any, [<<"dom1">>, <<"more">>], any} = nkpacket_cowboy:extract_filter(Filter3),
 
 	% Now we send a message from dom5 to dom1, we don't mind host and ws_proto
-	{ok, Conn1} = nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1,
-								#{path=>"/dom1/more", idle_timeout=>500, class=>dom5}),
+	{ok, Conn1} = nkpacket:send(#nkconn{protocol=test_protocol, transp=ws, ip={127,0,0,1}, port=P1,
+								 	    opts=#{path=>"/dom1/more", idle_timeout=>500, class=>dom5}},
+										msg1),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 
@@ -360,15 +361,12 @@ multi() ->
     [] = test_util:listeners(dom5),
 
     % No one is listening here
-    {error, closed} = 
-    	nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1, 
-    				   #{class=>dom5}),
-    {error, closed} = 
-    	nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1, 
-    				   #{class=>dom5, path=>"/"}),
-    {error, closed} = 
-    	nkpacket:send({test_protocol, ws, {127,0,0,1}, P1}, msg1, 
-    				  #{class=>dom5, path=>"/dom1"}),
+    {error, no_transports} =
+    	nkpacket:send(#nkconn{protocol=test_protocol, transp=ws, ip={127,0,0,1}, port=P1, opts=#{class=>dom5}}, msg1),
+    {error, no_transports} =
+    	nkpacket:send(#nkconn{protocol=test_protocol, transp=ws, ip={127,0,0,1}, port=P1, opts=#{class=>dom5, path=>"/"}}, msg1),
+    {error, no_transports} =
+    	nkpacket:send(#nkconn{protocol=test_protocol, transp=ws, ip={127,0,0,1}, port=P1, opts=#{class=>dom5, path=>"/dom1"}}, msg1),
 
     % Now we connect to dom2
     % We use host because of the url
@@ -405,14 +403,14 @@ multi() ->
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
 
 	% We connect to dom3, but the host must be 'localhost'
-	{error, closed} = 
+	{error, no_transports} =
 		nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>", msg3, 
 					  #{class=>dom5}),
-	{error, closed} = 
+	{error, no_transports} =
 		nkpacket:send("<test://localhost:"++P1S++"/dom3;transport=ws>", msg3,
 					  #{class=>dom5}),
 	% It also needs a supported WS protocol
-	{error, closed} = 
+	{error, no_transports} =
 		nkpacket:send("<test://localhost:"++P1S++"/dom3;transport=ws>", msg3,
 					  #{ws_proto=>proto2, class=>dom5}),
 
@@ -424,9 +422,9 @@ multi() ->
 	receive {Ref3, {parse, {binary, msg3}}} -> ok after 1000 -> error(?LINE) end,
 
 	% Send a new message, must use the same transport (same path, host and proto)
-	{error, closed} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>", 
+	{error, no_transports} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>",
 									msg4, #{class=>dom5}),
-	{error, closed} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1", msg4, #{class=>dom5}),
+	{error, no_transports} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1", msg4, #{class=>dom5}),
 
 	{ok, Conn3} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1;host=localhost", msg4, #{class=>dom5}),
 	receive {Ref3, {parse, {binary, msg4}}} -> ok after 1000 -> error(?LINE) end,
@@ -435,14 +433,14 @@ multi() ->
 	receive {Ref3, conn_stop}  -> ok after 1000 -> error(?LINE) end,
 	% receive {Ref3, conn_stop}  -> ok after 1000 -> error(?LINE) end,
 
-	ok = nkpacket:stop_listener(Listen1),
-	ok = nkpacket:stop_listener(Listen2),
-	ok = nkpacket:stop_listener(Ws3),
+	ok = nkpacket:stop_listeners(Listen1),
+	ok = nkpacket:stop_listeners(Listen2),
+	ok = nkpacket:stop_listeners(Ws3),
 	receive {Ref1, listen_stop}  -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_stop}  -> ok after 1000 -> error(?LINE) end,
 	receive {Ref3, listen_stop}  -> ok after 1000 -> error(?LINE) end,
-	{error, {exit, _}} = nkpacket:stop_listener(Listen1),
-	{error, {exit, _}} = nkpacket:stop_listener(Ws3),
+	ok = nkpacket:stop_listeners(Listen1),
+	ok = nkpacket:stop_listeners(Ws3),
 	test_util:ensure([Ref1, Ref2, Ref3]).
 
 

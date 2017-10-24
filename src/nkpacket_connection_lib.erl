@@ -22,8 +22,7 @@
 -module(nkpacket_connection_lib).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([is_max/0, raw_send/2, raw_send/3, raw_send_sync/2, raw_stop/1]).
--export_type([send_opts/0]).
+-export([is_max/0, raw_send/2, raw_send_sync/2, raw_stop/1, apply_msg_fun/2]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
@@ -33,10 +32,6 @@
 -define(SYNC_TIMEOUT, 30000).
 -define(UDP_MAX_SIZE, 1300).
 
--type send_opts() :: 
-    #{
-        udp_max_size => integer()
-    }.
 
 
 %% ===================================================================
@@ -56,19 +51,12 @@ is_max() ->
             false
     end.
 
-%% @doc Equivalent to raw_send(NkPort, Data, #{})
+
+%% @doc Sends data directly to a transport
 -spec raw_send(nkpacket:nkport(), nkpacket:outcoming()) ->
     ok | {error, term()}.
     
-raw_send(NkPort, Data) ->
-    raw_send(NkPort, Data, #{}).
-
-
-%% @doc Sends data directly to a transport
--spec raw_send(nkpacket:nkport(), nkpacket:outcoming(), send_opts()) ->
-    ok | {error, term()}.
-    
-raw_send(#nkport{transp=udp}=NkPort, Data, Opts) ->
+raw_send(#nkport{transp=udp, meta=Opts}=NkPort, Data) ->
     MaxSize = maps:get(udp_max_size, Opts, ?UDP_MAX_SIZE),
     case byte_size(Data) > MaxSize of
         true ->
@@ -81,25 +69,25 @@ raw_send(#nkport{transp=udp}=NkPort, Data, Opts) ->
             end
     end;
 
-raw_send(#nkport{transp=tcp, socket=Socket}, Data, _Opts) ->
+raw_send(#nkport{transp=tcp, socket=Socket}, Data) ->
     gen_tcp:send(Socket, Data);
 
-raw_send(#nkport{transp=tls, socket=Socket}, Data, _Opts) ->
+raw_send(#nkport{transp=tls, socket=Socket}, Data) ->
     % lager:warning("Send: ~p", [list_to_binary([Data])]),
     ssl:send(Socket, Data);
 
-raw_send(#nkport{transp=sctp, socket={Socket, AssocId}}, Data, _Opts) ->
+raw_send(#nkport{transp=sctp, socket={Socket, AssocId}}, Data) ->
     gen_sctp:send(Socket, AssocId, 0, Data);
 
-raw_send(#nkport{transp=ws, socket=Socket}, Data, _Opts) when is_port(Socket) ->
+raw_send(#nkport{transp=ws, socket=Socket}, Data) when is_port(Socket) ->
     Bin = nkpacket_connection_ws:encode(get_ws_frame(Data)),
     gen_tcp:send(Socket, Bin);
 
-raw_send(#nkport{transp=wss, socket={sslsocket, _, _}=Socket}, Data, _Opts) ->
+raw_send(#nkport{transp=wss, socket={sslsocket, _, _}=Socket}, Data) ->
     Bin = nkpacket_connection_ws:encode(get_ws_frame(Data)),
     ssl:send(Socket, Bin);
 
-raw_send(#nkport{transp=Transp, socket=Pid}, Data, _Opts) when is_pid(Pid) ->
+raw_send(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->
     Msg = if
         Transp==ws; Transp==wss -> get_ws_frame(Data);
         true -> Data
@@ -112,7 +100,7 @@ raw_send(#nkport{transp=Transp, socket=Pid}, Data, _Opts) when is_pid(Pid) ->
             {error, no_process}
     end;
 
-raw_send(_, _, _) ->
+raw_send(_, _) ->
     {error, invalid_transport}.
 
 
@@ -178,3 +166,15 @@ raw_stop(#nkport{socket=Pid}) when is_pid(Pid) ->
 raw_stop(_) ->
     {error, invalid_transport}.
 
+
+%% @private
+-spec apply_msg_fun(term(), #nkport{}) ->
+    term().
+
+apply_msg_fun(Msg, #nkport{meta=Opts}=NkPort) ->
+    case Opts of
+        #{pre_send_fun:=Fun} ->
+            Fun(Msg, NkPort);
+        _ ->
+            Msg
+    end.

@@ -24,7 +24,7 @@
 
 
 -export([get_plugin_net_syntax/1, get_plugin_net_opts/1]).
--export([register_listener/1, find_id/1]).
+-export([register_listener/1]).
 -export([listen_print_all/0, conn_print_all/0]).
 -export([make_web_proto/1]).
 -export([make_cache/0, make_tls_opts/1, tls_keys/0]).
@@ -70,52 +70,8 @@ get_plugin_net_opts(Config) ->
 %% @private
 register_listener(#nkport{id=Id, class=Class}) ->
     nklib_proc:put(nkpacket_listeners, {Id, Class}),
-    true = nklib_proc:reg({nkpacket_id, Id}, Class),
+    nklib_proc:put({nkpacket_id, Id}, Class),
     ok.
-
-
-%% @private
-find_id(#nkport{pid=Pid}) ->
-    {ok, Pid};
-
-find_id(Pid) when is_pid(Pid) ->
-    {ok, Pid};
-
-find_id(Id) ->
-    case nklib_proc:values({nkpacket_id, Id}) of
-        [] ->
-            not_found;
-        [{_Class, Pid}] ->
-            {ok, Pid}
-    end.
-
-
-
-%%%% @doc
-%%-spec get_id(nkpacket:nkport()) ->
-%%    nkpacket:listen_id().
-%%
-%%get_id(#nkport{transp=Transp, listen_ip=Ip, listen_port=Port, meta=Meta}) ->
-%%    get_id(Transp, Ip, Port, Meta).
-%%
-%%
-%%%% @doc
-%%-spec get_id(nkpacket:transport(), inet:ip_address(), inet:port_number(), map()) ->
-%%    nkpacket:listen_id().
-%%
-%%get_id(Transp, Ip, Port, Meta) ->
-%%    Sock = case Transp of
-%%        udp -> udp;
-%%        tcp -> tcp;
-%%        tls -> tcp;
-%%        sctp -> sctp;
-%%        ws -> {tcp, maps:get(path, Meta, <<>>)};
-%%        wss -> {tcp, maps:get(path, Meta, <<>>)};
-%%        http -> {tcp, maps:get(path, Meta, <<>>)};
-%%        https -> {tcp, maps:get(path, Meta, <<>>)}
-%%    end,
-%%    Bin = nklib_util:hash({Sock, Ip, Port}),
-%%    binary_to_atom(Bin, latin1).
 
 
 listen_print_all() ->

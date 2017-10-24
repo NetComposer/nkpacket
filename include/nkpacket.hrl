@@ -80,8 +80,19 @@
     listen_port :: inet:port_number(),
     pid :: pid(),
     socket :: nkpacket_transport:socket(),
-    meta = #{} :: map()
+    meta= #{} :: map()
 }).
+
+
+-record(nkconn, {
+    protocol :: nkpacket:protocol(),
+    transp :: nkpacket:transport(),
+    ip = {0,0,0,0} :: inet:ip_address(),
+    port = 0 :: inet:port_number(),
+    opts = #{} :: nkpacket:listen_opts() | nkpacket:send_opts()
+}).
+
+
 
 
 -endif.

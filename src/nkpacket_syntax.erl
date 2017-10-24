@@ -98,7 +98,7 @@ syntax() ->
         http_proto => fun ?MODULE:spec_http_proto/3,
         force_new => boolean,
         pre_send_fun => {function, 2},
-        resolve_type => {atom, [listen, connect]},
+        resolve_type => {atom, [listen, connect, send]},
         base_nkport => [boolean, {record, nkport}],
         user => any,
         debug => boolean

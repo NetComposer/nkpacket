@@ -76,37 +76,37 @@ get_listener(#nkport{id=Id, transp=Transp}=NkPort) when Transp==ws; Transp==wss 
          
 connect(NkPort) ->
     #nkport{
-        transp = Transp, 
-        remote_ip = Ip, 
-        remote_port = Port, 
-        meta = Meta
+        transp     = Transp,
+        remote_ip  = Ip,
+        remote_port= Port,
+        meta       = Opts
     } = NkPort,
-    Debug = maps:get(debug, Meta, false),
+    Debug = maps:get(debug, Opts, false),
     put(nkpacket_debug, Debug),
     SocketOpts = outbound_opts(NkPort),
     TranspMod = case Transp of ws -> tcp, ranch_tcp; wss -> ranch_ssl end,
-    ConnTimeout = case maps:get(connect_timeout, Meta, undefined) of
+    ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
         undefined -> nkpacket_config_cache:connect_timeout();
         Timeout0 -> Timeout0
     end,
     case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} -> 
             {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
-            Meta1 = maps:merge(#{path => <<"/">>}, Meta),
+            Opts1 = maps:merge(#{path => <<"/">>}, Opts),
             NkPort1 = NkPort#nkport{
-                local_ip = LocalIp,
-                local_port = LocalPort,
-                socket = Socket,
-                meta = Meta1
+                local_ip  = LocalIp,
+                local_port= LocalPort,
+                socket    = Socket,
+                meta      = Opts1
             },
             case nkpacket_connection_ws:start_handshake(NkPort1) of
                 {ok, WsProto, Rest} -> 
-                    Meta2 = case WsProto of
-                        undefined -> Meta1;
-                        _ -> Meta1#{ws_proto=>WsProto}
+                    Opts2 = case WsProto of
+                        undefined -> Opts1;
+                        _ -> Opts1#{ws_proto=>WsProto}
                     end,
                     TranspMod:setopts(Socket, [{active, once}]),
-                    {ok, NkPort1#nkport{meta=Meta2}, Rest};
+                    {ok, NkPort1#nkport{meta=Opts2}, Rest};
                 {error, Error} ->
                     {error, Error}
             end;
@@ -139,12 +139,12 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        class = Class,
-        transp = Transp, 
-        listen_ip = ListenIp, 
-        listen_port = ListenPort,
-        meta = Meta,
-        protocol = Protocol
+        class      = Class,
+        transp     = Transp,
+        listen_ip  = ListenIp,
+        listen_port= ListenPort,
+        meta       = Meta,
+        protocol   = Protocol
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     Debug = maps:get(debug, Meta, false),
@@ -161,11 +161,11 @@ init([NkPort]) ->
         {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(SharedPid),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
         ConnPort = NkPort1#nkport{
-            local_ip = LocalIp,
+            local_ip   = LocalIp,
             local_port = LocalPort,
-            listen_port = LocalPort,
-            socket = SharedPid,
-            meta = ConnMeta        
+            listen_port= LocalPort,
+            socket     = SharedPid,
+            meta       = ConnMeta
         },   
         Host = maps:get(host, Meta, any),
         Path = maps:get(path, Meta, any),
@@ -214,7 +214,7 @@ handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
 handle_call({nkpacket_start, Ip, Port, UserMeta, Pid}, _From, State) ->
-    #state{nkport=#nkport{meta=Meta}=NkPort} = State,
+    #state{nkport=#nkport{meta=Meta} = NkPort} = State,
     % We remove host and path because the connection we are going to start
     % is not related (from the remote point of view) of the local host and path
     % In case to be reused, they should not be taken into account.
@@ -225,10 +225,10 @@ handle_call({nkpacket_start, Ip, Port, UserMeta, Pid}, _From, State) ->
     Meta1 = maps:without([host, path], Meta),
     Meta2 = maps:merge(Meta1, UserMeta),
     NkPort1 = NkPort#nkport{
-        remote_ip = Ip,
-        remote_port = Port,
-        socket = Pid,
-        meta = Meta2
+        remote_ip  = Ip,
+        remote_port= Port,
+        socket     = Pid,
+        meta       = Meta2
     },
     case nkpacket_connection:start(NkPort1) of
         {ok, #nkport{pid=ConnPid}=NkPort2} ->

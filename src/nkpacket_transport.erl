@@ -22,7 +22,7 @@
 -module(nkpacket_transport).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([connect/2, send/3, get_connected/1, get_connected/2]).
+-export([connect/1, send/2, get_connected/1]).
 -export([get_listener/1, open_port/2, get_defport/2]).
 -export_type([socket/0]).
 
@@ -56,253 +56,211 @@
 
 
 %% @private Finds a connected transport
--spec get_connected(nkpacket:netspec()) ->
+-spec get_connected(nkpacket:nkconn()) ->
     [pid()].
 
-get_connected(Conn) ->
-    get_connected(Conn, #{}).
-
-
-%% @private Finds a connected transport
--spec get_connected(nkpacket:netspec(), map()) ->
-    [pid()].
-
-get_connected({_Proto, Transp, _Ip, _Port}, _Opts) when Transp==http; Transp==https ->
+get_connected(#nkconn{transp=Transp}) when Transp==http; Transp==https ->
     [];
 
-get_connected({_Proto, Transp, _Ip, _Port}=Conn, Opts) when Transp==ws; Transp==wss ->
+get_connected(#nkconn{transp=Transp}=Conn) when Transp==ws; Transp==wss ->
+    #nkconn{protocol=Protocol, ip=Ip, port=Port, opts=Opts} = Conn,
+    Class = maps:get(class, Opts, none),
     Host = maps:get(host, Opts, any),
     Path = maps:get(path, Opts, any),
     WsProto = maps:get(ws_proto, Opts, any),
-    Class = maps:get(class, Opts, none),
     nklib_util:filtermap(
         fun({Meta, Pid}) ->
-            HostOK = Host==any orelse 
-                case maps:get(host, Meta, any) of
-                    any -> true;
-                    Host -> true;
-                    _ -> false
-                end,
+            HostOK = Host==any orelse
+                     case maps:get(host, Meta, any) of
+                         any -> true;
+                         Host -> true;
+                         _ -> false
+                     end,
             PathOK = Path==any orelse
-                case maps:get(path, Meta, any) of
-                    any -> true;
-                    Path -> true;
-                    _ -> false
-                end,
-            ProtoOK = WsProto==any orelse 
-                case maps:get(ws_proto, Meta, any) of
-                    any -> true;
-                    WsProto -> true;
-                    _ -> false
-                end,
+                     case maps:get(path, Meta, any) of
+                         any -> true;
+                         Path -> true;
+                         _ -> false
+                     end,
+            ProtoOK = WsProto==any orelse
+                      case maps:get(ws_proto, Meta, any) of
+                          any -> true;
+                          WsProto -> true;
+                          _ -> false
+                      end,
             case HostOK andalso PathOK andalso ProtoOK of
                 true -> {true, Pid};
                 false -> false
             end
         end,
-        nklib_proc:values({nkpacket_connection, Class, Conn}));
+        nklib_proc:values({nkpacket_connection, Class, {Protocol, Transp, Ip, Port}}));
 
-get_connected({_, _, _, _}=Conn, Opts) ->
+get_connected(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts}) ->
     Class = maps:get(class, Opts, none),
     [
-        Pid || 
-        {_Meta, Pid} <- nklib_proc:values({nkpacket_connection, Class, Conn})
+        Pid ||
+        {_Meta, Pid} <- nklib_proc:values({nkpacket_connection, Class, {Protocol, Transp, Ip, Port}})
     ].
 
 
+
 %% @private
--spec send([nkpacket:send_spec()], term(), nkpacket:send_opts()) ->
+-spec send([nkpacket:send_spec()], term()) ->
     {ok, {pid(), term()}} | {error, term()}.
 
-send([Uri|Rest], Msg, Opts) when is_binary(Uri); is_list(Uri) ->
-    case nklib_parse:uris(Uri) of
-        PUris when is_list(PUris) ->
-            send([PUri || PUri <- PUris]++Rest, Msg, Opts);
-        error ->
-            send(Rest, Msg, Opts#{last_error=>{invalid_uri, Uri}})
-    end;
-     
-send([#uri{}=Uri|Rest], Msg, Opts) ->
-    case nkpacket:resolve(Uri, Opts) of
-        {ok, RawConns, Opts1} ->
-            ?DEBUG("send to ~p (~p)", [RawConns, Rest]),
-            send(RawConns++Rest, Msg, Opts1);
-        {error, Error} ->
-            ?LLOG(info, "error sending to ~p: ~p", [Uri, Error]),
-            send(Rest, Msg, Opts#{last_error=>Error})
-    end;
-
 % Used when we don't want to reuse the same exact connection (stateless proxies)
-send([#nkport{socket=undefined}=NkPort|Rest], Msg, Opts) ->
-    {ok, Conn} = nkpacket:get_remote(NkPort),
-    send([{current, Conn}|Rest], Msg, Opts);
+send([#nkport{socket=undefined, meta=Opts}=NkPort|Rest], Msg) ->
+    {ok, {Protocol, Transp, Ip, Port}} = nkpacket:get_remote(NkPort),
+    Conn = #nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts},
+    send([{current, Conn}|Rest], Msg);
 
-send([Port|Rest], Msg, Opts) when is_pid(Port); is_record(Port, nkport) ->
-    ?DEBUG("send to nkport ~p", [Port]),
-    case do_send(Msg, [Port], Opts#{udp_to_tcp=>false}) of
-        {ok, Res} -> {ok, Res};
-        {error, Opts1} -> send(Rest, Msg, Opts1)
+send([#nkport{meta=Opts}=NkPort|Rest], Msg) ->
+    case do_send([NkPort], Msg, Opts) of
+        {ok, Pid2} ->
+            {ok, Pid2};
+        {error, Error} ->
+            send(Rest++[{error, Error}], Msg)
     end;
 
-send([{current, {Protocol, udp, Ip, Port}}|Rest], Msg, Opts) ->
-    send([{Protocol, udp, Ip, Port}|Rest], Msg, Opts);
+send([Pid|Rest], Msg) when is_pid(Pid) ->
+    ?DEBUG("send to nkport ~p", [Pid]),
+    % With pids, no udp_to_tcp is possible
+    case do_send([Pid], Msg, #{}) of
+        {ok, Pid2} ->
+            {ok, Pid2};
+        {error, Error} ->
+            send(Rest++[{error, Error}], Msg)
+    end;
 
-send([{current, Conn}|Rest], Msg, Opts) ->
-    Pids = get_connected(Conn, Opts),
-    send(Pids++Rest, Msg, Opts);
+send([{current, #nkconn{transp=udp}=Conn}|Rest], Msg) ->
+    send([Conn|Rest], Msg);
 
-send([{Protocol, Transp, Ip, 0}|Rest], Msg, Opts) ->
+send([{current, #nkconn{}=Conn}|Rest], Msg) ->
+    Pids = get_connected(Conn),
+    send(Pids++Rest, Msg);
+
+send([#nkconn{protocol=Protocol, transp=Transp, port=0}=Conn|Rest], Msg) ->
     case get_defport(Protocol, Transp) of
         {ok, Port} ->
-            send([{Protocol, Transp, Ip, Port}|Rest], Msg, Opts);
+            send([Conn#nkconn{port=Port}|Rest], Msg);
         error ->
-            send(Rest, Msg, Opts#{last_error=>invalid_default_port})
+            send(Rest++[{error, invalid_default_port}], Msg)
     end;
 
-send([{connect, Conn}|Rest], Msg, Opts) ->
-    RemoveOpts = [udp_to_tcp, last_error],
-    ConnOpts = maps:without(RemoveOpts, Opts),
-    ?DEBUG("connecting to ~p (~p)", [Conn, ConnOpts]),
-    case connect([Conn], ConnOpts) of
+send([{connect, #nkconn{transp=Transp, opts=Opts}=Conn}|Rest], Msg) ->
+    ?DEBUG("connecting to ~p", [Conn]),
+    case connect([Conn]) of
         {ok, Pid} ->
-            case do_send(Msg, [Pid], Opts) of
-                {ok, Res} ->
-                    {ok, Res};
-                retry_tcp ->
-                    Conn1 = setelement(2, Conn, tcp), 
-                    send([Conn1|Rest], Msg, Opts);
-                {error, Opts1} ->
-                    send(Rest, Msg, Opts1)
+            case do_send([Pid], Msg, Opts) of
+                {ok, Pid2} ->
+                    {ok, Pid2};
+                retry_tcp when Transp==udp ->
+                    send([Conn#nkconn{transp=tcp}|Rest], Msg);
+                {error, Error} ->
+                    send(Rest++[{error, Error}], Msg)
             end;
         {error, Error} ->
             ?LLOG(info, "error connecting to ~p: ~p", [Conn, Error]),
-            send(Rest, Msg, Opts#{last_error=>Error})
+            send(Rest++[{error, Error}], Msg)
     end;
 
-send([{_, _, _, _}=Conn|Rest], Msg, #{class:=_}=Opts) ->
+send([#nkconn{transp=Transp, opts=#{class:=_}=Opts}=Conn|Rest], Msg) ->
     Pids = case Opts of
-        #{force_new:=true} -> [];
-        _ -> get_connected(Conn, Opts)
+        #{force_new:=true} ->
+            [];
+        _ ->
+            get_connected(Conn)
     end,
-    case do_send(Msg, Pids, Opts) of
-        {ok, Res} -> 
+    case do_send(Pids, Msg, Opts) of
+        {ok, Pid} ->
             ?DEBUG("used previous connection to ~p (~p)", [Conn, Opts]),
-            {ok, Res};
-        retry_tcp ->
-            Conn1 = setelement(2, Conn, tcp), 
+            {ok, Pid};
+        retry_tcp when Transp==udp ->
             ?DEBUG("retrying with tcp", []),
-            send([Conn1|Rest], Msg, Opts);
-        {error, Opts1} -> 
-            send([{connect, Conn}|Rest], Msg, Opts1)
+            send([Conn#nkconn{transp=tcp}|Rest], Msg);
+        {error, Error} ->
+            send([{connect, Conn}|Rest++[{error, Error}]], Msg)
     end;
 
-% If we dont specify a class, do not reuse connections
-send([{_, _, _, _}=Conn|Rest], Msg, Opts) ->
-    send([{connect, Conn}|Rest], Msg, Opts);
+% If we don't specify a class, do not reuse connections
+send([#nkconn{}=Conn|Rest], Msg) ->
+    send([{connect, Conn}|Rest], Msg);
 
-send([Term|Rest], Msg, Opts) ->
-    ?LLOG(warning, "invalid send specification: ~p", [Term]),
-    send(Rest, Msg, Opts#{last_error=>{invalid_send_specification, Term}});
-
-send([], _Msg, #{last_error:=Error}) -> 
+send([{error, Error}|_], _Msg) ->
     {error, Error};
 
-send([], _, _) ->
+send([], _) ->
     {error, no_transports}.
-
-
-% get_allc() ->
-%     [element(2, nkpacket:get_nkport(Pid)) ||
-%         Pid <- nkpacket_connection:get_all()].
 
 
 
 %% @private
--spec do_send(term(), [#nkport{}|pid()], nkpacket:send_opts()) ->
-    {ok, {pid(), term()}} | retry_tcp | {error, nkpacket:send_opts()}.
+-spec do_send([#nkport{}|pid()], nkpacket:send_opts(), #{udp_to_tcp=>boolean()}) ->
+    {ok, pid()} | retry_tcp | no_transports | {error, term()}.
 
-do_send(_Msg, [], Opts) ->
-    {error, Opts};
+do_send([], _Msg, _Opts) ->
+    {error, no_transports};
 
-do_send(Msg, [Port|Rest], #{pre_send_fun:=Fun}=Opts) ->
-    Msg1 = get_msg_fun(Fun, Msg, Port),
-    do_send(Msg1, [Port|Rest], maps:remove(pre_send_fun, Opts));
+do_send([{error, Error}|_], _Msg, _Opts) ->
+    {error, Error};
 
-do_send(Msg, [Port|Rest], Opts) ->
-    SendOpts = case maps:find(udp_max_size, Opts) of
-        {ok, MaxSize} -> #{udp_max_size=>MaxSize};
-        error -> #{}
-    end,
-    case nkpacket_connection:send(Port, Msg, SendOpts) of
+do_send([Port|Rest], Msg, Opts) ->
+    case nkpacket_connection:send(Port, Msg) of
         ok when is_pid(Port) ->
-            {ok, {Port, Msg}};
+            {ok, Port};
         ok ->
-            {ok, {Port#nkport.pid, Msg}};
+            {ok, Port#nkport.pid};
         {error, udp_too_large} ->
             case Opts of
                 #{udp_to_tcp:=true} ->
                     retry_tcp;
                 _ ->
                     ?LLOG(info, "error sending msg: udp_too_large", []),
-                    do_send(Msg, Rest, Opts#{last_error=>udp_too_large})
+                    do_send(Rest++[{error, udp_too_large}], Msg, Opts)
             end;
         {error, Error} ->
             ?LLOG(info, "error sending msg to ~p: ~p", [Port, Error]),
-            do_send(Msg, Rest, Opts#{last_error=>Error})
-    end.
-
-        
-%% @private
--spec get_msg_fun(fun((#nkport{}) -> binary()), term(), #nkport{}|pid()) ->
-    {ok, binary()} | {error, invalid_nkport}.
-
-get_msg_fun(Fun, Msg, #nkport{}=NkPort) ->
-    Fun(Msg, NkPort);
-
-get_msg_fun(Fun, Msg, Pid) when is_pid(Pid) ->
-    case nkpacket:get_nkport(Pid) of
-        {ok, NkPort} -> get_msg_fun(Fun, Msg, NkPort);
-        _ -> {error, invalid_nkport}
+            do_send(Rest++[{error, Error}], Msg, Opts)
     end.
 
 
 %% @private Starts a new outbound connection.
--spec connect([nkpacket:netspec()], nkpacket:connect_opts()) ->
+-spec connect([nkpacket:netspec()]) ->
     {ok, nkpacket:nkport()} | {error, term()}.
 
-connect([], _Opts) ->
+connect([]) ->
     {error, no_transports};
 
-connect([{Protocol, Transp, Ip, 0}|Rest], Opts) ->
+connect([#nkconn{protocol=Protocol, transp=Transp, port=0} = Conn|Rest]) ->
     case get_defport(Protocol, Transp) of
         {ok, Port} -> 
-            connect([{Protocol, Transp, Ip, Port}|Rest], Opts);
+            connect([Conn#nkconn{port=Port}|Rest]);
         error ->
             {error, invalid_default_port}
     end;
 
-connect([Conn|Rest], Opts) ->
-    Fun = fun() -> do_connect(Conn, Opts) end,
+connect([#nkconn{} = Conn|Rest]) ->
+    Fun = fun() -> do_connect(Conn) end,
     try nklib_proc:try_call(Fun, Conn, 100, ?CONN_TRIES) of
         {ok, NkPort} ->
             {ok, NkPort};
         {error, Error} when Rest==[] ->
             {error, Error};
         {error, _} ->
-            connect(Rest, Opts)
+            connect(Rest)
     catch
         error:max_tries ->
-            connect(Rest, Opts)
+            connect(Rest)
     end.
 
 
 %% @private Starts a new connection to a remote server
 %% Tries to find an associated listening transport, 
 %% to use the listening address, port and meta from it
--spec do_connect(nkpacket:netspec(), nkpacket:connect_opts()) ->
+-spec do_connect(nkpacket:nkconn()) ->
     {ok, pid()} | {error, term()}.
          
-do_connect({Protocol, Transp, Ip, Port}, Opts) ->
+do_connect(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts}) ->
     ListenOpt = maps:get(base_nkport, Opts, undefined),
     BasePort = case ListenOpt of
         false ->
@@ -314,6 +272,10 @@ do_connect({Protocol, Transp, Ip, Port}, Opts) ->
                 [NkPort|_] -> NkPort;
                 [] -> #nkport{}
             end
+    end,
+    case Opts of
+        #{debug:=true} -> put(nkpacket_debug, true);
+        _ -> ok
     end,
     #nkport{listen_ip=ListenIp, meta=Meta1} = BasePort,
     case ListenIp of

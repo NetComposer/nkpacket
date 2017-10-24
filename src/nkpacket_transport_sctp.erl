@@ -254,8 +254,8 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
             end;
         #sctp_assoc_change{state=shutdown_comp, assoc_id=AssocId} ->
             ?DEBUG("COMM_DOWN: ~p", [AssocId]),
-            Conn = {Proto, sctp, Ip, Port},
-            case nkpacket_transport:get_connected(Conn, #{class=>Class}) of
+            Conn = #nkconn{protocol=Proto, transp=sctp, ip=Ip, port=Port, opts=#{class=>Class}},
+            case nkpacket_transport:get_connected(Conn) of
                 [Pid|_] -> nkpacket_connection:stop(Pid, normal);
                 _ -> ok
             end,
@@ -363,8 +363,8 @@ do_connect(Ip, Port, AssocId, State) ->
 do_connect(Ip, Port, AssocId, Meta, State) ->
     #state{nkport=NkPort, socket=Socket} = State,
     #nkport{class=Class, protocol=Proto, meta=ListenMeta} = NkPort,
-    Conn = {Proto, sctp, Ip, Port},
-    case nkpacket_transport:get_connected(Conn, #{class=>Class}) of
+    Conn = #nkconn{protocol=Proto, transp=sctp, ip=Ip, port=Port, opts=#{class=>Class}},
+    case nkpacket_transport:get_connected(Conn) of
         [Pid|_] -> 
             {ok, NkPort#nkport{pid=Pid}};
         [] -> 

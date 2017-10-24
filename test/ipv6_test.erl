@@ -50,7 +50,7 @@ basic() ->
 	Local6 = {0,0,0,0,0,0,0,1},
 	Url = "<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>",
 	{ok, Tcp1} = nkpacket:start_listener(Url, M1#{class=>dom1}),
-	{ok, Tcp2} = nkpacket:start_listener({test_protocol, tcp, All6, 0}, M2#{class=>dom2}),
+	{ok, Tcp2} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tcp, ip=All6, port=0, opts=M2#{class=>dom2}}),
 	{ok, {_, tcp, _, LPort1}} = nkpacket:get_local(Tcp1),	
 	{ok, {_, tcp, _, LPort2}} = nkpacket:get_local(Tcp2),
 	case LPort2 of
@@ -105,8 +105,8 @@ basic() ->
 			listen_ip=All6, listen_port=LPort2
 	}} = nkpacket:get_nkport(Conn2),
 
-	ok = nkpacket:stop_listener(Tcp1),
-	ok = nkpacket:stop_listener(Tcp2),
+	ok = nkpacket:stop_listeners(Tcp1),
+	ok = nkpacket:stop_listeners(Tcp2),
 
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
 	receive {Ref1, conn_stop} -> ok after 2000 -> error(?LINE) end,
@@ -167,9 +167,9 @@ is_local() ->
 			true = nkpacket:is_local(Uri4, #{class=>dom2})
 	end,
 
-	ok = nkpacket:stop_listener(Tcp0),
-	ok = nkpacket:stop_listener(Tcp1),
-	ok = nkpacket:stop_listener(Tcp2).
+	ok = nkpacket:stop_listeners(Tcp0),
+	ok = nkpacket:stop_listeners(Tcp1),
+	ok = nkpacket:stop_listeners(Tcp2).
 
 
 

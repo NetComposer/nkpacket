@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([send/2, send/3, stop/1, stop/2, start/1]).
+-export([send/2, stop/1, stop/2, start/1]).
 -export([reset_timeout/2, get_timeout/1, update_monitor/2]).
 -export([get_all/0, get_all/1, get_all_class/0, stop_all/0, stop_all/1]).
 -export([incoming/2, connect/1, conn_init/1]).
@@ -103,29 +103,22 @@ connect(#nkport{}=NkPort) ->
     end.
 
 
-%% @doc Equivalent to send(Port, Data, #{})
+%% @doc Sends a new message to a started connection
 -spec send(nkpacket:nkport()|pid(), term()) ->
     ok | {error, term()}.
 
-send(Port, Data) ->
-    send(Port, Data, #{}).
-
-
-%% @doc Sends a new message to a started connection
--spec send(nkpacket:nkport()|pid(), term(), nkpacket_connection_lib:send_opts()) ->
-    ok | {error, term()}.
-
-send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg, Opts) when node(Pid)==node() ->
+send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
     case erlang:function_exported(Protocol, conn_encode, 2) of
         true ->
-            case Protocol:conn_encode(Msg, NkPort) of
+            Msg2 = nkpacket_connection_lib:apply_msg_fun(Msg, NkPort),
+            case Protocol:conn_encode(Msg2, NkPort) of
                 {ok, OutMsg} ->
                     % If we calling inside the connection process, the 
                     % nkpacket_debug tag will be present
                     % Otherwhise, we need to set it or add check to #nkport.meta
                     % (debug should be present there)
                     ?DEBUG("raw send: ~p", [OutMsg], NkPort),
-                    case nkpacket_connection_lib:raw_send(NkPort, OutMsg, Opts) of
+                    case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
                         ok ->
                             reset_timeout(Pid),
                             ok;
@@ -133,22 +126,24 @@ send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg, Opts) when node(Pid)==node
                             {error, Error}
                     end;
                 continue when is_pid(Pid) ->
-                    send(Pid, Msg, Opts);
+                    send(Pid, Msg);
                 {error, Error} ->
                     lager:notice("NkPACKET Conn error unparsing msg: ~p", [Error]),
                     {error, encode_error}
             end;
         false when is_pid(Pid) ->
-            send(Pid, Msg, Opts)
+            send(Pid, Msg)
     end;
 
-send(Pid, _Msg, _Opts) when Pid==self() ->
+send(Pid, _Msg) when Pid==self() ->
     {error, same_process};
 
-send(Pid, Msg, Opts) when is_pid(Pid) ->
-    case catch gen_server:call(Pid, {nkpacket_send, Msg, Opts}, 180000) of
-        {'EXIT', _} -> {error, no_process};
-        Other -> Other
+send(Pid, Msg) when is_pid(Pid) ->
+    case catch gen_server:call(Pid, {nkpacket_send, Msg}, 180000) of
+        {'EXIT', _} ->
+            {error, no_process};
+        Other ->
+            Other
     end.
 
 
@@ -306,24 +301,24 @@ init([NkPort]) ->
         remote_port = Port, 
         pid = ListenPid,
         socket = Socket,
-        meta = Meta
+        meta = Opts
     } = NkPort,
     process_flag(trap_exit, true),          % Allow call to terminate/2
     nklib_proc:put(nkpacket_connections, Class),
-    Debug = maps:get(debug, Meta, false),
+    Debug = maps:get(debug, Opts, false),
     put(nkpacket_debug, Debug),
     nklib_counters:async([nkpacket_connections, {nkpacket_connections, Class}]),
     Conn = {Protocol, Transp, Ip, Port},
-    StoredMeta = if
+    StoredOpts = if
         Transp==http; Transp==https ->
-            maps:with([host, path], Meta);
+            maps:with([host, path], Opts);
         Transp==ws; Transp==wss ->
-            maps:with([host, path, ws_proto], Meta);
+            maps:with([host, path, ws_proto], Opts);
         true ->
             #{}
     end,
-    nklib_proc:put({nkpacket_connection, Class, Conn}, StoredMeta), 
-    Timeout = case maps:get(idle_timeout, Meta, undefined) of
+    nklib_proc:put({nkpacket_connection, Class, Conn}, StoredOpts),
+    Timeout = case maps:get(idle_timeout, Opts, undefined) of
         Timeout0 when is_integer(Timeout0) -> 
             Timeout0;
         undefined ->
@@ -346,7 +341,7 @@ init([NkPort]) ->
         true -> erlang:monitor(process, Socket);
         _ -> undefined
     end,
-    UserMonitor = case Meta of
+    UserMonitor = case Opts of
         #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
         _ -> undefined
     end,
@@ -357,7 +352,7 @@ init([NkPort]) ->
     NkPort1 = NkPort#nkport{pid=self()},
     % We need to store some meta in case someone calls get_nkport
     StoredNkPort = NkPort1#nkport{
-                        meta=maps:with([host, path, ws_proto, debug], Meta)},
+                        meta=maps:with([host, path, ws_proto, debug], Opts)},
     State = #state{
         transp = Transp,
         nkport = StoredNkPort,
@@ -369,7 +364,7 @@ init([NkPort]) ->
         bridge_monitor = undefined,
         ws_state = WsState,
         timeout = Timeout,
-        refresh_fun = maps:get(refresh_fun, Meta, undefined),
+        refresh_fun = maps:get(refresh_fun, Opts, undefined),
         protocol = Protocol
     },
     %% 'user' key is only sent to conn_init, then it is removed
@@ -445,11 +440,12 @@ handle_call(nkpacket_get_timeout, _From, #state{timeout_timer=Ref}=State) ->
     end,
     {reply, Reply, State};
 
-handle_call({nkpacket_send, Msg, Opts}, _From, #state{nkport=NkPort}=State) ->
-    case encode(Msg, State) of
+handle_call({nkpacket_send, Msg}, _From, #state{nkport=NkPort}=State) ->
+    Msg2 = nkpacket_connection_lib:apply_msg_fun(Msg, NkPort),
+    case encode(Msg2, State) of
         {ok, OutMsg, State1} ->
             ?DEBUG("send: ~p", [OutMsg], NkPort),
-            Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg, Opts),
+            Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
             {reply, Reply, restart_timer(State1)};
         {stop, Reason, State1} ->
             {stop, normal, {error, Reason}, State1}

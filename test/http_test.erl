@@ -130,14 +130,14 @@ basic() ->
 
 	% If we close the transport, NkPacket blocks access, but only for the next
 	% connection
-	ok = nkpacket:stop_listener(Http3),
+	ok = nkpacket:stop_listeners(Http3),
 	timer:sleep(100),
 	Gun2 = open(Port, tcp),
 	{ok, 404, H4} = get(Gun2, "/test3/a/1", [{<<"host">>, <<"localhost">>}]),
 	<<"NkPACKET">> = nklib_util:get_value(<<"server">>, H4),
 
-	ok = nkpacket:stop_listener(Http1),
-	ok = nkpacket:stop_listener(Http2),
+	ok = nkpacket:stop_listeners(Http1),
+	ok = nkpacket:stop_listeners(Http2),
 	ok.
 
 
@@ -154,7 +154,7 @@ https() ->
 	P = receive {Ref1, http_terminate, P2} -> P2 after 1000 -> error(?LINE) end,
 	{ok, 404, H1} = get(Gun, "/kk", []),
 	<<"Cowboy">> = nklib_util:get_value(<<"server">>, H1),
-	ok = nkpacket:stop_listener(Http1).
+	ok = nkpacket:stop_listeners(Http1).
 
 
 static() ->
@@ -224,7 +224,7 @@ static() ->
 	] = lists:sort(H3),
 	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/1/2/dir1/file1.txt", []),
 
-	ok = nkpacket:stop_listener(S1),
+	ok = nkpacket:stop_listeners(S1),
 	timer:sleep(100),
 
 	Gun2 = open(Port, tcp),
@@ -243,8 +243,8 @@ static() ->
 	% {ok, 200, _, _} = get(Gun3, "/a/index.html", []),
 	% {ok, 404, _} = get(Gun3, "/c/index.html", []),
 
-	ok = nkpacket:stop_listener(S2),
-	ok = nkpacket:stop_listener(S3).
+	ok = nkpacket:stop_listeners(S2),
+	ok = nkpacket:stop_listeners(S3).
 
 
 

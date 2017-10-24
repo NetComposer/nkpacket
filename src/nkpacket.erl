@@ -29,18 +29,18 @@
 
 -export([register_protocol/2, register_protocol/3]).
 -export([get_protocol/1, get_protocol/2]).
--export([start_listener/2, get_listener/2, stop_listener/1]).
+-export([start_listener/1, start_listener/2, get_listener/1, get_listener/2, stop_listeners/1]).
+-export([connect/1, connect/2]).
 -export([get_all/0, get_all/1, get_class/0, get_class/1]).
 -export([stop_all/0, stop_all/1]).
--export([send/2, send/3, connect/2]).
+-export([get_id_pids/1, send/2, send/3]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
--export([pid/1, get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1, get_local_bin/1]).
+-export([get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1, get_local_bin/1]).
 -export([get_meta/1, get_user/1]).
--export([resolve/1, resolve/2, multi_resolve/1, multi_resolve/2, parse_urls/3]).
 
--export_type([id/0, class/0, transport/0, protocol/0, nkport/0, netspec/0]).
+-export_type([id/0, class/0, transport/0, protocol/0, nkport/0, nkconn/0]).
 -export_type([listen_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
--export_type([connection/0, send_spec/0]).
+-export_type([connect_spec/0, send_spec/0]).
 -export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
 
 -include_lib("nklib/include/nklib.hrl").
@@ -74,9 +74,9 @@
 %% An opened port (listener or connection)
 -type nkport() :: #nkport{}.
 
-%% Raw connection specification
--type netspec() :: {protocol(), transport(), inet:ip_address(), inet:port_number()}.
 
+%% Raw connection specification
+-type nkconn() :: #nkconn{}.
 
 
 %% Options for listeners
@@ -193,26 +193,21 @@
     #{
         resolve_type =>
             listen |                    % Do not attempt SRV or NAPTR to resolve host
-            connect                     % Try SRV/NAPTR if port=0
+            connect |                   % Try SRV/NAPTR if port=0
+            send                        % Allowed special send constructs
     }
     | listen_opts()
     | send_opts().
 
 
 %% Connection specification
--type user_connection() :: 
-    nklib:user_uri() | connection().
-
-
-%% Connection specification
--type connection() :: 
-    nklib:uri() | netspec().
+-type connect_spec() ::
+    nklib:user_uri() | nklib:uri() | nkconn().
 
 
 %% Sending remote specification options
--type send_spec() :: 
-    user_connection() | {current, netspec()} | {connect, netspec()} |
-    pid() | nkport().
+-type send_spec() ::
+    connect_spec() | {current, nkconn()} | {connect, nkconn()} | pid().
 
 
 %% Incoming data to be parsed
@@ -295,76 +290,186 @@ get_protocol(Class, Scheme) ->
 
 
 %% @doc Starts a new listening transport.
--spec start_listener(user_connection(), listen_opts()) ->
+-spec start_listener(connect_spec()) ->
     {ok, pid()} | {error, term()}.
 
-start_listener(UserConn, Opts) ->
-    case get_listener(UserConn, Opts) of
+start_listener(Conn) ->
+    start_listener(Conn, #{}).
+
+
+%% @doc Starts a new listening transport.
+-spec start_listener(connect_spec(), listen_opts()) ->
+    {ok, pid()} | {error, term()}.
+
+start_listener(Conn, Opts) ->
+    case get_listener(Conn, Opts) of
         {ok, Spec} ->
             nkpacket_sup:add_listener(Spec);
         {error, Error} ->
             {error, Error}
+
     end.
+
+
+%% @doc
+-spec get_listener(connect_spec()) ->
+    {ok, supervisor:child_spec()} | {error, term()}.
+
+get_listener(Conn) ->
+    get_listener(Conn, #{}).
 
 
 %% @doc Gets a listening supervisor specification
--spec get_listener(user_connection(), listen_opts()) ->
+-spec get_listener(connect_spec(), listen_opts()) ->
     {ok, supervisor:child_spec()} | {error, term()}.
 
-get_listener({Protocol, Transp, Ip, Port}, Opts) when is_map(Opts) ->
-    case nkpacket_util:parse_opts(Opts) of
-        {ok, #{id:=Id}=Opts1} ->
-            case pid(Id) of
-                undefined ->
-                    Opts2 = case Transp==http orelse Transp==https of
+get_listener(Conn, Opts) ->
+    case nkpacket_resolve:resolve(Conn, Opts) of
+        {ok, [#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=#{id:=Id}=Opts2}]} ->
+            case get_id_pids(Id) of
+                [] ->
+                    Opts3 = case Transp==http orelse Transp==https of
                         true ->
-                            WebProto = nkpacket_util:make_web_proto(Opts1),
-                            Opts1#{http_proto=>WebProto};
+                            WebProto = nkpacket_util:make_web_proto(Opts2),
+                            Opts2#{http_proto=>WebProto};
                         _ ->
-                            Opts1
+                            Opts2
                     end,
                     % We cannot yet generate id, port can be 0
                     NkPort = #nkport{
-                        id = maps:get(id, Opts2),
-                        class = maps:get(class, Opts2, none),
-                        protocol = Protocol,
-                        transp = Transp,
-                        listen_ip = Ip,
-                        listen_port = Port,
-                        meta = Opts2
+                        id         = maps:get(id, Opts2),
+                        class      = maps:get(class, Opts2, none),
+                        protocol   = Protocol,
+                        transp     = Transp,
+                        listen_ip  = Ip,
+                        listen_port= Port,
+                        meta       = Opts3
                     },
                     nkpacket_transport:get_listener(NkPort);
-                Pid ->
+                [Pid|_] ->
                     {error, {already_started, Pid}}
             end;
-        {error, Error} ->
-            {error, Error}
-    end;
-
-get_listener(Uri, Opts) when is_map(Opts) ->
-    case resolve(Uri, Opts#{resolve_type=>listen}) of
-        {ok, [Conn], Opts1} ->
-            get_listener(Conn, Opts1);
-        {ok, _, _} ->
-            {error, invalid_uri};
+        {ok, []} ->
+            {error, no_listener};
+        {ok, _} ->
+            {error, multiple_listeners};
         {error, Error} ->
             {error, Error}
     end.
-
 
 
 %% @doc Stops a locally started listener (only for standard supervisor)
--spec stop_listener(id()|pid()|nkport()) ->
-    ok | {error, term()}.
+-spec stop_listeners(id()|pid()|nkport()) ->
+    ok.
 
-stop_listener(Id) ->
-    case nkpacket_util:find_id(Id) of
-        {ok, Pid} ->
-            nklib_util:call(Pid, nkpacket_stop, 30000);
-        not_found ->
-            {error, listener_not_found}
+stop_listeners(Id) ->
+    lists:foreach(
+        fun(Pid) -> nklib_util:call(Pid, nkpacket_stop, 30000) end,
+        get_id_pids(Id)).
+
+
+%% @doc Sends a message to a connection.
+-spec send(send_spec() | [send_spec()], term()) ->
+    {ok, pid()} | {error, term()}.
+
+send(SendSpec, Msg) ->
+    send(SendSpec, Msg, #{}).
+
+
+%% @doc Sends a message to a connection
+%% If a class is included, it will try to reuse any existing connection of the same class
+%% (except if force_new option is set)
+-spec send(send_spec() | [send_spec()], term(), send_opts()) ->
+    {ok, pid()} | {error, term()}.
+
+send(SendSpec, Msg, Opts) ->
+    case nkpacket_resolve:resolve(SendSpec, Opts#{resolve_type=>send}) of
+        {ok, Conns} ->
+
+%%            case Opts1 of
+%%                #{debug:=true} -> put(nkpacket_debug, true);
+%%                _ -> ok
+%%            end,
+
+            nkpacket_transport:send(Conns, Msg);
+        {error, Error} ->
+            {error, Error}
     end.
-    
+
+
+
+
+%% @doc Forces a new outbound connection.
+-spec connect(connect_spec()|[connect_spec()]) ->
+    {ok, nkport()} | {error, term()}.
+
+connect(Any) ->
+    connect(Any, #{}).
+
+
+%% @doc Forces a new outbound connection.
+-spec connect(connect_spec()|[connect_spec()], connect_opts()) ->
+    {ok, nkport()} | {error, term()}.
+
+connect(Conn, Opts) ->
+    case nkpacket_resolve:resolve(Conn, Opts) of
+        {ok, Socks} ->
+            nkpacket_transport:connect(Socks);
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
+
+
+%%%% @doc Forces a new outbound connection.
+%%-spec connect(#nksock{}ion() | [connection()], connect_opts()) ->
+%%    {ok, nkport()} | {error, term()}.
+%%
+%%
+%%%% @doc Forces a new outbound connection.
+%%-spec connect(user_connection() | [connection()], connect_opts()) ->
+%%    {ok, nkport()} | {error, term()}.
+%%
+%%connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
+%%    connect([Conn], Opts);
+%%
+%%connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts) ->
+%%    case nkpacket_util:parse_opts(Opts) of
+%%        {ok, Opts1} ->
+%%            case Opts1 of
+%%                #{debug:=true} -> put(nkpacket_debug, true);
+%%                _ -> ok
+%%            end,
+%%            nkpacket_transport:connect(Conns, Opts1);
+%%        {error, Error} ->
+%%            {error, Error}
+%%    end;
+%%
+%%connect(Uri, Opts) when is_map(Opts) ->
+%%    case resolve(Uri, Opts) of
+%%        {ok, Conns, Opts1} ->
+%%            connect(Conns, Opts1);
+%%        {error, Error} ->
+%%            {error, Error}
+%%    end.
+
+
+
+%% @doc Gets the current pids for a listener or connection
+-spec get_id_pids(id()|nkport()|pid()) ->
+    [pid()].
+
+get_id_pids(#nkport{pid=Pid}) ->
+    [Pid];
+
+get_id_pids(Pid) when is_pid(Pid) ->
+    [Pid];
+
+get_id_pids(Id) ->
+    [Pid || {_Class, Pid} <- nklib_proc:values({nkpacket_id, Id})].
+
+
 
 %% @doc Gets all registered transports
 -spec get_all() -> 
@@ -407,14 +512,14 @@ get_class(Class) ->
 %% @doc Stops all locally started listeners (only for standard supervisor)
 stop_all() ->
     lists:foreach(
-        fun(Pid) -> stop_listener(Pid) end,
+        fun(Pid) -> stop_listeners(Pid) end,
         get_all()).
 
 
 %% @doc Stops all locally started listeners for a class (only for standard supervisor)
 stop_all(Class) ->
     lists:foreach(
-        fun(Pid) -> stop_listener(Pid) end,
+        fun(Pid) -> stop_listeners(Pid) end,
         get_all(Class)).
 
 
@@ -431,7 +536,7 @@ get_nkport(Id) ->
 
 %% @doc Gets the current port number of a listener or connection
 -spec get_local(id()|pid()|nkport()) ->
-    {ok, netspec()} | error.
+    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
 
 get_local(#nkport{protocol=Proto, transp=Transp, local_ip=Ip, local_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
@@ -441,7 +546,7 @@ get_local(Id) ->
 
 %% @doc Gets the current remote peer address and port
 -spec get_remote(id()|pid()|nkport()) ->
-    {ok, netspec()} | error.
+    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
 
 get_remote(#nkport{protocol=Proto, transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
@@ -505,76 +610,8 @@ get_user(Id) ->
     apply_nkport(Id, fun get_user/1).
 
 
-%% @doc Gets the current pid() of a listener or connection
--spec pid(id()|nkport()) ->
-    pid() | undefined.
-
-pid(Id) ->
-    case nkpacket_util:find_id(Id) of
-        {ok, Pid} -> Pid;
-        not_found -> undefined
-    end.
 
 
-%% @doc Sends a message to a connection.
--spec send(send_spec() | [send_spec()], term()) ->
-    {ok, pid()} | {error, term()}.
-
-send(SendSpec, Msg) ->
-    send(SendSpec, Msg, #{}).
-
-
-%% @doc Sends a message to a connection
-%% If a class is included, it will try to reuse any existing connection of the same class
-%% (except if force_new option is set)
--spec send(send_spec() | [send_spec()], term(), send_opts()) ->
-    {ok, pid()} | {error, term()}.
-
-send(SendSpec, Msg, Opts) when is_list(SendSpec), not is_integer(hd(SendSpec)) ->
-    case nkpacket_util:parse_opts(Opts) of
-        {ok, Opts1} ->
-            case Opts1 of
-                #{debug:=true} -> put(nkpacket_debug, true);
-                _ -> ok
-            end,
-            case nkpacket_transport:send(SendSpec, Msg, Opts1) of
-                {ok, {Pid, _Msg1}} -> {ok, Pid};
-                {error, Error} -> {error, Error}
-            end;
-        {error, Error} ->
-            {error, Error}
-    end;
-
-send(SendSpec, Msg, Opts) ->
-    send([SendSpec], Msg, Opts).
-
-
-%% @doc Forces a new outbound connection.
--spec connect(user_connection() | [connection()], connect_opts()) ->
-    {ok, nkport()} | {error, term()}.
-
-connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
-    connect([Conn], Opts);
-
-connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts) ->
-    case nkpacket_util:parse_opts(Opts) of
-        {ok, Opts1} ->
-            case Opts1 of
-                #{debug:=true} -> put(nkpacket_debug, true);
-                _ -> ok
-            end,
-            nkpacket_transport:connect(Conns, Opts1);
-        {error, Error} ->
-            {error, Error}
-    end;
-
-connect(Uri, Opts) when is_map(Opts) ->
-    case resolve(Uri, Opts) of
-        {ok, Conns, Opts1} ->
-            connect(Conns, Opts1);
-        {error, Error} ->
-            {error, Error}
-    end.
 
 
 %% @private Finds a listening transport of Proto.
@@ -619,8 +656,8 @@ is_local(Uri) ->
     boolean().
 
 is_local(#uri{}=Uri, Opts) ->
-    case resolve(Uri, Opts) of
-        {ok, [{Protocol, Transp, Ip, _Port}|_]=Conns, _Opts1} ->
+    case nkpacket_resolve:resolve(Uri, Opts) of
+        {ok, [#nkconn{protocol=Protocol, transp=Transp, ip=Ip}|_]=Conns} ->
             List = get_listening(Protocol, Transp, Opts#{ip=>Ip}),
             Listen = [
                 {Transp, LIp, LPort} ||
@@ -634,15 +671,15 @@ is_local(#uri{}=Uri, Opts) ->
 
 
 %% @private
-is_local(Listen, [{Protocol, Transp, Ip, 0}|Rest], LocalIps) -> 
+is_local(Listen, [#nkconn{protocol=Protocol, transp=Transp, port=0}=Conn|Rest], LocalIps) ->
     case nkpacket_transport:get_defport(Protocol, Transp) of
         {ok, Port} ->
-            is_local(Listen, [{Protocol, Transp, Ip, Port}|Rest], LocalIps);
+            is_local(Listen, [Conn#nkconn{port=Port}|Rest], LocalIps);
         error ->
             is_local(Listen, Rest, LocalIps)
     end;
     
-is_local(Listen, [{_Protocol, Transp, Ip, Port}|Rest], LocalIps) -> 
+is_local(Listen, [#nkconn{transp=Transp, ip=Ip, port=Port}|Rest], LocalIps) ->
     case lists:member(Ip, LocalIps) of
         true ->
             case lists:member({Transp, Ip, Port}, Listen) of
@@ -686,245 +723,19 @@ is_local_ip(Ip) ->
     lists:member(Ip, nkpacket_config_cache:local_ips()).
 
 
-
-
-%% ===================================================================
-%% Internal
-%% ===================================================================
-
-%% Resolving an user_uri()
-%% -----------------------
-%%
-%% - This function converts an user_uri() into a series of netspec() specifications, and
-%%   updates the options in resolve_opts() adding info found in the uri
-%%   (see nkpacket_syntax:uri_syntax())
-%%   Options in resolve_opts() have higher priority to them found in the Uri
-
-
-%% @private
--spec resolve(nklib:user_uri()) -> 
-    {ok, [netspec()], map()} |
-    {error, term()}.
-
-resolve(Uri) ->
-    resolve(Uri, #{}).
-
-
-%% @private
--spec resolve(nklib:user_uri(), resolve_opts()) -> 
-    {ok, [netspec()], map()} |
-    {error, term()}.
-
-resolve(#uri{}=Uri, Opts) ->
-    #uri{
-        scheme = Scheme,
-        user = User,
-        pass = Pass,
-        domain = Host, 
-        path = Path, 
-        ext_opts = UriOpts, 
-        ext_headers = Headers
-    } = Uri,
-    Protocol = case Opts of
-        #{protocol:=UserProtocol} ->
-            UserProtocol;
-        #{class:=Class} ->
-            nkpacket:get_protocol(Class, Scheme);
-        _ ->
-            nkpacket:get_protocol(Scheme)
-    end,
-    Opts2 = case erlang:function_exported(Protocol, resolve_opts, 0) of
-        true ->
-            ProtOpts = Protocol:resolve_opts(),
-            maps:merge(ProtOpts, Opts);
-        false ->
-            Opts
-    end,
-    UriOpts1 = [{nklib_parse:unquote(K), nklib_parse:unquote(V)} || {K, V} <- UriOpts],
-    % Let's see if we want to listen or connect to a specific host
-    UriOpts2 = case Host of
-        <<"0.0.0.0">> ->
-            UriOpts1;
-        <<"0:0:0:0:0:0:0:0">> ->
-            UriOpts1;
-        <<"::0">> ->
-            UriOpts1;
-        <<"all">> ->
-            UriOpts1;
-        _ ->
-            [{host, Host}|UriOpts1]            % Host to listen on for WS/HTTP
-    end,
-    UriOpts3 = case User of
-        <<>> ->
-            UriOpts2;
-        _ ->
-            case Pass of
-                <<>> ->
-                    [{user, User}|UriOpts2];
-                _ ->
-                    [{user, User}, {password, Pass}|UriOpts2]
-            end
-    end,
-    UriOpts4 = case Path of
-        <<>> ->
-            UriOpts3;
-        _ ->
-            [{path, Path}|UriOpts3]            % Path to listen on for WS/HTTP
-    end,
-    UriOpts5 = case Headers of
-        [] ->
-            UriOpts4;
-        _ ->
-            [{user, Headers}|UriOpts4]          % TODO Is this right?
-    end,
-    try
-        % Opts is used here only for parse_syntax
-        UriOpts6 = case nkpacket_util:parse_uri_opts(UriOpts5, Opts) of
-            {ok, ParsedUriOpts} ->
-                ParsedUriOpts;
-            {error, Error1} ->
-                throw(Error1)
-        end,
-        Opts3 = case nkpacket_util:parse_opts(Opts2) of
-            {ok, CoreOpts} ->
-                maps:merge(UriOpts6, CoreOpts);
-            {error, Error2} ->
-                throw(Error2)
-        end,
-        % Now we have all the options, from the uri and the supplied options
-        Opts4 = maps:without([resolve_type, protocol], Opts3),
-        case nkpacket_dns:resolve(Uri, Opts3#{protocol=>Protocol}) of
-            {ok, Addrs} ->
-                Conns = [ 
-                    {Protocol, Transp, Addr, Port} 
-                    || {Transp, Addr, Port} <- Addrs
-                ],
-                {ok, Conns, Opts4};
-            {error, Error} ->
-                {error, Error}
-        end
-    catch
-        throw:Throw -> {error, Throw}
-    end;
-
-resolve(Uri, Opts) ->
-    case nklib_parse:uris(Uri) of
-        [Parsed] ->
-            resolve(Parsed, Opts);
-        _ ->
-            {error, {invalid_uri, Uri}}
-    end.
-
-
-
-%% @private
--spec multi_resolve(nklib:user_uri()|[nklib:user_uri()]) -> 
-    {ok, [{[netspec()], map()}]} |
-    {error, term()}.
-
-multi_resolve(Uri) ->
-    multi_resolve(Uri, #{}).
-
-
-%% @private
--spec multi_resolve(nklib:user_uri()|[nklib:user_uri()], resolve_opts()) -> 
-    {ok, [{[netspec()], map()}]} |
-    {error, term()}.
-   
-multi_resolve([], _Opts) ->
-    {ok, []};
-
-multi_resolve(List, Opts) when is_list(List), not is_integer(hd(List)) ->
-    multi_resolve(List, Opts, []);
-
-multi_resolve(Other, Opts) ->
-    multi_resolve([Other], Opts).
-
-
-%% @private
-multi_resolve([], _Opts, Acc) ->
-    {ok, lists:reverse(Acc)};
-
-multi_resolve([#uri{}=Uri|Rest], Opts, Acc) ->
-    case resolve(Uri, Opts) of
-        {ok, Conns, Opts1} ->
-            multi_resolve(Rest, Opts, [{Conns, Opts1}|Acc]);
-        {error, Error} ->
-            {error, Error}
-    end;
-
-multi_resolve([Uri|Rest], Opts, Acc) ->
-    case nklib_parse:uris(Uri) of
-        error ->
-            {error, {invalid_uri, Uri}};
-        Parsed ->
-            multi_resolve(Parsed++Rest, Opts, Acc)
-    end.
-
-
 %% @private
 -spec apply_nkport(id()|pid(), fun((nkport()) -> {ok, term()}))  ->
     term() | error.
 
 apply_nkport(Id, Fun) ->
-    case nkpacket_util:find_id(Id) of
-        {ok, Pid} ->
+    case get_id_pids(Id) of
+        [] ->
+            {error, id_not_found};
+        [Pid] ->
             case catch gen_server:call(Pid, {nkpacket_apply_nkport, Fun}, 180000) of
                 {'EXIT', _} -> error;
                 Other -> Other
             end;
-        not_found ->
-            {error, id_not_found}
+        _ ->
+            {error, multiple_pids}
     end.
-
-
-%% @doc Parses an url that can use a Proto+Transports or uses Transport as Scheme
--spec parse_urls(atom(), [atom()], term()) ->
-    {ok, [{[netspec()], map()}]} |
-    {error, term()}.
-
-parse_urls(Proto, Transports, Url) ->
-    case nklib_parse:uris(Url) of
-        error ->
-            {error, invalid_url};
-        List ->
-            case do_parse_urls(Proto, Transports, List, []) of
-                error ->
-                    {error, invalid_url};
-                List2 ->
-                    multi_resolve(List2, #{resolve_type=>listen})
-            end
-    end.
-
-
-
-%% @private
-do_parse_urls(_Proto, _Transports, [], Acc) ->
-    lists:reverse(Acc);
-
-do_parse_urls(Proto, Transports, [#uri{scheme=Proto, opts=Opts, ext_opts=ExtOpts}=Uri|Rest], Acc) ->
-    Transp1 = case nklib_util:get_value(<<"transport">>, Opts) of
-        undefined ->
-            nklib_util:get_value(<<"transport">>, ExtOpts);
-        T1 ->
-            T1
-    end,
-    Transp2 = (catch nklib_util:to_existing_atom(Transp1)),
-    case Transp2==undefined orelse lists:member(Transp2, Transports) of
-        true ->
-            do_parse_urls(Proto, Transports, Rest, [Uri|Acc]);
-        false ->
-            error
-    end;
-
-do_parse_urls(Proto, Transports, [#uri{scheme=Sc, ext_opts=Opts}=Uri|Rest], Acc) ->
-    case lists:member(Sc, Transports) of
-        true ->
-            Uri2 = Uri#uri{scheme=Proto, opts=[{<<"transport">>, Sc}|Opts]},
-            do_parse_urls(Proto, Transports, Rest, [Uri2|Acc]);
-        false ->
-            error
-    end.
-
-
-
