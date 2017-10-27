@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([app_syntax/0]).
--export([syntax/0, safe_syntax/0, tls_syntax/0, tls_defaults/0, packet_syntax/0]).
+-export([syntax/0, safe_syntax/0, tls_syntax/0, tls_defaults/0, packet_syntax/0, resolve_syntax/1]).
 -export([spec_http_proto/3, spec_headers/1]).
 
 -include("nkpacket.hrl").
@@ -182,6 +182,10 @@ packet_syntax() ->
         packet_sctp_in_streams => nat_integer,
         packet_no_dns_cache => boolean
     }.
+
+
+resolve_syntax(Protocol) ->
+    {mfa, nkpacket_resolve, check_syntax, [Protocol]}.
 
 
 

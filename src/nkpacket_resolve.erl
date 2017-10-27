@@ -24,7 +24,7 @@
 -module(nkpacket_resolve).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([resolve/1, resolve/2]).
+-export([resolve/1, resolve/2, check_syntax/2]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -212,6 +212,15 @@ do_resolve_uri(Uri, Opts) ->
         throw:Throw -> {error, Throw}
     end.
 
+
+%% @doc
+check_syntax(Protocol, Url) ->
+    case resolve(Url, #{protocol=>Protocol}) of
+        {ok, _Conns} ->
+            ok;
+        {error, _Error} ->
+            error
+    end.
 
 
 
