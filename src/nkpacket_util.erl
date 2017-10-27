@@ -29,7 +29,7 @@
 -export([make_web_proto/1]).
 -export([make_cache/0, make_tls_opts/1, tls_keys/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
--export([get_local_uri/2, get_remote_uri/2]).
+-export([get_local_uri/2, get_remote_uri/2, get_uri/4]).
 -export([init_protocol/3, call_protocol/4]).
 -export([norm_path/1]).
 -export([parse_opts/1, parse_uri_opts/2]).
@@ -84,8 +84,8 @@ conn_print_all() ->
 
 print_all([]) ->
     ok;
-print_all([Id|Rest]) ->
-    {ok, #nkport{socket=Socket}=NkPort} = nkpacket:get_nkport(Id),
+print_all([{_Id, _Class, Pid}|Rest]) ->
+    {ok, #nkport{socket=Socket}=NkPort} = nkpacket:get_nkport(Pid),
     NkPort1 = case is_tuple(Socket) of true -> 
         NkPort#nkport{socket=element(1,Socket)}; 
         false -> NkPort

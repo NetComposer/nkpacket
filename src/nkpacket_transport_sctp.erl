@@ -49,9 +49,9 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{id=Id, transp=sctp}=NkPort) ->
+get_listener(#nkport{id=Id, local_ip=Ip, local_port=Port, transp=sctp}=NkPort) ->
     {
-        Id,
+        {Id, sctp, Ip, Port},
         {?MODULE, start_link, [NkPort]},
         transient, 
         5000, 
@@ -126,9 +126,6 @@ init([NkPort]) ->
                 socket = {Socket, 0}
             },
             ok = gen_sctp:listen(Socket, true),
-%%            Name = nkpacket_util:get_id(NkPort1),
-%%            true = register(Name, self()),
-%%            nklib_proc:put(nkpacket_listeners, {Name, Class}),
             nkpacket_util:register_listener(NkPort),
             ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
             ConnPort = NkPort1#nkport{opts=ConnMeta},

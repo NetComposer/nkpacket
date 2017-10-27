@@ -84,7 +84,7 @@ basic() ->
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
-	[Conn2] = nkpacket_connection:get_all(dom2),
+	[{_, Conn2}] = nkpacket_connection:get_all_class(dom2),
 	{ok, #nkport{
 	       	class = dom2,
 			transp=tcp, pid=Conn2,
@@ -93,7 +93,7 @@ basic() ->
 			listen_ip={0,0,0,0}, listen_port=ListenPort2
 	}} = nkpacket:get_nkport(Conn2),
 
-	[Conn1] = nkpacket_connection:get_all(dom1),
+	[{_, Conn1}] = nkpacket_connection:get_all_class(dom1),
 	{ok, #nkport{
        		class = dom1,
 			transp=tcp, pid=Conn1,
@@ -150,7 +150,7 @@ tls() ->
 		    socket = {sslsocket, _, _}
 	}} = nkpacket:get_nkport(Listen1),
 
-	[Conn1] = nkpacket_connection:get_all(dom1),
+	[{_, Conn1}] = nkpacket_connection:get_all_class(dom1),
 	{ok, #nkport{
        	class = dom1,
 		transp = tls, 
@@ -161,7 +161,7 @@ tls() ->
 	    socket = {sslsocket, _, _}
 	}} = nkpacket:get_nkport(Conn1),
 
-	[Conn2] = nkpacket_connection:get_all(dom2),
+	[{_, Conn2}] = nkpacket_connection:get_all_class(dom2),
 	{ok, #nkport{
 	       	class = dom2,
 			transp = tls, 
@@ -176,11 +176,11 @@ tls() ->
 	{ok, _} = nkpacket:send(Uri, msg2, #{class=>dom2}),
 	receive {Ref1, {parse, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
-	[Conn1] = nkpacket_connection:get_all(dom1),
+	[{_, Conn1}] = nkpacket_connection:get_all_class(dom1),
 
 	% Wait for the timeout
 	timer:sleep(1500),
-	[IdTls1] = nkpacket:get_all(),
+	[{IdTls1, _, Tls1}] = nkpacket:get_all(),
 	[Tls1] = nkpacket:get_id_pids(IdTls1),
 	ok = nkpacket:stop_listeners(Tls1),
 	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,

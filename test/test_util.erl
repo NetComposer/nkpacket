@@ -110,7 +110,7 @@ listeners(Dom) ->
 
 
 conns(Dom) ->
-	lists:sort([element(2, nkpacket:get_nkport(P)) || P <- nkpacket_connection:get_all(Dom)]).
+	lists:sort([element(2, nkpacket:get_nkport(element(2,P))) || P <- nkpacket_connection:get_all_class(Dom)]).
 
 
 

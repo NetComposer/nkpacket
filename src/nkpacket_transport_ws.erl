@@ -59,9 +59,9 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{id=Id, transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
+get_listener(#nkport{id=Id, local_ip=Ip, local_port=Port, transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
     {
-        Id,
+        {Id, Transp, Ip, Port},
         {?MODULE, start_link, [NkPort]},
         transient,
         5000,
@@ -170,9 +170,6 @@ init([NkPort]) ->
         Host = maps:get(host, Meta, any),
         Path = maps:get(path, Meta, any),
         WsProto = maps:get(ws_proto, Meta, any),
-%%        Name = nkpacket_util:get_id(ConnPort),
-%%        true = register(Name, self()),
-%%        nklib_proc:put(nkpacket_listeners, {Name, Class}),
         nkpacket_util:register_listener(NkPort),
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;

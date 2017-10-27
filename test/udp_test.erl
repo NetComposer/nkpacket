@@ -54,7 +54,7 @@ basic() ->
 		1234 -> ok;
 		_ -> lager:warning("Could not open port 1234")
 	end,
-	[Listen1] = nkpacket:get_all(),
+	[{Listen1, _, _}] = nkpacket:get_all(),
 	[Listen1] = nkpacket:get_class_ids(none),
 	[] = nkpacket:get_class_ids(dom1),
 	{ok, #nkport{
@@ -155,13 +155,13 @@ listen() ->
 	[Conn1Pid] =
 		nkpacket_transport:get_connected(#nkconn{protocol=test_protocol, transp=udp, ip={127,0,0,1}, port=LocalPort,
 											     opts=#{class=><<"dom1">>}}),
-	[Conn1Pid] = nkpacket_connection:get_all(<<"dom1">>),
+	[{_, Conn1Pid}] = nkpacket_connection:get_all_class(<<"dom1">>),
 	ok = nkpacket_connection:stop(Conn1Pid, normal),
 	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),
 	[] = nkpacket_transport:get_connected(#nkconn{protocol=test_protocol, transp=udp, ip={127,0,0,1}, port=LocalPort,
 											 opts=#{class=><<"dom1">>}}),
-	[] = nkpacket_connection:get_all(<<"dom1">>),
+	[] = nkpacket_connection:get_all_class(<<"dom1">>),
 
 	ok = nkpacket:stop_listeners(Udp1),
 	receive {Ref1, listen_stop} -> ok after 1000 -> error(?LINE) end,
@@ -180,7 +180,7 @@ listen() ->
 	[] = nkpacket_transport:get_connected(#nkconn{protocol=test_protocol, transp=udp, ip={127,0,0,1}, port=LocalPort,
 											 opts=#{class=><<"dom1">>}}),
 
-	[] = nkpacket_connection:get_all(<<"dom1">>),
+	[] = nkpacket_connection:get_all_class(<<"dom1">>),
 	ok = nkpacket:stop_listeners(Udp2),
 	receive {Ref2, listen_stop} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(50),

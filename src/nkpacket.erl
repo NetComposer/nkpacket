@@ -31,7 +31,7 @@
 -export([get_protocol/1, get_protocol/2]).
 -export([start_listener/1, start_listener/2, get_listener/1, get_listener/2, stop_listeners/1]).
 -export([connect/1, connect/2]).
--export([get_all/0, get_class_ids/1, get_classes/0, get_class_ids2/1]).
+-export([get_all/0, get_class_ids/1, get_classes/0]).
 -export([stop_all/0, stop_all/1]).
 -export([get_id_pids/1, send/2, send/3]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
@@ -426,40 +426,6 @@ connect(Conn, Opts) ->
 
 
 
-%%%% @doc Forces a new outbound connection.
-%%-spec connect(#nksock{}ion() | [connection()], connect_opts()) ->
-%%    {ok, nkport()} | {error, term()}.
-%%
-%%
-%%%% @doc Forces a new outbound connection.
-%%-spec connect(user_connection() | [connection()], connect_opts()) ->
-%%    {ok, nkport()} | {error, term()}.
-%%
-%%connect({_, _, _, _}=Conn, Opts) when is_map(Opts) ->
-%%    connect([Conn], Opts);
-%%
-%%connect(Conns, Opts) when is_list(Conns), not is_integer(hd(Conns)), is_map(Opts) ->
-%%    case nkpacket_util:parse_opts(Opts) of
-%%        {ok, Opts1} ->
-%%            case Opts1 of
-%%                #{debug:=true} -> put(nkpacket_debug, true);
-%%                _ -> ok
-%%            end,
-%%            nkpacket_transport:connect(Conns, Opts1);
-%%        {error, Error} ->
-%%            {error, Error}
-%%    end;
-%%
-%%connect(Uri, Opts) when is_map(Opts) ->
-%%    case resolve(Uri, Opts) of
-%%        {ok, Conns, Opts1} ->
-%%            connect(Conns, Opts1);
-%%        {error, Error} ->
-%%            {error, Error}
-%%    end.
-
-
-
 %% @doc Gets the current pids for a listener or connection
 -spec get_id_pids(id()|nkport()|pid()) ->
     [pid()].
@@ -477,10 +443,10 @@ get_id_pids(Id) ->
 
 %% @doc Gets all registered transports
 -spec get_all() -> 
-    [id()].
+    [{id(), class(), pid()}].
 
 get_all() ->
-    [Id || {{Id, _Class}, _Pid} <- nklib_proc:values(nkpacket_listeners)].
+    [{Id, Class, Pid} || {{Id, Class}, Pid} <- nklib_proc:values(nkpacket_listeners)].
 
 
 %% @doc Gets all registered transports for a class.
@@ -488,7 +454,7 @@ get_all() ->
     [pid()].
 
 get_class_ids(Class) ->
-    [Id || {{Id, C}, _Pid} <- nklib_proc:values(nkpacket_listeners), C==Class].
+    [Id || {Id, C, _Pid} <- get_all(), C==Class].
 
 
 %% @doc Gets all classes having registered listeners
@@ -497,26 +463,18 @@ get_class_ids(Class) ->
 
 get_classes() ->
     lists:foldl(
-        fun({{Id, Class}, _Pid}, Acc) ->
+        fun({Id, Class, _Pid}, Acc) ->
             maps:put(Class, [Id|maps:get(Class, Acc, [])], Acc) 
         end,
         #{},
-        nklib_proc:values(nkpacket_listeners)).
+        get_all()).
 
-
-%% @doc Gets all classes having registered listeners
--spec get_class_ids2(class()) ->
-    [id()].
-
-get_class_ids2(Class) ->
-    All = get_classes(),
-    maps:get(Class, All, []).
 
 
 %% @doc Stops all locally started listeners (only for standard supervisor)
 stop_all() ->
     lists:foreach(
-        fun(Pid) -> stop_listeners(Pid) end,
+        fun({_Id, _Class, Pid}) -> stop_listeners(Pid) end,
         get_all()).
 
 

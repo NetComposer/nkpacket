@@ -25,7 +25,7 @@
 
 -export([send/2, stop/1, stop/2, start/1]).
 -export([reset_timeout/2, get_timeout/1, update_monitor/2]).
--export([get_all/0, get_all/1, get_all_class/0, stop_all/0, stop_all/1]).
+-export([get_all/0, get_all_class/1, get_all_class/0, stop_all/0, stop_all/1]).
 -export([incoming/2, connect/1, conn_init/1]).
 -export([ranch_start_link/2, ranch_init/2]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3,   
@@ -94,7 +94,8 @@ connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
 connect(#nkport{transp=Transp}) when Transp==http; Transp==https ->
     {error, not_supported};
 
-connect(#nkport{}=NkPort) ->
+connect(#nkport{transp=Transp}=NkPort)
+        when Transp==tcp; Transp==tls; Transp==ws; Transp==wss ->
     case nkpacket_connection_lib:is_max() of
         false -> 
             proc_lib:start(?MODULE, conn_init, [NkPort]);
@@ -165,18 +166,18 @@ stop(Conn, Reason) ->
 
 %% @doc Gets all started connections
 -spec get_all() ->
-    [pid()].
+    [{nkpacket:id(), nkpacket:class(), pid()}].
 
 get_all() ->
-    [Pid || {_Class, Pid} <- nklib_proc:values(nkpacket_connections)].
+    [{Id, Class, Pid} || {{Id, Class}, Pid} <- nklib_proc:values(nkpacket_connections)].
 
 
 %% @doc Gets all started connections for a class.
--spec get_all(nkpacket:class()) -> 
-    [pid()].
+-spec get_all_class(nkpacket:class()) ->
+    [{nkpacket:id(), pid()}].
 
-get_all(Class) ->
-    [Pid || {S, Pid} <- nklib_proc:values(nkpacket_connections), S==Class].
+get_all_class(Class) ->
+    [{Id, Pid} || {Id, S, Pid} <- get_all(), S==Class].
 
 
 %% @doc Gets all ckasses having started connections
@@ -185,11 +186,11 @@ get_all(Class) ->
 
 get_all_class() ->
     lists:foldl(
-        fun({Class, Pid}, Acc) ->
+        fun({_Id, Class, Pid}, Acc) ->
             maps:put(Class, [Pid|maps:get(Class, Acc, [])], Acc) 
         end,
         #{},
-        nklib_proc:values(nkpacket_connections)).
+        get_all()).
 
 
 %% @doc Stops all started connections
@@ -197,7 +198,7 @@ get_all_class() ->
     ok.
 
 stop_all() ->
-    lists:foreach(fun(Pid) -> stop(Pid, normal) end, get_all()).
+    lists:foreach(fun({_, _, Pid}) -> stop(Pid, normal) end, get_all()).
 
 
 %% @doc Stops all started connections for a class
@@ -205,7 +206,7 @@ stop_all() ->
     ok.
 
 stop_all(Class) ->
-    lists:foreach(fun(Pid) -> stop(Pid, normal) end, get_all(Class)).
+    lists:foreach(fun({_Id, Pid}) -> stop(Pid, normal) end, get_all_class(Class)).
 
 
 %% @doc Re-start the idle timeout
@@ -294,6 +295,7 @@ ranch_start_link(NkPort, Ref) ->
 
 init([NkPort]) ->
     #nkport{
+        id         = Id,
         class      = Class,
         protocol   = Protocol,
         transp     = Transp,
@@ -304,7 +306,7 @@ init([NkPort]) ->
         opts       = Opts
     } = NkPort,
     process_flag(trap_exit, true),          % Allow call to terminate/2
-    nklib_proc:put(nkpacket_connections, Class),
+    nklib_proc:put(nkpacket_connections, {Id, Class}),
     Debug = maps:get(debug, Opts, false),
     put(nkpacket_debug, Debug),
     nklib_counters:async([nkpacket_connections, {nkpacket_connections, Class}]),

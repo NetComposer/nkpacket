@@ -87,7 +87,7 @@ basic() ->
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
-	[Conn1] = nkpacket_connection:get_all(dom1),
+	[{_, Conn1}] = nkpacket_connection:get_all_class(dom1),
 	{ok, #nkport{
 	        class = dom1,
 			transp=tcp,
@@ -96,7 +96,7 @@ basic() ->
 			listen_ip=Local6, listen_port=LPort1
 	}} = nkpacket:get_nkport(Conn1),
 
-	[Conn2] = nkpacket_connection:get_all(dom2),
+	[{_, Conn2}] = nkpacket_connection:get_all_class(dom2),
 	{ok, #nkport{
 	        class = dom2,
 			transp=tcp,

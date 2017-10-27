@@ -93,7 +93,7 @@ basic() ->
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 
-	[PidA, PidB] = nkpacket_connection:get_all(),
+	[{_, _, PidA}, {_, _, PidB}] = nkpacket_connection:get_all(),
 	{ok, ConnA} = nkpacket:get_nkport(PidA),
 	{ok, ConnB} = nkpacket:get_nkport(PidB),
 
