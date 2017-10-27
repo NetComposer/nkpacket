@@ -48,7 +48,7 @@ basic() ->
 	_ = test_util:reset_2(),
 	Conn1 = #nkconn{protocol=test_protocol, transp=udp, ip={0,0,0,0}, port=0},
 	% First '0' port try to open default transport port (1234)
-	{ok, UdpP1} = nkpacket:start_listener(Conn1, #{}),	% No class
+	{ok, _, UdpP1} = nkpacket:start_listener(Conn1, #{}),	% No class
 	{ok, {_, udp, {0,0,0,0}, Port1}} = nkpacket:get_local(UdpP1),
 	case Port1 of
 		1234 -> ok;
@@ -69,7 +69,7 @@ basic() ->
 	% (Oops, in linux it allows to open it again, the old do not receive any more packets!)
 	Port2 = test_util:get_port(udp),
 	Conn = #nkconn{protocol=test_protocol, transp=udp, ip={0,0,0,0}, port=Port2},
-	{ok, LisA} = nkpacket:start_listener(Conn,
+	{ok, _, LisA} = nkpacket:start_listener(Conn,
 										  #{class=>dom2, udp_starts_tcp=>true,
 										   tcp_listeners=>1}),
 	timer:sleep(100),
@@ -118,7 +118,7 @@ basic() ->
 listen() ->
 	Port1 = test_util:get_port(udp),
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	{ok, Udp1} = nkpacket:start_listener(
+	{ok, _, Udp1} = nkpacket:start_listener(
 		"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>",
 		M1#{class=><<"dom1">>}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
@@ -170,7 +170,7 @@ listen() ->
 	[] = nkpacket:get_all(),
 
 	% Now testing UDP without creating connections
-	{ok, Udp2} = nkpacket:start_listener("<test://all;transport=udp>;class=dom1",
+	{ok, _, Udp2} = nkpacket:start_listener("<test://all;transport=udp>;class=dom1",
 										 M2#{udp_no_connections=>true}),
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
 	{ok, {_, _, _, 1234}} = nkpacket:get_local(Udp2),
@@ -192,7 +192,7 @@ stun() ->
 	Port1 = test_util:get_port(udp),
 	{Ref1, M1} = test_util:reset_1(),
 	ok = nkpacket:register_protocol(test, test_protocol),
-	{ok, Udp1} = nkpacket:start_listener( 
+	{ok, _, Udp1} = nkpacket:start_listener(
 					"<test://all:" ++ integer_to_list(Port1) ++ ";transport=udp>",
 					M1#{udp_stun_reply=>true, udp_no_connections=>true}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
@@ -208,7 +208,7 @@ stun() ->
     {{127,0,0,1}, LocalPort} = nklib_util:get_value(xor_mapped_address, Data),
 
     % We start a second listener that does not reply to STUNS
-	{ok, Udp2} = nkpacket:start_listener("<test://all:20001;transport=udp>",
+	{ok, _, Udp2} = nkpacket:start_listener("<test://all:20001;transport=udp>",
 	 									 M1#{udp_no_connections=>true}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
     ok = gen_udp:send(Socket, {127,0,0,1}, 20001, Request),

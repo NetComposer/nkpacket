@@ -46,9 +46,9 @@ tcp_test_() ->
 
 basic() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
-	{ok, Tcp1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tcp, ip={0,0,0,0}, port=0,
+	{ok, _, Tcp1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tcp, ip={0,0,0,0}, port=0,
 						   			     opts=M1#{class=>dom1, idle_timeout=>1000}}),
-	{ok, Tcp2} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tcp, ip={0,0,0,0}, port=0,
+	{ok, _, Tcp2} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tcp, ip={0,0,0,0}, port=0,
 						   			     opts=M2#{class=>dom2}}),
 	timer:sleep(100),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
@@ -121,7 +121,7 @@ basic() ->
 tls() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	ok = nkpacket:register_protocol(test, test_protocol),
-	{ok, Tls1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tls, ip={0,0,0,0}, port=0,
+	{ok, _, Tls1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tls, ip={0,0,0,0}, port=0,
 						   			     opts=M1#{class=>dom1, tcp_listeners=>1}}),
 	{ok, {_, _, _, ListenPort1}} = nkpacket:get_local(Tls1),
 	case ListenPort1 of
@@ -192,12 +192,12 @@ tls() ->
 send() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	ok = nkpacket:register_protocol(test, test_protocol),
-	{ok, Udp1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=udp, ip={0,0,0,0}, port=0,
+	{ok, _, Udp1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=udp, ip={0,0,0,0}, port=0,
 						   			     opts=M1#{class=>dom1, udp_starts_tcp=>true}}),
 	% Since '1234' is not available, a random one is used
 	% (Oops, in linux it allows to open it again, the old do not receive more packets!)
 	Port2 = test_util:get_port(udp),
-	{ok, Udp2} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=udp, ip={0,0,0,0}, port=Port2,
+	{ok, _, Udp2} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=udp, ip={0,0,0,0}, port=Port2,
 						   			     opts=M2#{class=>dom2, idle_timeout=>1000, udp_starts_tcp=>true, tcp_packet=>4}}),
 	timer:sleep(100),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,

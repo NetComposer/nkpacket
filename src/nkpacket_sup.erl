@@ -23,24 +23,23 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(supervisor).
 
--export([add_listener/1, del_listener/1, get_listeners/0]).
+-export([add_listener/2, del_listener/1, get_listeners/0]).
 -export([init/1, start_link/0, start_listen_sup/0]).
 
 -include("nkpacket.hrl").
 
 
 %% @private Adds a supervised listener
--spec add_listener(supervisor:child_spec()) ->
+-spec add_listener(nkpacket:id(), supervisor:child_spec()) ->
     {ok, pid()} | {error, term()}.
 
-add_listener(Spec) ->
+add_listener(Id, Spec) ->
     case supervisor:start_child(nkpacket_listen_sup, Spec) of
         {ok, Pid} -> 
-            {ok, Pid};
+            {ok, Id, Pid};
         {error, already_present} ->
-            Id = element(1, Spec),
             ok = supervisor:delete_child(nkpacket_listen_sup, Id),
-            add_listener(Spec);
+            add_listener(Id, Spec);
         {error, {Error, _}} -> 
             {error, Error};
         {error, Error} -> 
@@ -54,8 +53,10 @@ add_listener(Spec) ->
 
 del_listener(Id) ->
     case catch supervisor:terminate_child(nkpacket_listen_sup, Id) of
-        ok -> supervisor:delete_child(nkpacket_listen_sup, Id);
-        {error, Reason} -> {error, Reason}
+        ok ->
+            supervisor:delete_child(nkpacket_listen_sup, Id);
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 

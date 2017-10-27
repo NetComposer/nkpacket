@@ -49,8 +49,8 @@ basic() ->
 	All6 = {0,0,0,0,0,0,0,0},
 	Local6 = {0,0,0,0,0,0,0,1},
 	Url = "<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>",
-	{ok, Tcp1} = nkpacket:start_listener(Url, M1#{class=>dom1}),
-	{ok, Tcp2} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tcp, ip=All6, port=0, opts=M2#{class=>dom2}}),
+	{ok, _, Tcp1} = nkpacket:start_listener(Url, M1#{class=>dom1}),
+	{ok, _, Tcp2} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=tcp, ip=All6, port=0, opts=M2#{class=>dom2}}),
 	{ok, {_, tcp, _, LPort1}} = nkpacket:get_local(Tcp1),	
 	{ok, {_, tcp, _, LPort2}} = nkpacket:get_local(Tcp2),
 	case LPort2 of
@@ -121,11 +121,11 @@ is_local() ->
 	LPort2 = test_util:get_port(tcp),
 	_ = test_util:reset_2(),
 
-	{ok, Tcp0} = nkpacket:start_listener(
+	{ok, _, Tcp0} = nkpacket:start_listener(
 		"<test:[::1]:"++integer_to_list(LPort0)++";transport=tcp>", #{}),
-	{ok, Tcp1} = nkpacket:start_listener( 
+	{ok, _, Tcp1} = nkpacket:start_listener(
 		"<test:[::1]:"++integer_to_list(LPort1)++";transport=tcp>", #{class=>dom1}),
-	{ok, Tcp2} = nkpacket:start_listener(
+	{ok, _, Tcp2} = nkpacket:start_listener(
 		"<test://all6:"++integer_to_list(LPort2)++";transport=udp>", #{class=>dom2}),
 
 	[Uri0] = nklib_parse:uris(

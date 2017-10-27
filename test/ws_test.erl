@@ -52,7 +52,7 @@ basic() ->
 	% A "catch all" server (all hosts, all paths)
 	% Should use default port for ws: 1238
 	Url0 = "<test://all;transport=ws>",
-	{ok, Ws1} = nkpacket:start_listener(Url0, M1#{class=>dom1}),
+	{ok, _, Ws1} = nkpacket:start_listener(Url0, M1#{class=>dom1}),
 	{ok, {_, ws, {0,0,0,0}, LPort1}} = nkpacket:get_local(Ws1),
 	case LPort1 of
 		1238 -> ok;
@@ -158,7 +158,7 @@ basic() ->
 wss() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	Url0 = "<test://all;transport=wss>",
-	{ok, Ws1} = nkpacket:start_listener(Url0, M1#{class=>dom1}),
+	{ok, _, Ws1} = nkpacket:start_listener(Url0, M1#{class=>dom1}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	{ok, {_, wss, {0,0,0,0}, LPort1}} = nkpacket:get_local(Ws1),
 	case LPort1 of
@@ -211,7 +211,7 @@ wss() ->
 ping() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	Url = "<test://localhost;transport=ws>",
-	{ok, Ws1} = nkpacket:start_listener(Url, M1#{class=>dom1}),
+	{ok, _, Ws1} = nkpacket:start_listener(Url, M1#{class=>dom1}),
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 
 	{ok, _Conn1} = nkpacket:send(Url, {nkraw, {ping, <<"ping1">>}}, M2#{class=>dom2}),
@@ -243,7 +243,7 @@ ping() ->
 large() ->
 	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	Url = "<test://localhost;transport=ws>",
-	{ok, Ws1} = nkpacket:start_listener(Url, M1),	% No class
+	{ok, _, Ws1} = nkpacket:start_listener(Url, M1),	% No class
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 
 	LargeMsg = binary:copy(<<"abcdefghij">>, 1000),
@@ -271,16 +271,16 @@ multi() ->
 	% Listener 2 on {0,0,0,0}, all hosts, path /dom2
 	% Listener 3 on {0,0,0,0}, localhost, path /dom3 and proto 'proto1'
 
-	{ok, Ws1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=ws, ip={0,0,0,0}, port=0,
+	{ok, _, Ws1} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=ws, ip={0,0,0,0}, port=0,
 						   			    opts=M1#{class=>dom1, path=>"/dom1/more"}}),
 	{ok, {_, ws, {0,0,0,0}, P1}} = nkpacket:get_local(Ws1),
 	P1S = integer_to_list(P1),
 
-	{ok, Ws2} = nkpacket:start_listener("<test://all:"++P1S++"/dom2;transport=ws>",
+	{ok, _, Ws2} = nkpacket:start_listener("<test://all:"++P1S++"/dom2;transport=ws>",
 										M2#{class=>dom2, idle_timeout=>1000}),
 	Url3 = "test://all:"++P1S++"/any;transport=ws;host=localhost; path= \"dom3\"; "
 		 "ws_proto=proto1",
-	{ok, Ws3} = nkpacket:start_listener(Url3, M3#{class=>dom3}),
+	{ok, _, Ws3} = nkpacket:start_listener(Url3, M3#{class=>dom3}),
 
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,

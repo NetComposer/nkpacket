@@ -165,7 +165,7 @@ make_web_proto(O) ->
     error(O).
 
 
-%% @private
+%% @private It adds an 'id' field if not present
 -spec parse_opts(map()|list()) ->
     {ok, map()} | {error, term()}.
 

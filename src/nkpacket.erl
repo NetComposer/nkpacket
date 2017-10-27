@@ -293,7 +293,7 @@ get_protocol(Class, Scheme) ->
 
 %% @doc Starts a new listening transport.
 -spec start_listener(connect_spec()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, id(), pid()} | {error, term()}.
 
 start_listener(Conn) ->
     start_listener(Conn, #{}).
@@ -301,12 +301,12 @@ start_listener(Conn) ->
 
 %% @doc Starts a new listening transport.
 -spec start_listener(connect_spec(), listen_opts()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, id(), pid()} | {error, term()}.
 
 start_listener(Conn, Opts) ->
     case get_listener(Conn, Opts) of
-        {ok, Spec} ->
-            nkpacket_sup:add_listener(Spec);
+        {ok, Id, Spec} ->
+            nkpacket_sup:add_listener(Id, Spec);
         {error, Error} ->
             {error, Error}
 
@@ -315,7 +315,7 @@ start_listener(Conn, Opts) ->
 
 %% @doc
 -spec get_listener(connect_spec()) ->
-    {ok, supervisor:child_spec()} | {error, term()}.
+    {ok, id(), supervisor:child_spec()} | {error, term()}.
 
 get_listener(Conn) ->
     get_listener(Conn, #{}).
@@ -323,34 +323,35 @@ get_listener(Conn) ->
 
 %% @doc Gets a listening supervisor specification
 -spec get_listener(connect_spec(), listen_opts()) ->
-    {ok, supervisor:child_spec()} | {error, term()}.
+    {ok, id(), supervisor:child_spec()} | {error, term()}.
 
 get_listener(Conn, Opts) ->
     case nkpacket_resolve:resolve(Conn, Opts) of
         {ok, [#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=#{id:=Id}=Opts2}]} ->
-            case get_id_pids(Id) of
-                [] ->
-                    Opts3 = case Transp==http orelse Transp==https of
-                        true ->
-                            WebProto = nkpacket_util:make_web_proto(Opts2),
-                            Opts2#{http_proto=>WebProto};
-                        _ ->
-                            Opts2
-                    end,
-                    % We cannot yet generate id, port can be 0
-                    NkPort = #nkport{
-                        id         = maps:get(id, Opts2),
-                        class      = maps:get(class, Opts2, none),
-                        protocol   = Protocol,
-                        transp     = Transp,
-                        listen_ip  = Ip,
-                        listen_port= Port,
-                        opts       = maps:without([id, class, user_state], Opts3),
-                        user_state = maps:get(user_state, Opts3, undefined)
-                    },
-                    nkpacket_transport:get_listener(NkPort);
-                [Pid|_] ->
-                    {error, {already_started, Pid}}
+            % Resolve will allways add the 'id' field
+            Opts3 = case Transp==http orelse Transp==https of
+                true ->
+                    WebProto = nkpacket_util:make_web_proto(Opts2),
+                    Opts2#{http_proto=>WebProto};
+                _ ->
+                    Opts2
+            end,
+            % We cannot yet generate id, port can be 0
+            NkPort = #nkport{
+                id         = maps:get(id, Opts2),
+                class      = maps:get(class, Opts2, none),
+                protocol   = Protocol,
+                transp     = Transp,
+                listen_ip  = Ip,
+                listen_port= Port,
+                opts       = maps:without([id, class, user_state], Opts3),
+                user_state = maps:get(user_state, Opts3, undefined)
+            },
+            case nkpacket_transport:get_listener(NkPort) of
+                {ok, Listener} ->
+                    {ok, Id, Listener};
+                {error, Error} ->
+                    {error, Error}
             end;
         {ok, []} ->
             {error, no_listener};

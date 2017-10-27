@@ -52,11 +52,11 @@ basic() ->
  	
  	Url1 = "<http://all:"++integer_to_list(Port)++"/test1>",
 	Proto1 = {dispatch, #{routes => [{'_', [{"/test1", test_cowboy_handler, [M1]}]}]}},
-	{ok, Http1} = nkpacket:start_listener(Url1, M1#{class=>dom1, http_proto=>Proto1}),
+	{ok, _, Http1} = nkpacket:start_listener(Url1, M1#{class=>dom1, http_proto=>Proto1}),
 
  	Url2 = "<http://all:"++integer_to_list(Port)++"/test2/>",
 	Proto2 = {dispatch, #{routes => [{'_', [{"/test2", test_cowboy_handler, [M2]}]}]}},
-	{ok, Http2} = nkpacket:start_listener(Url2, M2#{class=>dom2, http_proto=>Proto2}),
+	{ok, _, Http2} = nkpacket:start_listener(Url2, M2#{class=>dom2, http_proto=>Proto2}),
 
  	Url3 = "<http://0.0.0.0:"++integer_to_list(Port)++">",
 	Proto3 = {dispatch, #{routes => 
@@ -65,7 +65,7 @@ basic() ->
 			{'_', [{"/test3/a/2", test_cowboy_handler, [M3]}]}
 
 		]}},
-	{ok, Http3} = nkpacket:start_listener(Url3, M3#{
+	{ok, _, Http3} = nkpacket:start_listener(Url3, M3#{
 		class => dom3,
 		host => "localhost",
 		path => "/test3/a",
@@ -146,7 +146,7 @@ https() ->
 	{Ref1, M1} = test_util:reset_1(),
  	Url1 = "<https://all:"++integer_to_list(Port)++">",
 	Proto1 = {dispatch, #{routes => [{'_', [{"/test1", test_cowboy_handler, [M1]}]}]}},
-	{ok, Http1} = nkpacket:start_listener(Url1, M1#{http_proto=>Proto1}),
+	{ok, _, Http1} = nkpacket:start_listener(Url1, M1#{http_proto=>Proto1}),
 
 	Gun = open(Port, ssl),
 	{ok, 200, _, <<"Hello World!">>} = get(Gun, "/test1", []),
@@ -165,11 +165,11 @@ static() ->
 
  	Url1 = "http://all:"++integer_to_list(Port),
 	Proto1 = {static, #{path=>Path, index_file=>"index.html"}},
-	{ok, S1} = nkpacket:start_listener(Url1, #{http_proto=>Proto1}),
+	{ok, _, S1} = nkpacket:start_listener(Url1, #{http_proto=>Proto1}),
 
  	Url2 = "http://all:"++integer_to_list(Port)++"/1/2/",
 	Proto2 = {static, #{path=>Path}},
-	{ok, S2} = nkpacket:start_listener(Url2, #{http_proto=>Proto2}),
+	{ok, _, S2} = nkpacket:start_listener(Url2, #{http_proto=>Proto2}),
 
 	Gun = open(Port, tcp),
 	{ok, 200, _, <<"index_root">>} = get(Gun, "/", []),
@@ -233,7 +233,7 @@ static() ->
 
 	Url3 = "http://all:"++integer_to_list(Port)++"/1/2/",
 	Proto3 = {static, #{path=>Path}},
-	{ok, S3} = nkpacket:start_listener(Url3, 
+	{ok, _, S3} = nkpacket:start_listener(Url3,
 		#{http_proto=>Proto3, path=>"/a/", host=>"localhost"}),
 	{ok, 404, _} = get(Gun2, "/a/index.html", []),
 	{ok, 200, _, _} = get(Gun2, "/a/index.html", [{<<"host">>, <<"localhost">>}]),
