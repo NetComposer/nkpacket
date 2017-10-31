@@ -97,7 +97,7 @@ connect(#nkport{transp=Transp}) when Transp==http; Transp==https ->
 connect(#nkport{transp=Transp}=NkPort)
         when Transp==tcp; Transp==tls; Transp==ws; Transp==wss ->
     case nkpacket_connection_lib:is_max() of
-        false -> 
+        false ->
             proc_lib:start(?MODULE, conn_init, [NkPort]);
         true ->
             {error, max_connections}
@@ -416,7 +416,11 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
             gen_server:enter_loop(?MODULE, [], State);
         {error, Error} ->
             proc_lib:init_ack({error, Error})
-    end.
+    end;
+
+conn_init(#nkport{transp=Transp}) ->
+    error({invalid_transport, Transp}).
+
 
 
 %% @private
