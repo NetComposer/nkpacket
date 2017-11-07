@@ -89,6 +89,8 @@ syntax() ->
         tcp_packet => [{atom, [raw]}, {integer, [1, 2, 4]}],
         tcp_max_connections => nat_integer,
         tcp_listeners => nat_integer,
+        user => binary,
+        password => binary,
         host => host,
         path => path,
         get_headers => [boolean, {list, binary}],
@@ -116,6 +118,8 @@ safe_syntax() ->
         tcp_packet,
         host,
         path,
+        user,
+        password,
         get_headers,
         ws_proto,
         debug
