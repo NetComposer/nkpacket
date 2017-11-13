@@ -23,6 +23,7 @@
 
 -module(nkpacket_transport_tcp).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
+-behaviour(ranch_protocol).
 
 -export([get_listener/1, connect/1, start_link/1]).
 -export([init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
