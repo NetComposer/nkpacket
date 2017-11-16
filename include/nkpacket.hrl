@@ -94,6 +94,16 @@
 }).
 
 
+-record(cowboy_filter, {
+    pid :: pid(),
+    module :: module(),
+    transp :: http | https | ws | wss,
+    host = any :: binary(),
+    paths = [] :: [binary()],
+    ws_proto = any :: binary() | any,
+    meta :: #{get_headers => [binary()], compress => boolean(), idle_timeout=>pos_integer()},
+    mon :: reference()
+}).
 
 
 -endif.

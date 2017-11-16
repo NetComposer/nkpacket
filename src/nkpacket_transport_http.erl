@@ -25,7 +25,7 @@
 -export([get_listener/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
--export([cowboy_init/4, resume/5]).
+-export([cowboy_init/5]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -72,8 +72,8 @@ get_listener(#nkport{id=Id, local_ip=Ip, local_port=Port, transp=Transp}=NkPort)
     protocol :: nkpacket:protocol(),
     proto_state :: term(),
     shared :: pid(),
-    monitor_ref :: reference(),
-    http_proto :: nkpacket:http_proto()
+    monitor_ref :: reference()
+    %http_proto :: nkpacket:http_proto()
 }).
 
 
@@ -104,9 +104,15 @@ init([NkPort]) ->
             % listen_port = Port,
             pid = self()
         },
-        Filter1 = maps:with([host, path, get_headers], Meta),
-        Filter2 = Filter1#{id=>self(), module=>?MODULE},
-        SharedPid = case nkpacket_cowboy:start(NkPort1, Filter2) of
+        Filter = #cowboy_filter{
+            pid = self(),
+            module = ?MODULE,
+            transp = Transp,
+            host = maps:get(host, Meta, any),
+            paths = nkpacket_util:norm_path(maps:get(path, Meta, any)),
+            meta = maps:with([get_headers], Meta)
+        },
+        SharedPid = case nkpacket_cowboy:start(NkPort1, Filter) of
             {ok, SharedPid0} -> SharedPid0;
             {error, Error} -> throw(Error)
         end,
@@ -144,8 +150,8 @@ init([NkPort]) ->
             protocol = Protocol,
             proto_state = ProtoState,
             shared = SharedPid,
-            monitor_ref = MonRef,
-            http_proto = maps:get(http_proto, Meta)
+            monitor_ref = MonRef
+            %http_proto = maps:get(http_proto, Meta, #{})
         },
         {ok, State}
     catch
@@ -164,32 +170,33 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({nkpacket_start, Ip, Port, _UserMeta, Pid}, _From, State) ->
-    #state{nkport=NkPort, http_proto=HttpProto} = State,
-    #nkport{protocol=Protocol, opts=Meta} = NkPort,
+handle_call({nkpacket_start, Ip, Port, Pid}, _From, State) ->
+    #state{nkport=NkPort} = State,
+    #nkport{protocol=Protocol, opts=Opts} = NkPort,
     NkPort1 = NkPort#nkport{
         remote_ip  = Ip,
         remote_port= Port,
         socket     = Pid,
-        opts       = maps:without([host, path], Meta)
+        opts       = maps:without([host, path], Opts)
     },
     % See comment on nkpacket_transport_ws for removal of host and path
     case erlang:function_exported(Protocol, http_init, 4) of
         true ->
-            % Connection will monitor listen process (unsing 'pid' and 
-            % the cowboy process (using 'socket')
+            % Connection will monitor listen process (using 'pid')
+            % and the cowboy process (using 'socket')
+            % TODO Should the connection call the http_init of the protocol?
             case nkpacket_connection:start(NkPort1) of
-                {ok, #nkport{pid=ConnPid}=NkPort2} ->
+                {ok, #nkport{}=NkPort2} ->
                     ?DEBUG("listener accepted connection: ~p", 
                           [NkPort2]),
-                    {reply, {ok, Protocol, HttpProto, ConnPid}, State};
+                    {reply, {ok, NkPort2#nkport{opts=Opts}}, State};
                 {error, Error} ->
                     ?DEBUG("listener did not accepted connection:"
                             " ~p", [Error]),
                     {reply, next, State}
             end;
         false ->
-            ?LLOG(info, "protocol ~p is missing", [Protocol]),
+            ?LLOG(warning, "protocol ~p is missing", [Protocol]),
             {reply, next, State}
     end;
 
@@ -263,17 +270,18 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 %% @private Called from nkpacket_cowboy:execute/2, inside
 %% cowboy's connection process
--spec cowboy_init(#nkport{}, cowboy_req:req(), nkpacket_cowboy:user_meta(), list()) ->
+-spec cowboy_init(#nkport{}, cowboy_req:req(), [binary()],
+                  nkpacket_cowboy:user_meta(), list()) ->
     term().
 
-cowboy_init(Pid, Req, Meta, Env) ->
+cowboy_init(Pid, Req, PathList, _FilterMeta, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    % Path = cowboy_req:path(Req),
-    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, Meta, self()}, infinity) of
-        {ok, Protocol, HttpProto, ConnPid} ->
-            case Protocol:http_init(HttpProto, ConnPid, Req, Env) of
-                {ok, Req1, Env1, Middlewares1} ->
-                    execute(Req1, Env1, Middlewares1);
+    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, self()}, infinity) of
+        {ok, #nkport{protocol=Protocol}=NkPort} ->
+            case Protocol:http_init(PathList, Req, Env, NkPort) of
+                {ok, Req2, Env2} ->
+                    {ok, Req2, Env2};
+                    %execute(Req1, Env1, Middlewares1);
                 {stop, Req1} ->
                     {ok, Req1, Env}
             end;
@@ -284,33 +292,33 @@ cowboy_init(Pid, Req, Meta, Env) ->
     end.
 
 
-%% @private
-execute(Req, Env, []) ->
-    {ok, Req, Env};
-
-execute(Req, Env, [Module|Rest]) ->
-    case Module:execute(Req, Env) of
-        {ok, Req1, Env1} ->
-            execute(Req1, Env1, Rest);
-        {suspend, Module, Function, Args} ->
-            erlang:hibernate(?MODULE, resume,
-                             [Env, Rest, Module, Function, Args]);
-        {stop, Req1} ->
-            {ok, Req1, Env}
-    end.
-
-
-%% @private
-resume(Env, Rest, Module, Function, Args) ->
-    case apply(Module, Function, Args) of
-        {ok, Req1, Env1} ->
-            execute(Req1, Env1, Rest);
-        {suspend, Module1, Function1, Args1} ->
-            erlang:hibernate(?MODULE, resume,
-                             [Env, Rest, Module1, Function1, Args1]);
-        {stop, Req1} ->
-            {ok, Req1, Env}
-    end.
+%%%% @private
+%%execute(Req, Env, []) ->
+%%    {ok, Req, Env};
+%%
+%%execute(Req, Env, [Module|Rest]) ->
+%%    case Module:execute(Req, Env) of
+%%        {ok, Req1, Env1} ->
+%%            execute(Req1, Env1, Rest);
+%%        {suspend, Module, Function, Args} ->
+%%            erlang:hibernate(?MODULE, resume,
+%%                             [Env, Rest, Module, Function, Args]);
+%%        {stop, Req1} ->
+%%            {ok, Req1, Env}
+%%    end.
+%%
+%%
+%%%% @private
+%%resume(Env, Rest, Module, Function, Args) ->
+%%    case apply(Module, Function, Args) of
+%%        {ok, Req1, Env1} ->
+%%            execute(Req1, Env1, Rest);
+%%        {suspend, Module1, Function1, Args1} ->
+%%            erlang:hibernate(?MODULE, resume,
+%%                             [Env, Rest, Module1, Function1, Args1]);
+%%        {stop, Req1} ->
+%%            {ok, Req1, Env}
+%%    end.
 
 
 

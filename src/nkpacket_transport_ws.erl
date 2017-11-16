@@ -32,8 +32,8 @@
 -export([get_listener/1, connect/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
--export([websocket_handle/3, websocket_info/3, terminate/3]).
--export([cowboy_init/4]).
+-export([websocket_handle/2, websocket_info/2]).
+-export([cowboy_init/5]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -150,13 +150,32 @@ init([NkPort]) ->
     Debug = maps:get(debug, Meta, false),
     put(nkpacket_debug, Debug),
     try
+        Timeout = case Meta of
+            #{idle_timeout:=Timeout0} ->
+                Timeout0;
+            _ ->
+                nkpacket_config_cache:ws_timeout()
+        end,
         NkPort1 = NkPort#nkport{pid = self()},
-        Filter1 = maps:with([Class, host, path, ws_proto, get_headers], Meta),
-        Filter2 = Filter1#{id=>self(), module=>?MODULE},
-        SharedPid = case nkpacket_cowboy:start(NkPort1, Filter2) of
+        Meta1 = maps:with([get_headers], Meta),
+        Meta2 = Meta1#{
+            compress => true,
+            idle_timeout => Timeout     % WS has its own timeout
+        },
+        Filter = #cowboy_filter{
+            pid = self(),
+            module = ?MODULE,
+            transp = Transp,
+            host = maps:get(host, Meta, any),
+            paths = nkpacket_util:norm_path(maps:get(path, Meta, any)),
+            ws_proto = maps:get(ws_proto, Meta, any),
+            meta = Meta2
+        },
+        SharedPid = case nkpacket_cowboy:start(NkPort1, Filter) of
             {ok, SharedPid0} -> SharedPid0;
             {error, Error} -> throw(Error)
         end,
+        % See description in nkpacket_transport_http
         erlang:monitor(process, SharedPid),
         {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(SharedPid),
         ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
@@ -210,17 +229,17 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({nkpacket_start, Ip, Port, UserMeta, Pid}, _From, State) ->
+handle_call({nkpacket_start, Ip, Port, FilterMeta, Pid}, _From, State) ->
     #state{nkport=#nkport{opts=Meta} = NkPort} = State,
     % We remove host and path because the connection we are going to start
     % is not related (from the remote point of view) of the local host and path
     % In case to be reused, they should not be taken into account.
     % Anycase, the reuse of ws connections at the server is nearly always going
     % to be used based on the flow (the socket of #nkport{})
-    % Connection will monitor listen process (unsing 'pid' and 
+    % Connection will monitor listen process (using 'pid' and
     % the cowboy process (using 'socket')
     Meta1 = maps:without([host, path], Meta),
-    Meta2 = maps:merge(Meta1, UserMeta),
+    Meta2 = maps:merge(Meta1, FilterMeta),
     NkPort1 = NkPort#nkport{
         remote_ip  = Ip,
         remote_port= Port,
@@ -306,14 +325,16 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 %% @private Called from nkpacket_cowboy:execute/2, inside
 %% cowboy's connection process
--spec cowboy_init(#nkport{}, cowboy_req:req(), nkpacket_cowboy:user_meta(), list()) ->
+-spec cowboy_init(pid(), cowboy_req:req(), [binary()], map(), map()) ->
     term().
 
-cowboy_init(Pid, Req, Meta, Env) ->
+cowboy_init(Pid, Req, _PathList, FilterMeta, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
-    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, Meta, self()}, infinity) of
+    case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, FilterMeta, self()}, infinity) of
         {ok, ConnPid} ->
-            cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, infinity, run);
+            %% @see cowboy_websocket:upgrade/5
+            Opts = maps:with([idle_timeout, compress], FilterMeta),
+            cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, Opts);
         next ->
             next;
         {'EXIT', _} ->
@@ -327,81 +348,98 @@ cowboy_init(Pid, Req, Meta, Env) ->
 % %% ===================================================================
 
 
-%% @private
--spec websocket_handle({text | binary | ping | pong, binary()}, Req, State) ->
-    {ok, Req, State} |
-    {ok, Req, State, hibernate} |
-    {reply, cow_ws:frame() | [cow_ws:frame()], Req, State} |
-    {reply, cow_ws:frame() | [cow_ws:frame()], Req, State, hibernate} | 
-    {stop, Req, State}
-    when Req::cowboy_req:req(), State::any().
+%%%% @doc We could use websocket_init/1
+%%-spec websocket_init(State) ->
+%%    {ok, State} |
+%%    {ok, State, hibernate} |
+%%    {reply, cow_ws:frame() | [cow_ws:frame()], State} |
+%%    {reply, cow_ws:frame() | [cow_ws:frame()], State, hibernate} |
+%%    {stop, State}
+%%    when Req::cowboy_req:req(), State::any().
 
-websocket_handle({text, Msg}, Req, ConnPid) ->
+
+%% @private
+-spec websocket_handle({text | binary | ping | pong, binary()}, State) ->
+    {ok, State} |
+    {ok, State, hibernate} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], State} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], State, hibernate} |
+    {stop, State}
+    when State::any().
+
+websocket_handle({text, Msg}, ConnPid) ->
     nkpacket_connection:incoming(ConnPid, {text, Msg}),
-    {ok, Req, ConnPid};
+    {ok, ConnPid};
 
-websocket_handle({binary, Msg}, Req, ConnPid) ->
+websocket_handle({binary, Msg}, ConnPid) ->
     nkpacket_connection:incoming(ConnPid, {binary, Msg}),
-    {ok, Req, ConnPid};
+    {ok, ConnPid};
 
-websocket_handle(ping, Req, ConnPid) ->
-    {reply, pong, Req, ConnPid};
+websocket_handle(_Other, ConnPid) ->
+    {stop, ConnPid}.
 
-websocket_handle({ping, Body}, Req, ConnPid) ->
-    {reply, {pong, Body}, Req, ConnPid};
 
-websocket_handle(pong, Req, ConnPid) ->
-    {ok, Req, ConnPid};
 
-websocket_handle({pong, Body}, Req, ConnPid) ->
-    nkpacket_connection:incoming(ConnPid, {pong, Body}),
-    {ok, Req, ConnPid};
+% We don't need to reply to ping or ping requests, it's automatic
+%%websocket_handle(ping, ConnPid) ->
+%%    {reply, pong, ConnPid};
+%%
+%%websocket_handle({ping, Body}, ConnPid) ->
+%%    {reply, {pong, Body}, ConnPid};
+%%
+%%websocket_handle(pong, ConnPid) ->
+%%    {ok, ConnPid};
+%%
+%%websocket_handle({pong, Body}, ConnPid) ->
+%%    nkpacket_connection:incoming(ConnPid, {pong, Body}),
+%%    {ok, ConnPid};
 
-websocket_handle(Other, Req, ConnPid) ->
-    ?LLOG(warning, "WS Handler received unexpected ~p", [Other]),
-    {stop, Req, ConnPid}.
+%%websocket_handle(Other, ConnPid) ->
+%%    ?LLOG(warning, "WS Handler received unexpected ~p", [Other]),
+%%    {stop, ConnPid}.
+
 
 
 %% @private
--spec websocket_info(any(), Req, State) ->
-    {ok, Req, State} |
-    {ok, Req, State, hibernate} |
-    {reply, cow_ws:frame() | [cow_ws:frame()], Req, State} |
-    {reply, cow_ws:frame() | [cow_ws:frame()], Req, State, hibernate} |
-    {stop, Req, State}
-    when Req::cowboy_req:req(), State::any().
+-spec websocket_info(any(), State) ->
+    {ok, State} |
+    {ok, State, hibernate} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], State} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], State, hibernate} |
+    {stop, State}
+    when State::any().
 
-websocket_info({nkpacket_send, Fun}, Req, State) when is_function(Fun, 0) ->
-    {reply, Fun(), Req, State};
+websocket_info({nkpacket_send, Fun}, ConnPid) when is_function(Fun, 0) ->
+    {reply, Fun(), ConnPid};
 
-websocket_info({nkpacket_send, Frames}, Req, State) ->
-    {reply, Frames, Req, State};
+websocket_info({nkpacket_send, Frames}, ConnPid) ->
+    {reply, Frames, ConnPid};
 
-websocket_info({nkpacket_send, Ref, Pid, Fun}, Req, State) when is_function(Fun, 0) ->
+websocket_info({nkpacket_send, Ref, Pid, Fun}, ConnPid) when is_function(Fun, 0) ->
     self() ! {nkpacket_reply, Ref, Pid},
-    {reply, Fun(), Req, State};
+    {reply, Fun(), ConnPid};
 
-websocket_info({nkpacket_send, Ref, Pid, Frames}, Req, State) ->
+websocket_info({nkpacket_send, Ref, Pid, Frames}, ConnPid) ->
     self() ! {nkpacket_reply, Ref, Pid},
-    {reply, Frames, Req, State};
+    {reply, Frames, ConnPid};
 
-websocket_info({nkpacket_reply, Ref, Pid}, Req, State) ->
+websocket_info({nkpacket_reply, Ref, Pid}, ConnPid) ->
     Pid ! {nkpacket_reply, Ref},
-    {ok, Req, State};
+    {ok, ConnPid};
 
-websocket_info(nkpacket_stop, Req, State) ->
-    {stop, Req, State};
+websocket_info(nkpacket_stop, ConnPid) ->
+    {stop, ConnPid};
 
-websocket_info(Info, Req, State) ->
+websocket_info(Info, ConnPid) ->
     lager:error("Module ~p received unexpected info ~p", [?MODULE, Info]),
-    {ok, Req, State}.
+    {ok, ConnPid}.
 
 
-%% @private
-terminate(Reason, _Req, ConnPid) ->
-    ?DEBUG("process terminate: ~p (~p)", [Reason, self()]),
-    nkpacket_connection:stop(ConnPid, normal),
-    ok.
+%%%% @private
+%%terminate(Reason, ConnPid) ->
+%%    ?DEBUG("process terminate: ~p (~p)", [Reason, self()]),
+%%    nkpacket_connection:stop(ConnPid, normal),
+%%    ok.
 
 
 

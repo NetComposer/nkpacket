@@ -31,7 +31,7 @@
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, get_uri/4]).
 -export([init_protocol/3, call_protocol/4]).
--export([norm_path/1]).
+-export([norm_path/1, join_path/2]).
 -export([parse_opts/1, parse_uri_opts/2]).
 
 -include("nkpacket.hrl").
@@ -416,7 +416,29 @@ norm_path(Other) ->
     norm_path(nklib_util:to_binary(Other)).
 
 
-
+%% @doc
+join_path(Base, Path) ->
+    Base2 = nklib_util:to_binary(Base),
+    Base3 = case byte_size(Base2) of
+        BaseSize when BaseSize > 0 ->
+            case binary:at(Base2, BaseSize-1) of
+                $/ when BaseSize > 1 ->
+                    binary:part(Base2, 0, BaseSize-1);
+                _ when Base2 == <<"/">> ->
+                    <<>>;
+                _ ->
+                    Base2
+            end;
+        0 ->
+            <<>>
+    end,
+    Path2 = case nklib_util:to_binary(Path) of
+        <<$/, Rest/binary>> ->
+            Rest;
+        BinPath ->
+            BinPath
+    end,
+    <<Base3/binary, $/, Path2/binary>>.
 
 
 
@@ -432,29 +454,27 @@ norm_path(Other) ->
 %% =================================================================
 
   
-% % -define(TEST, true).
-% -ifdef(TEST).
-% -include_lib("eunit/include/eunit.hrl").
+%-define(TEST, true).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
 
-% path_test() ->
-%     ?debugMsg("HTTP path test"),
-%     true = test_path("/a/b/c", "/"),
-%     true = test_path("/", "/"),
-%     false = test_path("/", "/a"),
-%     true = test_path("/a/b/c", "a"),
-%     false = test_path("/a/b/c", "b"),
-%     true = test_path("/a/b/c", "a/b/c"),
-%     true = test_path("/a/b/c", "a/b/c/"),
-%     true = test_path("/a/b/c", "/a/b/"),
-%     false = test_path("/a/b/c", "a/b/c/d"),
-%     ok.
-
-
-% test_path(Req, Path) ->
-%     check_paths(nklib_parse:path(Req), nklib_parse:path(Path)).
+path_test() ->
+    <<"/">> = join_path("", ""),
+    <<"/">> = join_path("/", ""),
+    <<"/">> = join_path("", "/"),
+    <<"/">> = join_path("/", "/"),
+    <<"a/">> = join_path("a", ""),
+    <<"a/">> = join_path("a/", ""),
+    <<"a/">> = join_path("a", "/"),
+    <<"a/">> = join_path("a/", "/"),
+    <<"a/b">> = join_path("a", "b"),
+    <<"a/b">> = join_path("a", "/b"),
+    <<"/b">> = join_path("", "b"),
+    <<"/b">> = join_path("", "/b"),
+    ok.
 
 
-% -endif.
+ -endif.
 
 
 

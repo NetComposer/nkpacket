@@ -342,6 +342,9 @@ listen_opts(#nkport{transp=tcp, listen_ip=Ip, opts=Opts}) ->
 
 listen_opts(#nkport{transp=tls, listen_ip=Ip, opts=Opts}) ->
     [
+        % From Cowboy 2.0:
+        %{next_protocols_advertised, [<<"h2">>, <<"http/1.1">>]},
+        %{alpn_preferred_protocols, [<<"h2">>, <<"http/1.1">>]},
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         {ip, Ip}, {active, once}, binary,
         {nodelay, true}, {keepalive, true},

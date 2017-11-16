@@ -112,7 +112,7 @@
         host => string() | binary(),            % Listen only on this host
         path => string() | binary(),            % Listen on this path and subpaths
         get_headers => boolean() | [binary()],  % Get all headers or some
-        cowboy_opts => cowboy_opts(),
+        cowboy_opts => cowboy_http_opts(),
 
         % WS/WSS
         ws_proto => string() | binary(),        % Listen only on this protocol
@@ -230,16 +230,39 @@
     fun((term(), nkport()) -> term()).
 
 
--type cowboy_opts() ::
-    [
-        {max_empty_lines, non_neg_integer()} |
-        {max_header_name_length, non_neg_integer()} |
-        {max_header_value_length, non_neg_integer()} |
-        {max_headers, non_neg_integer()} |
-        {max_keepalive, non_neg_integer()} |
-        {max_request_line_length, non_neg_integer()} |
-        {onresponse, cowboy:onresponse_fun()}
-    ].
+%% @see https://ninenines.eu/docs/en/cowboy/2.1/manual/cowboy_http/
+%% @see cowboy_http:opts()
+-type cowboy_http_opts() :: #{
+    idle_timeout => non_neg_integer(),          % msecs
+    inactivity_timeout => non_neg_integer(),    % msecs
+    max_empty_lines => non_neg_integer(),
+    max_header_name_length => non_neg_integer(),
+    max_header_value_length => non_neg_integer(),
+    max_headers => non_neg_integer(),
+    max_keepalive => non_neg_integer(),
+    max_method_length => non_neg_integer(),
+    max_request_line_length => non_neg_integer(),
+    request_timeout => timeout()
+}.
+
+
+%%%% @see https://ninenines.eu/docs/en/cowboy/2.1/manual/cowboy_http/
+%%-type cowboy_http2_opts() :: #{
+%%    inactivity_timeout => non_neg_integer(),    % msecs
+%%    preface_timeout => non_neg_integer(),    % msecs
+%%}.
+
+
+%%-type cowboy_opts() ::
+%%    [
+%%        {max_empty_lines, non_neg_integer()} |
+%%        {max_header_name_length, non_neg_integer()} |
+%%        {max_header_value_length, non_neg_integer()} |
+%%        {max_headers, non_neg_integer()} |
+%%        {max_keepalive, non_neg_integer()} |
+%%        {max_request_line_length, non_neg_integer()} |
+%%        {onresponse, cowboy:onresponse_fun()}
+%%    ].
 
 -type http_proto() ::
     {static,
@@ -329,13 +352,14 @@ get_listener(Conn, Opts) ->
     case nkpacket_resolve:resolve(Conn, Opts) of
         {ok, [#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=#{id:=Id}=Opts2}]} ->
             % Resolve will allways add the 'id' field
-            Opts3 = case Transp==http orelse Transp==https of
-                true ->
-                    WebProto = nkpacket_util:make_web_proto(Opts2),
-                    Opts2#{http_proto=>WebProto};
-                _ ->
-                    Opts2
-            end,
+%%            Opts3 = case Transp==http orelse Transp==https of
+%%                true ->
+%%                    WebProto = nkpacket_util:make_web_proto(Opts2),
+%%                    Opts2#{http_proto=>WebProto};
+%%                _ ->
+%%                    Opts2
+%%            end,
+            Opts3 = Opts2,
             % We cannot yet generate id, port can be 0
             NkPort = #nkport{
                 id         = maps:get(id, Opts2),

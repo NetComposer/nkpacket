@@ -94,7 +94,7 @@ syntax() ->
         host => host,
         path => path,
         get_headers => [boolean, {list, binary}],
-        cowboy_opts => list,
+        cowboy_opts => map,
         ws_proto => lower,
         headers => fun ?MODULE:spec_headers/1,
         http_proto => fun ?MODULE:spec_http_proto/3,
