@@ -536,7 +536,7 @@ secure(https) -> true.
 
 %% @private
 get_modules(ws) -> {inet, gen_tcp, ranch_tcp, cowboy_clear};
-get_modules(wss) -> {ssl, ssl, ranch_ssl, cowbow_tls};
+get_modules(wss) -> {ssl, ssl, ranch_ssl, cowboy_tls};
 get_modules(http) -> {inet, gen_tcp, ranch_tcp, cowboy_clear};
 get_modules(https) -> {ssl, ssl, ranch_ssl, cowboy_tls}.
 

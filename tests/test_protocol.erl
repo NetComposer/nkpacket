@@ -145,8 +145,6 @@ conn_parse({binary, <<>>}, _NkPort, State) ->
 	{ok, State};
 
 conn_parse({binary, Data}, _NkPort, State) ->
-	lager:error("NKLOG P  BIN"),
-
 	Msg = erlang:binary_to_term(Data),
 	lager:debug("Parsing WS BIN: ~p", [Msg]),
 	maybe_reply({parse, {binary, Msg}}, State),

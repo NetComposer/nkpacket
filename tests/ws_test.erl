@@ -48,7 +48,7 @@ ws_test_() ->
 
 
 basic() ->
-	{Ref1, M1, _Ref2, M2} = test_util:reset_2(),
+	{Ref1, M1, Ref2, M2} = test_util:reset_2(),
 	% A "catch all" server (all hosts, all paths)
 	% Should use default port for ws: 1238
 	Url0 = "<test://all;transport=ws>",
@@ -69,89 +69,89 @@ basic() ->
 	
 	Url1 = "test://localhost:"++integer_to_list(LPort1)++
 			";transport=ws;connect_timeout=2000;idle_timeout=1000",
-	{ok, _Conn1} = nkpacket:send(Url1, msg1, M2#{class=>dom2}),
-%%	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
+	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{class=>dom2}),
+	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {parse, {binary, msg1}}} -> ok after 1000 -> error(?LINE) end,
 %%
-%%	{ok, #nkport{
-%%		class    = dom2,
-%%		transp   = ws,
-%%		local_ip = {127,0,0,1}, local_port= Port1,
-%%		remote_ip= {127,0,0,1}, remote_port= LPort1,
-%%		listen_ip= undefined, listen_port= undefined,
-%%		protocol = test_protocol,
-%%		opts     = #{path := <<"/">>}
-%%	}} = nkpacket:get_nkport(Conn1),
-%%
-%%	[
-%%		#nkport{
-%%	       	class = dom1,
-%%			transp = ws,
-%%			local_ip = {0,0,0,0}, local_port = LPort1,
-%%	        remote_ip = {127,0,0,1}, remote_port = Port1,
-%%	        listen_ip = {0,0,0,0}, listen_port = LPort1,
-%%	        protocol = test_protocol,
-%%	        pid = Conn1R
-%%	        % We don't store the path at the server
-%%	    }
-%%	] = test_util:conns(dom1),
-%%
-%%	% We send some more data. The same connection is used.
-%%	{ok, Conn1} = nkpacket:send(Conn1, msg1b, #{class=>dom2}),
-%%	receive {Ref2, {encode, msg1b}} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref1, {parse, {binary, msg1b}}} -> ok after 1000 -> error(?LINE) end,
-%%
-%%	% And in the opposite direction
-%%	{ok, Conn1R} = nkpacket:send(Conn1R, msg1c, #{class=>dom1}),
-%%	receive {Ref1, {encode, msg1c}} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref2, {parse, {binary, msg1c}}} -> ok after 1000 -> error(?LINE) end,
-%%
-%%	Conn1T = nkpacket_connection:get_timeout(Conn1),
-%%	true = Conn1T > 0 andalso Conn1T =< 1000,
-%%	Conn1RT = nkpacket_connection:get_timeout(Conn1R),
-%%	true = Conn1RT > 179000 andalso Conn1RT =< 180000,
-%%
-%%	% Let's send directly to the connection
-%%	ok = nkpacket_connection:send(Conn1, msg1d),
-%%	receive {Ref2, {encode, msg1d}} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref1, {parse, {binary, msg1d}}} -> ok after 1000 -> error(?LINE) end,
-%%	ok = nkpacket_connection:send(Conn1R, {nkraw, {text, <<"my text">>}}),
-%%	receive {Ref1, {encode, {text, <<"my text">>}}} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref2, {parse, {text, <<"my text">>}}} -> ok after 1000 -> error(?LINE) end,
-%%
-%%	% Since we use a different URL, it opens a new connection
-%%	Url2 = "test://127.0.0.1:"++integer_to_list(LPort1)++
-%%	        "/a/b;transport=ws;connect_timeout=2000;idle_timeout=500",
-%%	{ok, Conn2} = nkpacket:send(Url2, msg2, M2#{class=>dom2, connect_timeout=>3000}),
-%%	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref2, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
-%%	receive {Ref1, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
-%%
-%%	{ok, #nkport{
-%%		class    = dom2,
-%%		transp   =ws,
-%%		local_ip ={127,0,0,1}, local_port=Port2,
-%%		remote_ip={127,0,0,1}, remote_port=LPort1,
-%%		listen_ip=undefined, listen_port=undefined,
-%%		opts     =#{
-%%        	path := <<"/a/b">>,
-%%        	host := <<"127.0.0.1">>
-%%        }
-%%	}} = nkpacket:get_nkport(Conn2),
-%%	true = Port1 /= Port2,
-%%	true = Conn1 /= Conn2,
-%%
-%%	receive {Ref1, conn_stop} -> ok after 1500 -> error(?LINE) end,
-%%	receive {Ref2, conn_stop} -> ok after 1500 -> error(?LINE) end,
-%%	receive {Ref1, conn_stop} -> ok after 1500 -> error(?LINE) end,
-%%	receive {Ref2, conn_stop} -> ok after 1500 -> error(?LINE) end,
-%%
-%%	ok = nkpacket:stop_listeners(Ws1),
-%%	receive {Ref1, listen_stop} -> ok after 1000 -> error(?LINE) end,
-%%	test_util:ensure([Ref1, Ref2]),
+	{ok, #nkport{
+		class    = dom2,
+		transp   = ws,
+		local_ip = {127,0,0,1}, local_port= Port1,
+		remote_ip= {127,0,0,1}, remote_port= LPort1,
+		listen_ip= undefined, listen_port= undefined,
+		protocol = test_protocol,
+		opts     = #{path := <<"/">>}
+	}} = nkpacket:get_nkport(Conn1),
+
+	[
+		#nkport{
+	       	class = dom1,
+			transp = ws,
+			local_ip = {0,0,0,0}, local_port = LPort1,
+	        remote_ip = {127,0,0,1}, remote_port = Port1,
+	        listen_ip = {0,0,0,0}, listen_port = LPort1,
+	        protocol = test_protocol,
+	        pid = Conn1R
+	        % We don't store the path at the server
+	    }
+	] = test_util:conns(dom1),
+
+	% We send some more data. The same connection is used.
+	{ok, Conn1} = nkpacket:send(Conn1, msg1b, #{class=>dom2}),
+	receive {Ref2, {encode, msg1b}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {parse, {binary, msg1b}}} -> ok after 1000 -> error(?LINE) end,
+
+	% And in the opposite direction
+	{ok, Conn1R} = nkpacket:send(Conn1R, msg1c, #{class=>dom1}),
+	receive {Ref1, {encode, msg1c}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {parse, {binary, msg1c}}} -> ok after 1000 -> error(?LINE) end,
+
+	Conn1T = nkpacket_connection:get_timeout(Conn1),
+	true = Conn1T > 0 andalso Conn1T =< 1000,
+	Conn1RT = nkpacket_connection:get_timeout(Conn1R),
+	true = Conn1RT > 179000 andalso Conn1RT =< 180000,
+
+	% Let's send directly to the connection
+	ok = nkpacket_connection:send(Conn1, msg1d),
+	receive {Ref2, {encode, msg1d}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {parse, {binary, msg1d}}} -> ok after 1000 -> error(?LINE) end,
+	ok = nkpacket_connection:send(Conn1R, {nkraw, {text, <<"my text">>}}),
+	receive {Ref1, {encode, {text, <<"my text">>}}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {parse, {text, <<"my text">>}}} -> ok after 1000 -> error(?LINE) end,
+
+	% Since we use a different URL, it opens a new connection
+	Url2 = "test://127.0.0.1:"++integer_to_list(LPort1)++
+	        "/a/b;transport=ws;connect_timeout=2000;idle_timeout=500",
+	{ok, Conn2} = nkpacket:send(Url2, msg2, M2#{class=>dom2, connect_timeout=>3000}),
+	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref2, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
+	receive {Ref1, {parse, {binary, msg2}}} -> ok after 1000 -> error(?LINE) end,
+
+	{ok, #nkport{
+		class    = dom2,
+		transp   =ws,
+		local_ip ={127,0,0,1}, local_port=Port2,
+		remote_ip={127,0,0,1}, remote_port=LPort1,
+		listen_ip=undefined, listen_port=undefined,
+		opts     =#{
+        	path := <<"/a/b">>,
+        	host := <<"127.0.0.1">>
+        }
+	}} = nkpacket:get_nkport(Conn2),
+	true = Port1 /= Port2,
+	true = Conn1 /= Conn2,
+
+	receive {Ref1, conn_stop} -> ok after 1500 -> error(?LINE) end,
+	receive {Ref2, conn_stop} -> ok after 1500 -> error(?LINE) end,
+	receive {Ref1, conn_stop} -> ok after 1500 -> error(?LINE) end,
+	receive {Ref2, conn_stop} -> ok after 1500 -> error(?LINE) end,
+
+	ok = nkpacket:stop_listeners(Ws1),
+	receive {Ref1, listen_stop} -> ok after 1000 -> error(?LINE) end,
+	test_util:ensure([Ref1, Ref2]),
 	ok.
 
 
@@ -182,7 +182,7 @@ wss() ->
 
 	{ok, #nkport{
        	class = dom2,
-		transp=wss, 
+		transp=wss,
 		local_ip={127,0,0,1}, local_port=_,
         remote_ip={127,0,0,1}, remote_port=LPort1,
         listen_ip=undefined, listen_port=undefined,

@@ -32,7 +32,7 @@
 -export([get_listener/1, connect/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
--export([websocket_handle/2, websocket_info/2]).
+-export([websocket_init/1, websocket_handle/2, websocket_info/2, terminate/3]).
 -export([cowboy_init/5]).
 
 -include_lib("nklib/include/nklib.hrl").
@@ -229,7 +229,7 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({nkpacket_start, Ip, Port, FilterMeta, _Pid}, _From, State) ->
+handle_call({nkpacket_start, Ip, Port, FilterMeta, Pid}, _From, State) ->
     #state{nkport=#nkport{opts=Meta} = NkPort} = State,
     % We remove host and path because the connection we are going to start
     % is not related (from the remote point of view) of the local host and path
@@ -243,17 +243,20 @@ handle_call({nkpacket_start, Ip, Port, FilterMeta, _Pid}, _From, State) ->
     NkPort1 = NkPort#nkport{
         remote_ip  = Ip,
         remote_port= Port,
-        socket     = undefined, %Pid,
+        socket     = Pid,
         opts       = Meta2
     },
-    case nkpacket_connection:start(NkPort1) of
-        {ok, #nkport{pid=ConnPid}=NkPort2} ->
-            ?DEBUG("listener accepted connection: ~p", [NkPort2]),
-            {reply, {ok, ConnPid}, State};
-        {error, Error} ->
-            ?DEBUG("listener did not accepted connection: ~p", [Error]),
-            {reply, next, State}
-    end;
+    {reply, {ok, NkPort1}, State};
+
+%%
+%%    case nkpacket_connection:start(NkPort1) of
+%%        {ok, #nkport{pid=ConnPid}=NkPort2} ->
+%%            ?DEBUG("listener accepted connection: ~p", [NkPort2]),
+%%            {reply, {ok, ConnPid}, State};
+%%        {error, Error} ->
+%%            ?DEBUG("listener did not accepted connection: ~p", [Error]),
+%%            {reply, next, State}
+%%    end;
 
 handle_call(nkpacket_stop, _From, State) ->
     {stop, normal, ok, State};
@@ -331,12 +334,10 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 cowboy_init(Pid, Req, _PathList, FilterMeta, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
     case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, FilterMeta, self()}, infinity) of
-        {ok, ConnPid} ->
-            lager:error("NKLOG SOCKET ~p ~p", [self(), ConnPid]),
-
+        {ok, NkPort} ->
             %% @see cowboy_websocket:upgrade/5
             Opts = maps:with([idle_timeout, compress], FilterMeta),
-            cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, Opts);
+            cowboy_websocket:upgrade(Req, Env, ?MODULE, NkPort, Opts);
         next ->
             next;
         {'EXIT', _} ->
@@ -350,14 +351,23 @@ cowboy_init(Pid, Req, _PathList, FilterMeta, Env) ->
 % %% ===================================================================
 
 
-%%%% @doc We could use websocket_init/1
-%%-spec websocket_init(State) ->
-%%    {ok, State} |
-%%    {ok, State, hibernate} |
-%%    {reply, cow_ws:frame() | [cow_ws:frame()], State} |
-%%    {reply, cow_ws:frame() | [cow_ws:frame()], State, hibernate} |
-%%    {stop, State}
-%%    when Req::cowboy_req:req(), State::any().
+%% @doc We could use websocket_init/1
+-spec websocket_init(State) ->
+    {ok, State} |
+    {ok, State, hibernate} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], State} |
+    {reply, cow_ws:frame() | [cow_ws:frame()], State, hibernate} |
+    {stop, State}
+    when State::any().
+
+websocket_init(NkPort) ->
+    case nkpacket_connection:start(NkPort#nkport{socket=self()}) of
+        {ok, #nkport{pid=ConnPid}} ->
+            {ok, ConnPid};
+        {error, Error} ->
+            ?LLOG(notice, "WS could not start session: ~p", [Error]),
+            {stop, NkPort}
+    end.
 
 
 %% @private
@@ -370,40 +380,32 @@ cowboy_init(Pid, Req, _PathList, FilterMeta, Env) ->
     when State::any().
 
 websocket_handle({text, Msg}, ConnPid) ->
-    lager:error("NKLOG HANDLE TEXT ~p", [Msg]),
-
     nkpacket_connection:incoming(ConnPid, {text, Msg}),
     {ok, ConnPid};
 
 websocket_handle({binary, Msg}, ConnPid) ->
-    lager:error("NKLOG HANDLE BIN ~p ~p", [ConnPid, Msg]),
-
     nkpacket_connection:incoming(ConnPid, {binary, Msg}),
     {ok, ConnPid};
 
-websocket_handle(_Other, ConnPid) ->
-    lager:error("NKLOG HANDLE OTHER ~p", [_Other]),
-    {ok, ConnPid}.
-
-
-
 % We don't need to reply to ping or ping requests, it's automatic
-%%websocket_handle(ping, ConnPid) ->
-%%    {reply, pong, ConnPid};
-%%
-%%websocket_handle({ping, Body}, ConnPid) ->
-%%    {reply, {pong, Body}, ConnPid};
-%%
-%%websocket_handle(pong, ConnPid) ->
-%%    {ok, ConnPid};
-%%
-%%websocket_handle({pong, Body}, ConnPid) ->
-%%    nkpacket_connection:incoming(ConnPid, {pong, Body}),
-%%    {ok, ConnPid};
+websocket_handle(ping, ConnPid) ->
+    {reply, pong, ConnPid};
+    %{ok, ConnPid};
 
-%%websocket_handle(Other, ConnPid) ->
-%%    ?LLOG(warning, "WS Handler received unexpected ~p", [Other]),
-%%    {stop, ConnPid}.
+websocket_handle({ping, _Body}, ConnPid) ->
+    {reply, {pong, _Body}, ConnPid};
+    %{ok, ConnPid};
+
+websocket_handle(pong, ConnPid) ->
+    {ok, ConnPid};
+
+websocket_handle({pong, Body}, ConnPid) ->
+    nkpacket_connection:incoming(ConnPid, {pong, Body}),
+    {ok, ConnPid};
+
+websocket_handle(Other, ConnPid) ->
+    ?LLOG(warning, "WS Handler received unexpected ~p", [Other]),
+    {stop, ConnPid}.
 
 
 
@@ -443,10 +445,10 @@ websocket_info(Info, ConnPid) ->
 
 
 %%%% @private
-%%terminate(Reason, ConnPid) ->
-%%    ?DEBUG("process terminate: ~p (~p)", [Reason, self()]),
-%%    nkpacket_connection:stop(ConnPid, normal),
-%%    ok.
+terminate(Reason, _Req, ConnPid) ->
+    ?DEBUG("WS terminate: ~p (~p)", [Reason, ConnPid]),
+    nkpacket_connection:stop(ConnPid, normal),
+    ok.
 
 
 
