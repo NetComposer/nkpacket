@@ -241,6 +241,8 @@ get_timeout(Conn) ->
     ok.
 
 incoming(Conn, Msg) ->
+    lager:error("NKLOG INCOMIN2: ~p", [get_pid(Conn)]),
+
     gen_server:cast(get_pid(Conn), {nkpacket_incoming, Msg}).
 
 
@@ -477,6 +479,7 @@ handle_cast(nkpacket_reset_timeout, State) ->
     {noreply, restart_timer(State)};
 
 handle_cast({nkpacket_incoming, Data}, State) ->
+    lager:error("NKLOG INCOMING: ~p", [Data]),
     parse(Data, restart_timer(State));
 
 handle_cast({nkpacket_stop, Reason}, State) ->
@@ -568,16 +571,19 @@ handle_info({'DOWN', MRef, process, _Pid, Reason}, #state{bridge_monitor=MRef}=S
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, 
         #state{listen_monitor=MRef, nkport=NkPort}=State) ->
+    lager:error("NKLOG STOP1"),
     ?DEBUG("stop (listener stop)", [], NkPort),
     {stop, normal, State};
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, 
         #state{srv_monitor=MRef, nkport=NkPort}=State) ->
+    lager:error("NKLOG STOP2"),
     ?DEBUG("stop (server stop)", [], NkPort),
     {stop, normal, State};
 
 handle_info({'DOWN', MRef, process, _Pid, _Reason}, 
         #state{user_monitor=MRef, nkport=NkPort}=State) ->
+    lager:error("NKLOG STOP3"),
     ?DEBUG("stop (monitor stop)", [], NkPort),
     {stop, normal, State};
 

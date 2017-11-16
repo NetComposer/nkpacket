@@ -171,6 +171,9 @@ handle(<<>>, State=#ws_state{in=head}) ->
     {ok, State};
 
 handle(Data, #ws_state{in=head}=State) ->
+
+    lager:error("NKLOG DATA ~p", [Data]),
+
     #ws_state{buffer=Buffer, frag_state=FragState, extensions=Exts} = State,
     Data2 = << Buffer/binary, Data/binary >>,
     case cow_ws:parse_header(Data2, Exts, FragState) of

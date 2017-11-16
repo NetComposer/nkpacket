@@ -279,6 +279,29 @@ cowboy_init(Pid, Req, PathList, _FilterMeta, Env) ->
     case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, self()}, infinity) of
         {ok, #nkport{protocol=Protocol}=NkPort} ->
             case Protocol:http_init(PathList, Req, Env, NkPort) of
+                {redirect, Path} ->
+                    Uri = list_to_binary(cowboy_req:uri(Req)),
+                    Url = nkpacket_util:join_path(Uri, Path),
+                    lager:notice("Redirected to ~s", [Url]),
+                    Req2 = cowboy_req:set_resp_header(<<"location">>, Url, Req),
+                    {ok, nkpacket_cowboy:reply(301, #{}, <<>>, Req2), Env};
+                {cowboy_static, Opts} ->
+                    % Emulate cowboy_router additions, expected by cowboy_static
+                    Req2 = Req#{
+                        path_info => PathList,
+                        host_info => undefined,
+                        bindings => #{}
+                    },
+                    {cowboy_rest, Req2, CowState} = cowboy_static:init(Req2, Opts),
+                    cowboy_rest:upgrade(Req2, Env, cowboy_static, CowState);
+                {cowboy_rest, Module, State} ->
+                    % Emulate cowboy_router additions, expected by cowboy_static
+                    Req2 = Req#{
+                        path_info => PathList,
+                        host_info => undefined,
+                        bindings => #{}
+                    },
+                    cowboy_rest:upgrade(Req2, Env, Module, State);
                 {ok, Req2, Env2} ->
                     {ok, Req2, Env2};
                     %execute(Req1, Env1, Middlewares1);

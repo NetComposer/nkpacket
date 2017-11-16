@@ -229,7 +229,7 @@ init([NkPort]) ->
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
 
-handle_call({nkpacket_start, Ip, Port, FilterMeta, Pid}, _From, State) ->
+handle_call({nkpacket_start, Ip, Port, FilterMeta, _Pid}, _From, State) ->
     #state{nkport=#nkport{opts=Meta} = NkPort} = State,
     % We remove host and path because the connection we are going to start
     % is not related (from the remote point of view) of the local host and path
@@ -243,7 +243,7 @@ handle_call({nkpacket_start, Ip, Port, FilterMeta, Pid}, _From, State) ->
     NkPort1 = NkPort#nkport{
         remote_ip  = Ip,
         remote_port= Port,
-        socket     = Pid,
+        socket     = undefined, %Pid,
         opts       = Meta2
     },
     case nkpacket_connection:start(NkPort1) of
@@ -332,6 +332,8 @@ cowboy_init(Pid, Req, _PathList, FilterMeta, Env) ->
     {Ip, Port} = cowboy_req:peer(Req),
     case catch gen_server:call(Pid, {nkpacket_start, Ip, Port, FilterMeta, self()}, infinity) of
         {ok, ConnPid} ->
+            lager:error("NKLOG SOCKET ~p ~p", [self(), ConnPid]),
+
             %% @see cowboy_websocket:upgrade/5
             Opts = maps:with([idle_timeout, compress], FilterMeta),
             cowboy_websocket:upgrade(Req, Env, ?MODULE, ConnPid, Opts);
@@ -368,15 +370,20 @@ cowboy_init(Pid, Req, _PathList, FilterMeta, Env) ->
     when State::any().
 
 websocket_handle({text, Msg}, ConnPid) ->
+    lager:error("NKLOG HANDLE TEXT ~p", [Msg]),
+
     nkpacket_connection:incoming(ConnPid, {text, Msg}),
     {ok, ConnPid};
 
 websocket_handle({binary, Msg}, ConnPid) ->
+    lager:error("NKLOG HANDLE BIN ~p ~p", [ConnPid, Msg]),
+
     nkpacket_connection:incoming(ConnPid, {binary, Msg}),
     {ok, ConnPid};
 
 websocket_handle(_Other, ConnPid) ->
-    {stop, ConnPid}.
+    lager:error("NKLOG HANDLE OTHER ~p", [_Other]),
+    {ok, ConnPid}.
 
 
 

@@ -404,7 +404,7 @@ execute([Filter|Rest], Req, Env) ->
     ReqPaths = nkpacket_util:norm_path(cowboy_req:path(Req)),
     ReqWsProto = case cowboy_req:parse_header(?WS_PROTO_HD, Req, []) of
         [ReqWsProto0] -> ReqWsProto0;
-        _ -> undefined
+        _ -> any
     end,
     case
         (Type == ReqType) andalso

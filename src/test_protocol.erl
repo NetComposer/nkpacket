@@ -29,6 +29,7 @@
 -export([conn_handle_call/4, conn_handle_cast/3, conn_handle_info/3]).
 -export([listen_init/1, listen_parse/5, listen_stop/3]).
 -export([listen_handle_call/4, listen_handle_cast/3, listen_handle_info/3]).
+-export([http_init/4]).
 
 -include("nkpacket.hrl").
 
@@ -40,7 +41,7 @@
 -spec transports(nklib:scheme()) ->
     [nkpacket:transport()].
 
-transports(_) -> [udp, tcp, tls, sctp, ws, wss].
+transports(_) -> [http, https, udp, tcp, tls, sctp, ws, wss].
 
 -spec default_port(nkpacket:transport()) ->
     inet:port_number().
@@ -51,6 +52,8 @@ default_port(tls) -> 1236;
 default_port(sctp) -> 1237;
 default_port(ws) -> 1238;
 default_port(wss) -> 1239;
+default_port(http) -> 1240;
+default_port(https) -> 1241;
 default_port(_) -> invalid.
 
 
@@ -141,8 +144,9 @@ conn_parse({binary, <<>>}, _NkPort, State) ->
 	lager:error("EMPTY"),
 	{ok, State};
 
-
 conn_parse({binary, Data}, _NkPort, State) ->
+	lager:error("NKLOG P  BIN"),
+
 	Msg = erlang:binary_to_term(Data),
 	lager:debug("Parsing WS BIN: ~p", [Msg]),
 	maybe_reply({parse, {binary, Msg}}, State),
@@ -203,11 +207,22 @@ conn_stop(Reason, _NkPort, State) ->
 
 
 %% ===================================================================
-%% Parse and Unparse
+%% HTTP
 %% ===================================================================
 
-
-
+http_init(Paths, Req, Env, NkPort) ->
+	case nkpacket:get_class(NkPort) of
+		{ok, Class} when Class==dom1; Class==dom2; Class==dom3; Class==dom4 ->
+			{ok, {Pid, Ref}} = nkpacket:get_user_state(NkPort),
+			Pid ! {Ref, http_init, self()},
+			Req2 = cowboy_req:reply(200, #{<<"content-type">> => <<"text/plain">>}, <<"Hello World!">>, Req),
+			Pid ! {Ref, http_terminate, self()},
+			{ok, Req2, Env};
+		{ok, dom5} when Paths==[] ->
+			{redirect, "/index.html"};
+		{ok, dom5} ->
+			{cowboy_static, {priv_dir, nkpacket, "/www"}}
+	end.
 
 
 
