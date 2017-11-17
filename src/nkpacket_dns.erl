@@ -689,7 +689,7 @@ basic() ->
         resolve("http://1.2.3.4, http://4.3.2.1:25;transport=tcp,"
                 "http://all:1200, <http://[1::5]>;transport=tls", Opts),
 
-    Http = Opts#{protocol=>nkpacket_protocol_http},
+    Opts2 = Opts#{protocol=>nkpacket_protocol},
     {ok, [
         {http, {1,2,3,4}, 80},
         {https, {1,2,3,4}, 443},
@@ -703,10 +703,10 @@ basic() ->
                 "https://1.2.3.4",
                 "http://all:1200", 
                 "<https://[1::5]>;transport=https"
-            ], Http),
+            ], Opts2),
 
     {error, {invalid_transport, tcp}} = 
-        resolve("http://4.3.2.1:25;transport=tcp", Http),
+        resolve("http://4.3.2.1:25;transport=tcp", Opts2),
 
    
     {ok, [
@@ -725,13 +725,13 @@ basic() ->
         {https, {127,0,0,1}, 443},
         {http, {127,0,0,1}, 25}
     ]} =
-        resolve("http://localhost, https://localhost, http://localhost:25", Http),
+        resolve("http://localhost, https://localhost, http://localhost:25", Opts2),
 
     {error, {invalid_transport, tls}} = 
-        resolve("http://localhost;transport=tls", Http),
+        resolve("http://localhost;transport=tls", Opts2),
 
     {error, {invalid_transport, udp}} = 
-        resolve("https://localhost:1234;transport=udp", Http),
+        resolve("https://localhost:1234;transport=udp", Opts2),
     ok.
 
 

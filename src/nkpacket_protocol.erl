@@ -70,7 +70,7 @@ behavior_info(_) ->
     [nkpacket:transport() | {nkpacket:transport(), nkpacket:transport()}].
 
 transports(_) ->
-	[tcp, tls, udp, sctp, ws, wss].
+	[tcp, tls, udp, sctp, ws, wss, http, https].
 
 
 %% @doc If you implement this function, it will be used to find the default port
@@ -79,8 +79,11 @@ transports(_) ->
 -spec default_port(nkpacket:transport()) ->
     inet:port_number() | invalid.
 
-default_port(_) ->
-    invalid.
+default_port(http) -> 80;
+default_port(https) -> 443;
+default_port(ws) -> 80;
+default_port(wss) -> 443;
+default_port(_) -> invalid.
 
 
 
@@ -267,7 +270,11 @@ listen_stop(_Reason, _NkPort, _State) ->
 
 -spec http_init(SubPath::[binary()], cowboy_req:req(),
                 cowboy_middleware:env(), nkport()) ->
-    {ok, cowboy_req:req(), cowboy_middleware:env()} | {stop, cowboy_req:req()}.
+    {ok, cowboy_req:req(), cowboy_middleware:env()} |
+    {redirect, Path::binary()} |
+    {cowboy_static, cowboy_static:opts()} |
+    {cowboy_rest, Callback::module(), State::term()} |
+    {stop, cowboy_req:req()}.
     
 http_init(_SubPath, Req, _Env, _NkPort) ->
     {stop, nkpacket_cowboy:reply(404, #{}, <<"Protocol not implemented">>, Req)}.

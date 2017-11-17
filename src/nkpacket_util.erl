@@ -26,7 +26,6 @@
 -export([get_plugin_net_syntax/1, get_plugin_net_opts/1]).
 -export([register_listener/1]).
 -export([listen_print_all/0, conn_print_all/0]).
--export([make_web_proto/1]).
 -export([make_cache/0, make_tls_opts/1, tls_keys/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, get_uri/4]).
@@ -132,37 +131,6 @@ make_tls_opts(Opts) ->
 tls_keys() ->
     maps:keys(nkpacket_syntax:tls_syntax()).
 
-
-%% @private
--spec make_web_proto(nkpacket:listen_opts()) ->
-    nkpacket:http_proto().
-
-make_web_proto(#{http_proto:={static, #{path:=DirPath}=Static}}=Opts) ->
-    DirPath1 = nklib_parse:fullpath(filename:absname(DirPath)),
-    Static1 = Static#{path:=DirPath1, debug=>maps:get(debug, Opts, false)},
-    UrlPath = maps:get(path, Opts, <<>>),
-    Route = {<<UrlPath/binary, "/[...]">>, nkpacket_cowboy_static, Static1},
-    {custom, 
-        #{
-            env => [
-                {dispatch, cowboy_router:compile([{'_', [Route]}])}
-            ],
-            middlewares => [cowboy_router, cowboy_handler]
-        }};
-
-make_web_proto(#{http_proto:={dispatch, #{routes:=Routes}}}) ->
-    {custom, 
-        #{
-            env => [{dispatch, cowboy_router:compile(Routes)}],
-            middlewares => [cowboy_router, cowboy_handler]
-        }};
-
-make_web_proto(#{http_proto:={custom, #{env:=Env, middlewares:=Mods}}=Proto})
-    when is_list(Env), is_list(Mods) ->
-    Proto;
-
-make_web_proto(O) ->
-    error(O).
 
 
 %% @private It adds an 'id' field if not present

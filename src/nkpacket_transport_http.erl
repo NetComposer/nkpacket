@@ -270,8 +270,8 @@ terminate(Reason, #state{nkport=NkPort}=State) ->
 
 %% @private Called from nkpacket_cowboy:execute/2, inside
 %% cowboy's connection process
--spec cowboy_init(#nkport{}, cowboy_req:req(), [binary()],
-                  nkpacket_cowboy:user_meta(), list()) ->
+-spec cowboy_init(pid(), cowboy_req:req(), [binary()],
+                  nkpacket_cowboy:user_meta(), map()) ->
     term().
 
 cowboy_init(Pid, Req, PathList, _FilterMeta, Env) ->
@@ -304,7 +304,6 @@ cowboy_init(Pid, Req, PathList, _FilterMeta, Env) ->
                     cowboy_rest:upgrade(Req2, Env, Module, State);
                 {ok, Req2, Env2} ->
                     {ok, Req2, Env2};
-                    %execute(Req1, Env1, Middlewares1);
                 {stop, Req1} ->
                     {ok, Req1, Env}
             end;
@@ -313,36 +312,6 @@ cowboy_init(Pid, Req, PathList, _FilterMeta, Env) ->
         {'EXIT', _} ->
             next
     end.
-
-
-%%%% @private
-%%execute(Req, Env, []) ->
-%%    {ok, Req, Env};
-%%
-%%execute(Req, Env, [Module|Rest]) ->
-%%    case Module:execute(Req, Env) of
-%%        {ok, Req1, Env1} ->
-%%            execute(Req1, Env1, Rest);
-%%        {suspend, Module, Function, Args} ->
-%%            erlang:hibernate(?MODULE, resume,
-%%                             [Env, Rest, Module, Function, Args]);
-%%        {stop, Req1} ->
-%%            {ok, Req1, Env}
-%%    end.
-%%
-%%
-%%%% @private
-%%resume(Env, Rest, Module, Function, Args) ->
-%%    case apply(Module, Function, Args) of
-%%        {ok, Req1, Env1} ->
-%%            execute(Req1, Env1, Rest);
-%%        {suspend, Module1, Function1, Args1} ->
-%%            erlang:hibernate(?MODULE, resume,
-%%                             [Env, Rest, Module1, Function1, Args1]);
-%%        {stop, Req1} ->
-%%            {ok, Req1, Env}
-%%    end.
-
 
 
 %% ===================================================================

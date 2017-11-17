@@ -41,7 +41,7 @@
 -export_type([id/0, class/0, transport/0, protocol/0, nkport/0, nkconn/0]).
 -export_type([listen_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connect_spec/0, send_spec/0]).
--export_type([http_proto/0, incoming/0, outcoming/0, pre_send_fun/0]).
+-export_type([incoming/0, outcoming/0, pre_send_fun/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -115,11 +115,9 @@
         cowboy_opts => cowboy_http_opts(),
 
         % WS/WSS
-        ws_proto => string() | binary(),        % Listen only on this protocol
+        ws_proto => string() | binary()         % Listen only on this protocol
         % ws_opts => map(),                     % See nkpacket_connection_ws
                                                 % (i.e. #{compress=>true})
-        % HTTP/HTTPS
-        http_proto => http_proto()
     }
     | tls_types().
 
@@ -252,30 +250,6 @@
 %%    preface_timeout => non_neg_integer(),    % msecs
 %%}.
 
-
-%%-type cowboy_opts() ::
-%%    [
-%%        {max_empty_lines, non_neg_integer()} |
-%%        {max_header_name_length, non_neg_integer()} |
-%%        {max_header_value_length, non_neg_integer()} |
-%%        {max_headers, non_neg_integer()} |
-%%        {max_keepalive, non_neg_integer()} |
-%%        {max_request_line_length, non_neg_integer()} |
-%%        {onresponse, cowboy:onresponse_fun()}
-%%    ].
-
--type http_proto() ::
-    {static,
-        nkpacket_cowboy_static:opts()} |
-    {dispatch,
-        #{
-            routes => cowboy_router:routes()
-        }} |
-    {custom,
-        #{
-            env => cowboy_middleware:env(),
-            middlewares => [module()]
-    }}.
 
 
 %% ===================================================================

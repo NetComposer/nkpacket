@@ -55,8 +55,6 @@ start(_Type, _Args) ->
     case nklib_config:load_env(nkpacket, Syntax) of
         {ok, _} ->
             get_auto_ips(),
-            nkpacket:register_protocol(http, nkpacket_protocol_http),
-            nkpacket:register_protocol(https, nkpacket_protocol_http),
             nkpacket_util:make_cache(),
             {ok, Pid} = nkpacket_sup:start_link(),
             {ok, Vsn} = application:get_key(nkpacket, vsn),
