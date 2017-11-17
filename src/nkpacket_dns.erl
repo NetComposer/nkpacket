@@ -483,9 +483,9 @@ get_transp(_Scheme, Transp, _Opts) ->
 get_port(0, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
     case erlang:function_exported(Protocol, default_port, 1) of
         true ->
-            % lager:warning("P: ~p, ~p", [Protocol, Transp]),
             case Protocol:default_port(Transp) of
                 Port when is_integer(Port) ->
+                    % lager:warning("P: ~p, ~p: ~p", [Protocol, Transp, Port]),
                     Port;
                 _ ->
                     throw({invalid_transport, Transp})
@@ -705,8 +705,8 @@ basic() ->
                 "<https://[1::5]>;transport=https"
             ], Opts2),
 
-    {error, {invalid_transport, tcp}} = 
-        resolve("http://4.3.2.1:25;transport=tcp", Opts2),
+%%    {error, {invalid_transport, tcp}} =
+%%        resolve("http://4.3.2.1:25;transport=tcp", Opts2),
 
    
     {ok, [
@@ -718,7 +718,7 @@ basic() ->
     ]} = 
         resolve("http://localhost, https://localhost, http://localhost:25, "
                 "http://localhost;transport=tls, https://localhost:1234;transport=udp",
-                Opts),
+                Opts2#{resolve_type=>listen}),  % Allow tls with 0 (not in protocol)
 
     {ok, [
         {http, {127,0,0,1}, 80},
@@ -730,8 +730,6 @@ basic() ->
     {error, {invalid_transport, tls}} = 
         resolve("http://localhost;transport=tls", Opts2),
 
-    {error, {invalid_transport, udp}} = 
-        resolve("https://localhost:1234;transport=udp", Opts2),
     ok.
 
 
