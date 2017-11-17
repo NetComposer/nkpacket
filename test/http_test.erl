@@ -159,8 +159,9 @@ static() ->
 	{ok, 301, Hds1} = get(Gun, "/", []),
 	<<"http://127.0.0.1:8080/index.html">> = nklib_util:get_value(<<"location">>, Hds1),
 	{ok, 200, H1, <<"<!DOC", _/binary>>} = get(Gun, "/index.html", []),
+	% Cowboy now only returns connection when necessary
 	[
-		%{<<"connection">>, <<"keep-alive">>},
+		% {<<"connection">>, <<"keep-alive">>},
 		{<<"content-length">>, <<"211">>},
 		{<<"content-type">>,<<"text/html">>},
 		{<<"date">>, _},
@@ -194,7 +195,9 @@ static() ->
 	] = lists:sort(H3),
 	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/1/2/dir1/file1.txt", []),
 %
+
 	ok = nkpacket:stop_listeners(S1),
+
 	timer:sleep(100),
 
 	Gun2 = open(Port, tcp),
@@ -213,8 +216,8 @@ static() ->
 	% {ok, 404, _} = get(Gun3, "/c/index.html", []),
 
 	ok = nkpacket:stop_listeners(S2),
-	ok = nkpacket:stop_listeners(S3).
-
+	ok = nkpacket:stop_listeners(S3),
+	ok.
 
 
 
@@ -226,6 +229,7 @@ open(Port, Transp) ->
 
 
 get(Pid, Path, Hds) ->
+	% Add [{<<"connection">>, <<"close">>}] to check Keep Alive
 	Ref = gun:get(Pid, Path, Hds),
 	receive
 		{gun_response, _, Ref, fin, Code, RHds} -> 
