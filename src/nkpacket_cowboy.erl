@@ -413,8 +413,6 @@ execute([Filter|Rest], Req, Env) ->
         check_paths(ReqPaths, Paths)
     of
         {true, SubPath} ->
-            lager:notice("selected: ~p (~p) ~p (~p), ~p (~p), ~p (~p)",
-                [ReqType, Type, ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             ?DEBUG("selected: ~p (~p) ~p (~p), ~p (~p), ~p (~p)",
                 [ReqType, Type, ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             Req2 = case WsProto of
@@ -430,8 +428,6 @@ execute([Filter|Rest], Req, Env) ->
                     Result
             end;
         false ->
-            lager:notice("skipping: ~p (~p) ~p (~p), ~p (~p), ~p (~p)",
-                [ReqType, Type, ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             ?DEBUG("skipping: ~p (~p) ~p (~p), ~p (~p), ~p (~p)",
                 [ReqType, Type, ReqHost, Host, ReqPaths, Paths, ReqWsProto, WsProto]),
             execute(Rest, Req, Env)
