@@ -486,7 +486,7 @@ stop_all(Class) ->
 
 %% @doc Gets the current nkport of a listener or connection
 -spec get_nkport(id()|pid()|nkport()) ->
-    {ok, nkport()} | error.
+    {ok, nkport()} | {error, term()}.
 
 get_nkport(#nkport{}=NkPort) ->
     {ok, NkPort};
@@ -496,7 +496,8 @@ get_nkport(Id) ->
 
 %% @doc Gets the current port number of a listener or connection
 -spec get_local(id()|pid()|nkport()) ->
-    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
+    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} |
+    {error, term()}.
 
 get_local(#nkport{protocol=Proto, transp=Transp, local_ip=Ip, local_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
@@ -506,10 +507,12 @@ get_local(Id) ->
 
 %% @doc Gets the current remote peer address and port
 -spec get_remote(id()|pid()|nkport()) ->
-    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} | error.
+    {ok, {protocol(), transport(), inet:ip_address(), inet:port_number()}} |
+    {error, term()}.
 
 get_remote(#nkport{protocol=Proto, transp=Transp, remote_ip=Ip, remote_port=Port}) ->
     {ok, {Proto, Transp, Ip, Port}};
+
 get_remote(Id) ->
     apply_nkport(Id, fun get_remote/1).
 
@@ -552,7 +555,7 @@ get_local_bin(Term) ->
 
 %% @doc
 -spec get_class(id()|pid()|nkport()) ->
-    {ok, class()} | error.
+    {ok, class()} | {error, term()}.
 
 get_class(#nkport{class=Class}) ->
     {ok, Class};
@@ -572,7 +575,7 @@ get_id(Id) ->
 
 %% @doc
 -spec get_user_state(id()|pid()|nkport()) ->
-    {ok, user_state(), term()} | error.
+    {ok, user_state(), term()} | {error, term()}.
 
 get_user_state(#nkport{user_state=UserState}) ->
     {ok, UserState};
@@ -691,7 +694,7 @@ is_local_ip(Ip) ->
 
 %% @private
 -spec apply_nkport(id()|pid(), fun((nkport()) -> {ok, term()}))  ->
-    term() | error.
+    term() | {error, term()}.
 
 apply_nkport(Id, Fun) ->
     case get_id_pids(Id) of
@@ -699,7 +702,7 @@ apply_nkport(Id, Fun) ->
             {error, id_not_found};
         [Pid] ->
             case catch gen_server:call(Pid, {nkpacket_apply_nkport, Fun}, 180000) of
-                {'EXIT', _} -> error;
+                {'EXIT', _} -> {error, process_down};
                 Other -> Other
             end;
         _ ->

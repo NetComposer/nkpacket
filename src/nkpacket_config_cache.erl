@@ -32,7 +32,7 @@
 -module(nkpacket_config_cache).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -compile([export_all]).
-
+-compile(nowarn_export_all).
 
 max_connections() -> default(max_connections).
 dns_cache_ttl() -> default(dns_cache_ttl).

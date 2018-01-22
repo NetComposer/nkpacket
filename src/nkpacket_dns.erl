@@ -34,7 +34,6 @@
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
 
--compile([export_all]).
 
 -type opts() :: 
     #{
@@ -634,7 +633,7 @@ sort_sum(List) ->
         [],
         lists:sort(List)),
     Pos = case Total >= 1 of 
-        true -> crypto:rand_uniform(0, Total);
+        true -> rand:uniform(Total-1);    %%   0 <= x < Total
         false -> 0
     end,
     {Pos, lists:reverse(Sum)}.

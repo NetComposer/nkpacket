@@ -78,7 +78,7 @@
     remote_port :: inet:port_number(),
     listen_ip :: inet:ip_address(),
     listen_port :: inet:port_number(),
-    pid :: pid(),
+    pid :: pid() | undefined,
     socket :: nkpacket_transport:socket(),
     opts = #{} :: nkpacket:listen_opts() | nkpacket:send_opts(),
     user_state = undefined :: nkpacket:user_state()

@@ -282,7 +282,7 @@ ranch_start_link(NkPort, Ref) ->
     bridge_monitor :: reference(),
     ws_state :: term(),
     timeout :: non_neg_integer(),
-    timeout_timer :: reference(),
+    timeout_timer :: reference() | undefined,
     refresh_fun :: fun((nkpacket:nkport()) -> boolean()),
     protocol :: atom(),
     proto_state :: term()
@@ -425,7 +425,7 @@ conn_init(#nkport{transp=Transp}) ->
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}} | {noreply, term(), #state{}} | 
+    {reply, term(), #state{}} | {noreply, #state{}} |
     {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
