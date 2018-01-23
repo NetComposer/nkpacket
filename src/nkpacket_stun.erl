@@ -65,8 +65,7 @@ ext_ip() ->
 
 %% @doc Finds external IP with supplied host or list of hosts
 -spec ext_ip([binary()|nklib:user_uri()]) ->
-    {ok, inet:ip_address()} | {port_changed, inet:ip_address()}.
-
+    inet:ip_address().
 
 ext_ip([]) ->
     {127,0,0,1};

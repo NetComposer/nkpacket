@@ -96,7 +96,7 @@ print_all([{_Id, _Class, Pid}|Rest]) ->
 
 
 %% @doc Adds SSL options
--spec make_tls_opts(list()|map()) ->
+-spec make_tls_opts(nkpacket:tls_types()) ->
     list().
 
 make_tls_opts(Opts) ->
@@ -113,7 +113,7 @@ make_tls_opts(Opts) ->
                 _ -> false
             end
         end,
-        nklib_util:to_list(Opts)),
+        maps:to_list(Opts)),
     Defaults1 = nkpacket_app:get(tls_defaults),
     Defaults2 = case lists:keymember(certfile, 1, Opts1) of
         true -> maps:remove(keyfile, Defaults1);

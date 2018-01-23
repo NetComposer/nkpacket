@@ -77,7 +77,7 @@ resolve(Uri) ->
 %% If resolve_type = listen, no NAPTR o SRV address resolution is attempted
 
 -spec resolve(nklib:user_uri(), opts()) ->
-    {ok, [{uri_transp(), inet:ip_address(), inet:port_number()}]}.
+    {ok, [{uri_transp(), inet:ip_address(), inet:port_number()}]} | {error, term()}.
 
 resolve([], _Opts) ->
     {ok, []};
@@ -352,7 +352,7 @@ init([]) ->
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}} | {noreply, term(), #state{}} | 
+    {reply, term(), #state{}} | {noreply, #state{}} |
     {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
 handle_call(Msg, _From, State) -> 
@@ -633,7 +633,7 @@ sort_sum(List) ->
         [],
         lists:sort(List)),
     Pos = case Total >= 1 of 
-        true -> rand:uniform(Total-1);    %%   0 <= x < Total
+        true -> rand:uniform(Total)-1;    %%   0 <= x < Total
         false -> 0
     end,
     {Pos, lists:reverse(Sum)}.

@@ -142,7 +142,7 @@ start_link(NkPort) ->
 -record(state, {
     nkport :: nkpacket:nkport(),
     socket :: port(),
-    tcp_pid :: pid(),
+    tcp_pid :: pid() | undefined,
     no_connections :: boolean(),
     reply_stun :: boolean(),
     stuns :: [#stun{}],
@@ -237,7 +237,7 @@ init([NkPort]) ->
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}} | {noreply, term(), #state{}} | 
+    {reply, term(), #state{}} | {noreply, #state{}} |
     {stop, term(), #state{}} | {stop, term(), term(), #state{}}.
 
 handle_call({nkpacket_connect, ConnPort}, _From, State) ->

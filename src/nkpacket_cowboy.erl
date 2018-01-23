@@ -264,7 +264,7 @@ init([NkPort, #cowboy_filter{}=Filter]) ->
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}} | {noreply, term(), #state{}}.
+    {reply, term(), #state{}} | {noreply, #state{}}.
 
 handle_call({start, ListenPid, Transp, Filter}, _From, State) ->
     #state{filters=Filters, nkport=#nkport{transp=BaseTransp}} = State,
