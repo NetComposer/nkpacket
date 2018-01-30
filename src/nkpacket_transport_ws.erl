@@ -60,13 +60,12 @@
     supervisor:child_spec().
 
 get_listener(#nkport{id=Id, local_ip=Ip, local_port=Port, transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
-    {
-        {Id, Transp, Ip, Port},
-        {?MODULE, start_link, [NkPort]},
-        transient,
-        5000,
-        worker,
-        [?MODULE]
+    #{
+        id => {Id, Transp, Ip, Port},
+        start => {?MODULE, start_link, [NkPort]},
+        restart => transient,
+        shutdown => 5000,
+        type => worker
     }.
 
 

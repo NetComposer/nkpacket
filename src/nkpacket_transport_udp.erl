@@ -76,13 +76,12 @@ send_stun_async(Pid, Ip, Port) ->
     supervisor:child_spec().
 
 get_listener(#nkport{id=Id, local_ip=Ip, local_port=Port, transp=udp}=NkPort) ->
-    {
-        {Id, udp, Ip, Port},
-        {?MODULE, start_link, [NkPort]},
-        transient, 
-        5000, 
-        worker, 
-        [?MODULE]
+    #{
+        id => {Id, udp, Ip, Port},
+        start => {?MODULE, start_link, [NkPort]},
+        restart => transient,
+        shutdown => 5000,
+        type => worker
     }.
 
 

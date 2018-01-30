@@ -50,14 +50,14 @@
     supervisor:child_spec().
 
 get_listener(#nkport{id=Id, local_ip=Ip, local_port=Port, transp=sctp}=NkPort) ->
-    {
-        {Id, sctp, Ip, Port},
-        {?MODULE, start_link, [NkPort]},
-        transient, 
-        5000, 
-        worker, 
-        [?MODULE]
+    #{
+        id => {Id, sctp, Ip, Port},
+        start => {?MODULE, start_link, [NkPort]},
+        restart => transient,
+        shutdown => 5000,
+        type => worker
     }.
+
 
 
 %% @private Starts a new connection to a remote server
