@@ -40,7 +40,7 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{id=Id, local_ip=Ip, local_port=Port, transp=Transp}=NkPort)
+get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=Transp}=NkPort)
         when Transp==http; Transp==https ->
     #{
         id => {Id, Transp, Ip, Port},

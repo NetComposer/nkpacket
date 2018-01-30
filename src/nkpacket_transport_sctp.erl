@@ -49,7 +49,7 @@
 -spec get_listener(nkpacket:nkport()) ->
     supervisor:child_spec().
 
-get_listener(#nkport{id=Id, local_ip=Ip, local_port=Port, transp=sctp}=NkPort) ->
+get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=sctp}=NkPort) ->
     #{
         id => {Id, sctp, Ip, Port},
         start => {?MODULE, start_link, [NkPort]},
