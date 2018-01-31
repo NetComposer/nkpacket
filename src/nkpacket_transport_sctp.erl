@@ -55,7 +55,8 @@ get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=sctp}=NkPort)
         start => {?MODULE, start_link, [NkPort]},
         restart => transient,
         shutdown => 5000,
-        type => worker
+        type => worker,
+        modules => [?MODULE]
     }.
 
 
