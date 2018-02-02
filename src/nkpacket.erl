@@ -524,12 +524,7 @@ get_remote(Id) ->
 get_remote_bin(Term) ->
     case get_remote(Term) of
         {ok, {_Proto, Transp, Ip, Port}} ->
-            {ok, 
-                <<
-                    (nklib_util:to_binary(Transp))/binary, ":",
-                    (nklib_util:to_host(Ip))/binary, ":",
-                    (nklib_util:to_binary(Port))/binary
-                >>};
+            {ok, nkpacket_util:conn_string(Transp, Ip, Port)};
         {error, Error} ->
             {error, Error}
     end.
@@ -542,12 +537,7 @@ get_remote_bin(Term) ->
 get_local_bin(Term) ->
     case get_local(Term) of
         {ok, {_Proto, Transp, Ip, Port}} ->
-            {ok,
-                <<
-                    (nklib_util:to_binary(Transp))/binary, ":",
-                    (nklib_util:to_host(Ip))/binary, ":",
-                    (nklib_util:to_binary(Port))/binary
-                >>};
+            {ok, nkpacket_util:conn_string(Transp, Ip, Port)};
         {error, Error} ->
             {error, Error}
     end.

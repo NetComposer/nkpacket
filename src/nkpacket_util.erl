@@ -30,7 +30,7 @@
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, get_uri/4]).
 -export([init_protocol/3, call_protocol/4]).
--export([norm_path/1, join_path/2]).
+-export([norm_path/1, join_path/2, conn_string/3]).
 -export([parse_opts/1, parse_uri_opts/2]).
 
 -include("nkpacket.hrl").
@@ -409,6 +409,13 @@ join_path(Base, Path) ->
     <<Base3/binary, $/, Path2/binary>>.
 
 
+%% @doc
+conn_string(Transp, Ip, Port) ->
+    <<
+        (nklib_util:to_binary(Transp))/binary, ":",
+        (nklib_util:to_host(Ip))/binary, ":",
+        (nklib_util:to_binary(Port))/binary
+    >>.
 
 
 

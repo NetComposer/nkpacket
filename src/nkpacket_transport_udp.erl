@@ -76,8 +76,9 @@ send_stun_async(Pid, Ip, Port) ->
     supervisor:child_spec().
 
 get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=udp}=NkPort) ->
+    Str = nkpacket_util:conn_string(udp, Ip, Port),
     #{
-        id => {Id, udp, Ip, Port},
+        id => {Id, Str},
         start => {?MODULE, start_link, [NkPort]},
         restart => transient,
         shutdown => 5000,

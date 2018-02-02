@@ -50,8 +50,9 @@
     supervisor:child_spec().
 
 get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=sctp}=NkPort) ->
+    Str = nkpacket_util:conn_string(sctp, Ip, Port),
     #{
-        id => {Id, sctp, Ip, Port},
+        id => {Id, Str},
         start => {?MODULE, start_link, [NkPort]},
         restart => transient,
         shutdown => 5000,

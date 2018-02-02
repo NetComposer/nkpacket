@@ -61,8 +61,9 @@
 
 get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=Transp}=NkPort)
         when Transp==ws; Transp==wss ->
+    Str = nkpacket_util:conn_string(Transp, Ip, Port),
     #{
-        id => {Id, Transp, Ip, Port},
+        id => {Id, Str},
         start => {?MODULE, start_link, [NkPort]},
         restart => transient,
         shutdown => 5000,
