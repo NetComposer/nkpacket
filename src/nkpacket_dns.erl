@@ -105,6 +105,7 @@ resolve([#uri{}=Uri|Rest], Opts, Acc) ->
     Host1 = case Host of
         <<"all">> -> "0.0.0.0";
         <<"all6">> -> "0:0:0:0:0:0:0:0";
+        <<"node">> -> get_node();
         _ -> Host
     end,
     Target = nklib_util:get_list(<<"maddr">>, UriOpts, Host1),
@@ -183,6 +184,11 @@ resolve(Scheme, Host, Port, Transp, Opts) ->
     Port1 = get_port(Port, Transp1, Opts),
     [{Transp1, Addr, Port1} || Addr <- Addrs].
 
+
+%% @private
+get_node() ->
+    [_, Node] = binary:split(atom_to_binary(node(), utf8), <<"@">>),
+    Node.
 
 
 %% @doc Finds published services using DNS NAPTR search.
