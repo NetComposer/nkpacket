@@ -215,13 +215,15 @@ init([NkPort, #cowboy_filter{}=Filter]) ->
                 %% stream_handlers => [cowboy_compress_h, cowboy_stream_h]
                 % Warning no compress!
             },
+            Max = maps:get(tcp_max_connections, Meta, 1024),
+            ?DEBUG("staring Ranch ~p (max:~p) (opts:~p)", [RanchId, Max, CowboyOpts2]),
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
                 maps:get(tcp_listeners, Meta, 100),
                 RanchMod,
                 [
                     {socket, Socket}, 
-                    {max_connections,  maps:get(tcp_max_connections, Meta, 1024)}
+                    {max_connections, Max}
                 ],
                 CowboyMod,
                 CowboyOpts2),

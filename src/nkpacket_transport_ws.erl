@@ -173,6 +173,8 @@ init([NkPort]) ->
             ws_proto = maps:get(ws_proto, Meta, any),
             meta = Meta2
         },
+        ?DEBUG("starting nkpacket_cowboy (~p) (~p)",
+               [lager:pr(NkPort1, ?MODULE), lager:pr(Filter, ?MODULE)]),
         SharedPid = case nkpacket_cowboy:start(NkPort1, Filter) of
             {ok, SharedPid0} -> SharedPid0;
             {error, Error} -> throw(Error)

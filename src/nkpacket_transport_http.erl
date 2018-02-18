@@ -283,7 +283,7 @@ cowboy_init(Pid, Req, PathList, _FilterMeta, Env) ->
                 {redirect, Path} ->
                     Uri = list_to_binary(cowboy_req:uri(Req)),
                     Url = nkpacket_util:join_path(Uri, Path),
-                    lager:notice("Redirected to ~s", [Url]),
+                    ?DEBUG("HTTP redirected to ~s", [Url]),
                     Req2 = cowboy_req:set_resp_header(<<"location">>, Url, Req),
                     {ok, nkpacket_cowboy:reply(301, #{}, <<>>, Req2), Env};
                 {cowboy_static, Opts} ->
