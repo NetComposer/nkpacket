@@ -565,7 +565,7 @@ get_id(Id) ->
 
 %% @doc
 -spec get_user_state(id()|pid()|nkport()) ->
-    {ok, user_state(), term()} | {error, term()}.
+    {ok, user_state()} | {error, term()}.
 
 get_user_state(#nkport{user_state=UserState}) ->
     {ok, UserState};
