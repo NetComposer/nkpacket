@@ -54,7 +54,18 @@ init(Req, #{path:=DirPath}=Opts) ->
 	DirPathSize = byte_size(DirPath),
 	case FilePath of
 		<<DirPath:DirPathSize/binary, _/binary>> ->
-			IsDir = binary:last(cowboy_req:url(Req)) == $/,
+			%IsDir = binary:last(cowboy_req:url(Req)) == $/,
+			IsDir = case binary:last(cowboy_req:url(Req)) of
+				$/ ->
+					true;
+				_ ->
+					case binary:split(cowboy_req:url(Req),<<"/?">>) of
+						[_, _] ->
+							true;
+						_ ->
+							false
+					end
+			end,
 			init_file(Req1, Opts, FilePath, IsDir);
 		_ ->
 			?LLOG(warning, "trying to access forbidden ~s", [FilePath]),
@@ -80,7 +91,12 @@ init_file(Req, Opts, FilePath, IsDir) ->
 					init_file(Req, maps:remove(index_file, Opts), FilePath2, false)
 			end;
 		{ok, #file_info{type=directory}} when not IsDir ->
-			Url = <<(cowboy_req:url(Req))/binary, "/">>,
+			Url = case binary:split(cowboy_req:url(Req), <<"?">>) of
+				[UrlA, UrlB] ->
+					<<UrlA/binary, "/?", UrlB/binary>>;
+				Other ->
+					<<Other/binary, "/">>
+			end,
 			?LLOG(info, "sent redirect to ~s", [Url]),
 			Req2 = cowboy_req:set_resp_header(<<"location">>, Url, Req),
 			Req3 = cowboy_req:reply(301, Req2),
