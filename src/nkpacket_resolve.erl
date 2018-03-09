@@ -156,6 +156,8 @@ do_resolve_uri(Uri, Opts) ->
             UriOpts1;
         <<"all">> ->
             UriOpts1;
+        <<"node">> ->
+            UriOpts1;
         _ ->
             [{host, Host}|UriOpts1]            % Host to listen on for WS/HTTP
     end,
