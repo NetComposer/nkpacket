@@ -22,7 +22,7 @@
 -module(nkpacket_transport_http).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([get_listener/1]).
+-export([get_listener/1, connect/1]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3, 
          handle_cast/2, handle_info/2]).
 -export([cowboy_init/5]).
@@ -51,6 +51,43 @@ get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=Transp}=NkPor
         type => worker,
         modules => [?MODULE]
     }.
+
+
+%% @private Starts a new connection to a remote server
+-spec connect(nkpacket:nkport()) ->
+    {ok, nkpacket:nkport(), binary()} | {error, term()}.
+
+connect(NkPort) ->
+    #nkport{
+        transp     = Transp,
+        remote_ip  = Ip,
+        remote_port= Port,
+        opts       = Opts
+    } = NkPort,
+    Debug = maps:get(debug, Opts, false),
+    put(nkpacket_debug, Debug),
+    SocketOpts = outbound_opts(NkPort),
+    TranspMod = case Transp of http -> ranch_tcp; https -> ranch_ssl end,
+    ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
+        undefined -> nkpacket_config_cache:connect_timeout();
+        Timeout0 -> Timeout0
+    end,
+    case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
+        {ok, Socket} ->
+            TranspMod:setopts(Socket, [{active, once}]),
+            {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
+            Opts1 = maps:merge(#{path => <<"/">>}, Opts),
+            NkPort1 = NkPort#nkport{
+                local_ip  = LocalIp,
+                local_port= LocalPort,
+                socket    = Socket,
+                opts      = Opts1
+            },
+            {ok, NkPort1};
+        {error, Error} ->
+            {error, Error}
+    end.
+
 
 
 %% To get debug info, start with debug=>true
@@ -318,6 +355,18 @@ cowboy_init(Pid, Req, PathList, _FilterMeta, Env) ->
 %% ===================================================================
 %% Util
 %% ===================================================================
+
+%% @private Gets socket options for outbound connections
+-spec outbound_opts(#nkport{}) ->
+    list().
+
+outbound_opts(#nkport{transp=http}) ->
+    [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}];
+
+outbound_opts(#nkport{transp=https, opts=Opts}) ->
+    [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}]
+    ++ nkpacket_util:make_tls_opts(Opts).
+
 
 
 %% @private

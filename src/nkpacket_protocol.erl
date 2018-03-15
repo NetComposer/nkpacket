@@ -27,7 +27,8 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([transports/1, default_port/1, resolve_opts/0, naptr/2]).
--export([conn_init/1, conn_parse/3, conn_encode/3, conn_encode/2, conn_bridge/4, 
+-export([conn_init/1, conn_parse/3, conn_encode/3, conn_encode/2, conn_bridge/4,
+         conn_timeout/2,
 		 conn_handle_call/4, conn_handle_cast/3, conn_handle_info/3, conn_stop/3]).
 -export([listen_init/1, listen_parse/5, listen_handle_call/4,
 		 listen_handle_cast/3, listen_handle_info/3, listen_stop/3]).
@@ -169,6 +170,17 @@ conn_encode(_Term, _NkPort) ->
 
 conn_bridge(Data, _Type, _NkPort, ConnState) ->
 	{ok, Data, ConnState}.
+
+
+%% @doc This function is called when the idle_timer timeout fires
+%% If not implemented, will stop the connection
+%% If ok is returned, timer is restarted
+-spec conn_timeout(nkport(), conn_state()) ->
+	{ok, conn_state()} |
+	{stop, term(), conn_state()}.
+
+conn_timeout(_NkPort, ConnState) ->
+	{stop, normal, ConnState}.
 
 
 %% @doc Called when the connection received a gen_server:call/2,3

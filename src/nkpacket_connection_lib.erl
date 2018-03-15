@@ -100,6 +100,13 @@ raw_send(#nkport{transp=Transp, socket=Pid}, Data) when is_pid(Pid) ->
             {error, no_process}
     end;
 
+%% HTTP client pseudo-transport
+raw_send(#nkport{transp=http, socket=Socket}, Data) when is_port(Socket) ->
+    gen_tcp:send(Socket, Data);
+
+raw_send(#nkport{transp=https, socket={sslsocket, _, _}=Socket}, Data) ->
+    ssl:send(Socket, Data);
+
 raw_send(_, _) ->
     {error, invalid_transport}.
 
@@ -157,6 +164,12 @@ raw_stop(#nkport{transp=ws, socket=Socket}) when is_port(Socket) ->
     gen_tcp:close(Socket);
 
 raw_stop(#nkport{transp=wss, socket={sslsocket, _, _}=Socket}) ->
+    ssl:close(Socket);
+
+raw_stop(#nkport{transp=http, socket=Socket}) when is_port(Socket) ->
+    gen_tcp:close(Socket);
+
+raw_stop(#nkport{transp=https, socket={sslsocket, _, _}=Socket}) ->
     ssl:close(Socket);
 
 raw_stop(#nkport{socket=Pid}) when is_pid(Pid) ->

@@ -90,7 +90,6 @@
         parse_syntax => map(),                  % Allows to update the syntax. See bellow
         monitor => atom() | pid(),              % Connection will monitor this
         idle_timeout => integer(),              % MSecs, default in config
-        refresh_fun => fun((nkport()) -> boolean()),    % Will be called on timeout
         debug => boolean(),
 
         % UDP options
@@ -387,18 +386,10 @@ send(SendSpec, Msg) ->
 send(SendSpec, Msg, Opts) ->
     case nkpacket_resolve:resolve(SendSpec, Opts#{resolve_type=>send}) of
         {ok, Conns} ->
-
-%%            case Opts1 of
-%%                #{debug:=true} -> put(nkpacket_debug, true);
-%%                _ -> ok
-%%            end,
-
             nkpacket_transport:send(Conns, Msg);
         {error, Error} ->
             {error, Error}
     end.
-
-
 
 
 %% @doc Forces a new outbound connection.

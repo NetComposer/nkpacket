@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(gen_server).
 
--export([send/2, stop/1, stop/2, start/1]).
+-export([send/2, send_async/2, stop/1, stop/2, start/1]).
 -export([reset_timeout/2, get_timeout/1, update_monitor/2]).
 -export([get_all/0, get_all_class/1, get_all_class/0, stop_all/0, stop_all/1]).
 -export([incoming/2, connect/1, conn_init/1]).
@@ -91,11 +91,17 @@ connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
         false -> {error, no_listening_transport}
     end;
 
-connect(#nkport{transp=Transp}) when Transp==http; Transp==https ->
-    {error, not_supported};
-
 connect(#nkport{transp=Transp}=NkPort)
         when Transp==tcp; Transp==tls; Transp==ws; Transp==wss ->
+    case nkpacket_connection_lib:is_max() of
+        false ->
+            proc_lib:start(?MODULE, conn_init, [NkPort]);
+        true ->
+            {error, max_connections}
+    end;
+
+% HTTP client is an included 'user' protocol, managed here as a 'pseudo transport'
+connect(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
     case nkpacket_connection_lib:is_max() of
         false ->
             proc_lib:start(?MODULE, conn_init, [NkPort]);
@@ -146,6 +152,15 @@ send(Pid, Msg) when is_pid(Pid) ->
         Other ->
             Other
     end.
+
+
+%% @doc Sends a new message to a started connection
+-spec send_async(pid(), term()) ->
+    ok.
+
+%% @private
+send_async(Pid, Msg) when is_pid(Pid) ->
+    gen_server:cast(Pid, {nkpacket_send, Msg}).
 
 
 %% @doc Stops a started connection with reason 'normal'
@@ -283,7 +298,6 @@ ranch_start_link(NkPort, Ref) ->
     ws_state :: term() | undefined,
     timeout :: non_neg_integer(),
     timeout_timer :: reference() | undefined,
-    refresh_fun :: fun((nkpacket:nkport()) -> boolean()) | undefined,
     protocol :: atom(),
     proto_state :: term()
 }).
@@ -366,7 +380,6 @@ init([NkPort]) ->
         bridge_monitor = undefined,
         ws_state = WsState,
         timeout = Timeout,
-        refresh_fun = maps:get(refresh_fun, Opts, undefined),
         protocol = Protocol
     },
     %% 'user' key is only sent to conn_init, then it is removed
@@ -418,9 +431,18 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
             proc_lib:init_ack({error, Error})
     end;
 
+conn_init(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
+    case nkpacket_transport_http:connect(NkPort) of
+        {ok, NkPort1} ->
+            {ok, State} = init([NkPort1]),
+            ok = proc_lib:init_ack({ok, self()}),
+            gen_server:enter_loop(?MODULE, [], State);
+        {error, Error} ->
+            proc_lib:init_ack({error, Error})
+    end;
+
 conn_init(#nkport{transp=Transp}) ->
     error({invalid_transport, Transp}).
-
 
 
 %% @private
@@ -446,13 +468,10 @@ handle_call(nkpacket_get_timeout, _From, #state{timeout_timer=Ref}=State) ->
     end,
     {reply, Reply, State};
 
-handle_call({nkpacket_send, Msg}, _From, #state{nkport=NkPort}=State) ->
-    Msg2 = nkpacket_connection_lib:apply_msg_fun(Msg, NkPort),
-    case encode(Msg2, State) of
-        {ok, OutMsg, State1} ->
-            ?DEBUG("send: ~p", [OutMsg], NkPort),
-            Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
-            {reply, Reply, restart_timer(State1)};
+handle_call({nkpacket_send, Msg}, _From, State) ->
+    case do_send(Msg, State) of
+        {ok, Reply, State1} ->
+            {reply, Reply, State1};
         {stop, Reason, State1} ->
             {stop, normal, {error, Reason}, State1}
     end;
@@ -469,15 +488,19 @@ handle_call(Msg, From, #state{nkport=NkPort}=State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-% handle_cast({send, OutMsg}, #state{nkport=NkPort}=State) ->
-%     nkpacket_connection_lib:raw_send(NkPort, OutMsg),
-%     {noreply, restart_timer(State)};
-
 handle_cast(nkpacket_reset_timeout, State) ->
     {noreply, restart_timer(State)};
 
 handle_cast({nkpacket_incoming, Data}, State) ->
     parse(Data, restart_timer(State));
+
+handle_cast({nkpacket_send, Msg}, State) ->
+    case do_send(Msg, State) of
+        {ok, _Reply, State1} ->
+            {noreply, State1};
+        {stop, _Reason, State1} ->
+            {stop, normal, State1}
+    end;
 
 handle_cast({nkpacket_stop, Reason}, State) ->
     {stop, Reason, State};
@@ -547,17 +570,16 @@ handle_info({ssl_error, _Socket}, #state{nkport=NkPort}=State) ->
     ?DEBUG("ssl error", [], NkPort),
     {stop, normal, State};
 
-handle_info({timeout, _, idle_timer}, State) ->
-    #state{nkport=NkPort, refresh_fun=Fun} = State,
-    case is_function(Fun, 1) of
-        true ->
-            case Fun(NkPort) of
-                true -> {noreply, restart_timer(State)};
-                false -> {stop, normal, State}
-            end;
-        false ->
+handle_info({timeout, _, idle_timer}, #state{nkport=NkPort}=State) ->
+    case call_protocol(conn_timeout, [NkPort], State) of
+        undefined ->
             ?DEBUG("timeout", [], NkPort),
-            {stop, normal, State}
+            {stop, normal, State};
+        {ok, State1} ->
+            {noreply, restart_timer(State1)};
+        {stop, Reason, State1} ->
+            ?DEBUG("timeout: ~p", [Reason], NkPort),
+            {stop, Reason, State1}
     end;
 
 handle_info({'DOWN', MRef, process, _Pid, Reason}, #state{bridge_monitor=MRef}=State) ->
@@ -731,6 +753,19 @@ do_parse(Data, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
         {stop, Reason, State1} ->
             ?DEBUG("stop response from conn_parse: ~p", [Reason], NkPort),
             {stop, normal, State1}
+    end.
+
+
+%% @private
+do_send(Msg, #state{nkport=NkPort}=State) ->
+    Msg2 = nkpacket_connection_lib:apply_msg_fun(Msg, NkPort),
+    case encode(Msg2, State) of
+        {ok, OutMsg, State1} ->
+            ?DEBUG("send: ~p", [OutMsg], NkPort),
+            Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
+            {ok, Reply, restart_timer(State1)};
+        {stop, Reason, State1} ->
+            {stop, Reason, State1}
     end.
 
 

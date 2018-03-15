@@ -133,6 +133,8 @@ do_resolve_uri(Uri, Opts) ->
     Protocol = case Opts of
         #{protocol:=UserProtocol} ->
             UserProtocol;
+        _ when Scheme==http; Scheme==https ->
+            nkpacket_httpc_protocol;
         #{class:=Class} ->
             nkpacket:get_protocol(Class, Scheme);
         _ ->
