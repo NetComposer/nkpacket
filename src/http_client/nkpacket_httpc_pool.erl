@@ -41,7 +41,12 @@
 
 sample() ->
     Config = #{
-        conns => [
+        targets => [
+%%            #{
+%%                url => "https://microsoft.com",
+%%                opts => #{debug => true},
+%%                weight => 20
+%%            },
             #{
                 url => "http://127.0.0.1:9000",
                 weight => 10,
@@ -49,11 +54,6 @@ sample() ->
                 pool => 3,
                 refresh => true
             }
-%%            #{
-%%                url => "https://microsoft.com",
-%%                opts => #{debug => true},
-%%                weight => 20
-%%            }
         ],
         debug => true,
         resolve_interval => 0
@@ -83,7 +83,7 @@ sample() ->
 -type config() ::
     #{
         id => term(),
-        conns => [
+        targets => [
             #{
                 url => binary(),                    % Can resolve to multiple IPs
                 opts => nkpacket:connect_opts(),    % Can include debug
@@ -93,6 +93,7 @@ sample() ->
                 headers => [{binary(), binary()}]   % To include in each request
             }
         ],
+        debug => boolean(),
         resolve_interval => integer()               % Secs, 0 to avoid
     }.
 
@@ -103,37 +104,12 @@ sample() ->
 %% ===================================================================
 
 
-syntax() ->
-    #{
-        id => binary,
-        conns => {list,
-            #{
-                url => binary,
-                opts => nkpacket_syntax:safe_syntax(),
-                weight => {integer, 0, 1000},
-                pool => {integer, 1, 1000},
-                refresh => boolean,
-                headers => list,
-                '__mandatory' => [url],
-                '__defaults' => #{weigth=>100, pool=>1}
-            }},
-        debug => boolean,
-        resolve_interval => {integer, 0, none}
-    }.
-
-
 %% @doc
 -spec start_link(config()) ->
     {ok, pid()} | {error, term()}.
 
 start_link(Config) ->
-    Syntax = syntax(),
-    case nklib_syntax:parse(Config, Syntax) of
-        {ok, Parsed, _} ->
-           gen_server:start_link(?MODULE, [Parsed], []);
-        {error, Error} ->
-            {error, Error}
-    end.
+   gen_server:start_link(?MODULE, [Config], []).
 
 
 %% @doc
@@ -209,7 +185,7 @@ get_status(P) ->
 
 -record(state, {
     id :: term(),
-    conns_config :: map(),
+    targets :: map(),
     conn_spec :: #{conn_id() => #conn_spec{}},
     conn_weight :: [{Start::integer(), Stop::integer(), conn_id()}],
     conn_status :: #{conn_id() => #conn_status{}},
@@ -229,7 +205,7 @@ get_status(P) ->
 init([Config]) ->
     State1 = #state{
         id = maps:get(id, Config, <<"none">>),
-        conns_config = maps:get(conns, Config),
+        targets = maps:get(targets, Config),
         conn_spec = #{},
         conn_weight = [],
         conn_status = #{},
@@ -311,7 +287,7 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_info(launch_resolve, #state{conns_config=ConnConfig}=State) ->
+handle_info(launch_resolve, #state{targets =ConnConfig}=State) ->
     Self = self(),
     spawn_link(fun() -> resolve(Self, ConnConfig) end),
     {noreply, State};
