@@ -80,6 +80,10 @@ sample() ->
 %% Types
 %% ===================================================================
 
+-type method() :: get | post | put | delete | head | patch.
+-type path() :: binary().
+-type body() :: iolist().
+
 -type config() ::
     #{
         id => term(),
@@ -95,6 +99,12 @@ sample() ->
         ],
         debug => boolean(),
         resolve_interval => integer()               % Secs, 0 to avoid
+    }.
+
+-type request_opts() ::
+    #{
+        headers => [{binary(), binary()}],
+        timeout => integer()
     }.
 
 
@@ -113,6 +123,10 @@ start_link(Config) ->
 
 
 %% @doc
+-spec request(pid(), method(), path(), body(), request_opts()) ->
+    {ok, Status::100..599, Headers::[{binary(), binary()}], Body::binary()} |
+    {error, term()}.
+
 request(Pid, Method, Path, Body, Opts) ->
     case get_pid(Pid) of
         {ok, ConnPid} ->
