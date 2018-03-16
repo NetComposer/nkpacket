@@ -50,13 +50,13 @@ sample() ->
                 refresh => true
             }
 %%            #{
-%%                url => "http://microsoft.com",
+%%                url => "https://microsoft.com",
 %%                opts => #{debug => true},
 %%                weight => 20
 %%            }
         ],
         debug => true,
-        resolve_interval => 5
+        resolve_interval => 0
     },
     start_link(Config).
 
@@ -73,7 +73,8 @@ sample() ->
     lager:Type("NkPACKET HTTP Pool (~s) "++Txt, [State#state.id|Args])).
 
 -define(NUM_TRIES, 2).
--define(MAX_RETRY_TIME, 60).    % Secs
+-define(INITIAL_DELAY_SECS, 5).    % Secs
+-define(MAX_DELAY_SECS, 60).    % Secs
 
 %% ===================================================================
 %% Types
@@ -200,16 +201,18 @@ get_status(P) ->
     conn_pids = [] :: [pid()],
     status = active :: active | inactive,
     errors = 0 :: integer(),
+    delay = 0 :: integer(),
     next_try = 0 :: nklib_util:timestamp()
 }).
 
--type conn_id() :: {inet:ip_address(), inet:port_number()}.
+-type conn_id() :: {nkpacket:transport(), inet:ip_address(), inet:port_number()}.
 
 -record(state, {
     id :: term(),
-    conns_spec :: map(),
-    conns_select :: [{Start::integer(), Stop::integer(), #conn_spec{}}],
-    conns_status :: #{conn_id() => #conn_status{}},
+    conns_config :: map(),
+    conn_spec :: #{conn_id() => #conn_spec{}},
+    conn_weight :: [{Start::integer(), Stop::integer(), conn_id()}],
+    conn_status :: #{conn_id() => #conn_status{}},
     conn_pids :: #{pid() => conn_id()},
     max_weight :: integer(),
     resolve_interval :: integer(),
@@ -226,12 +229,13 @@ get_status(P) ->
 init([Config]) ->
     State1 = #state{
         id = maps:get(id, Config, <<"none">>),
-        conns_spec = maps:get(conns, Config),
+        conns_config = maps:get(conns, Config),
+        conn_spec = #{},
+        conn_weight = [],
+        conn_status = #{},
+        conn_pids = #{},
         debug = maps:get(debug, Config, false),
         headers = maps:get(headers, Config, []),
-        conns_select = [],
-        conns_status = #{},
-        conn_pids = #{},
         resolve_interval = maps:get(resolve_interval, Config, 0)
     },
     self() ! launch_resolve,
@@ -243,15 +247,11 @@ init([Config]) ->
     {noreply, #state{}} | {reply, term(), #state{}} |
     {stop, Reason::term(), #state{}} | {stop, Reason::term(), Reply::term(), #state{}}.
 
-handle_call(get_pid, _From, State) ->
-    case find_conn(State) of
-        {ok, Pid, State2} ->
-            {reply, {ok, Pid}, State2};
-        {error, Error, State2} ->
-            {reply, {error, Error}, State2}
-    end;
+handle_call(get_pid, From, State) ->
+    State2 = find_conn_pid(?NUM_TRIES, From, State),
+    {noreply, State2};
 
-handle_call(get_status, _From, #state{conns_status=ConnStatus}=State) ->
+handle_call(get_status, _From, #state{conn_status=ConnStatus}=State) ->
     {reply, {ok, ConnStatus}, State};
 
 handle_call(Msg, _From, State) ->
@@ -263,22 +263,44 @@ handle_call(Msg, _From, State) ->
 -spec handle_cast(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_cast({resolve_data, {Select, Max}}, #state{resolve_interval=Time}=State) ->
-    case Select of
+handle_cast({retry_get_pid, Tries, From}, State) when Tries > 0 ->
+    ?DEBUG("retrying get pid (remaining tries:~p)", [Tries], State),
+    State2 = find_conn_pid(Tries, From, State),
+    {noreply, State2};
+
+handle_cast({retry_get_pid, _Tries, From}, State) ->
+    ?DEBUG("retrying get pid: too many retries", [], State),
+    gen_server:reply(From, {error, no_connections}),
+    {noreply, State};
+
+ handle_cast({resolve_data, {Specs, Weights, Max}}, State) ->
+    case Weights of
         [] ->
             ?LLOG(warning, "no connections spec", [], State);
         _ ->
-            %?DEBUG("new resolved data: ~p", [Select], State),
+            ?DEBUG("new resolved spec: ~p", [Specs], State),
+            ?DEBUG("new resolved weights: ~p", [Weights], State),
             ok
     end,
+    #state{resolve_interval=Time} = State,
     case Time > 0 of
         true ->
             erlang:send_after(Time*1000, self(), launch_resolve);
         false ->
             ok
     end,
-    State2 = State#state{conns_select=Select, max_weight=Max},
+    State2 = State#state{
+        conn_spec = Specs,
+        conn_weight = Weights,
+        max_weight = Max
+    },
     {noreply, State2};
+
+handle_cast({new_connection_ok, ConnId, Pid, Tries, From}, State) ->
+    {noreply, do_connect_ok(ConnId, Pid, Tries, From, State)};
+
+handle_cast({new_connection_error, ConnId, Error, Tries, From}, State) ->
+    {noreply, do_connect_error(ConnId, Error, Tries, From, State)};
 
 handle_cast(Msg, State) ->
     lager:error("Module ~p received unexpected cast ~p", [?MODULE, Msg]),
@@ -289,20 +311,20 @@ handle_cast(Msg, State) ->
 -spec handle_info(term(), #state{}) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
-handle_info(launch_resolve, #state{conns_spec=Spec}=State) ->
+handle_info(launch_resolve, #state{conns_config=ConnConfig}=State) ->
     Self = self(),
-    spawn_link(fun() -> resolve(Self, Spec) end),
+    spawn_link(fun() -> resolve(Self, ConnConfig) end),
     {noreply, State};
 
 handle_info({'DOWN', _Ref, process, Pid, Reason}=Msg, State) ->
-    #state{conn_pids=ConnPids, conns_status=ConnStatus} = State,
+    #state{conn_pids=ConnPids, conn_status=ConnStatus} = State,
     case maps:take(Pid, ConnPids) of
         {ConnId, ConnPids2} ->
             ?DEBUG("connection ~p down (~p)", [ConnId, Reason], State),
-            #conn_status{conn_pids=Pids}=Status1 = maps:get(ConnId, ConnStatus),
+            #conn_status{conn_pids=Pids}= Status1 = maps:get(ConnId, ConnStatus),
             Status2 = Status1#conn_status{conn_pids=Pids -- [Pid]},
             ConnStatus2 = ConnStatus#{ConnId => Status2},
-            State2 = State#state{conn_pids=ConnPids2, conns_status=ConnStatus2},
+            State2 = State#state{conn_pids=ConnPids2, conn_status=ConnStatus2},
             {noreply, State2};
         error ->
             lager:warning("Module ~p received unexpected info: ~p (~p)", [?MODULE, Msg, State]),
@@ -338,22 +360,22 @@ terminate(_Reason, _State) ->
 
 
 %% @private
-resolve(Pid, Specs) ->
-    Data = do_resolve(Specs, Pid, []),
+resolve(Pid, ConnsConfig) ->
+    Data = do_resolve(ConnsConfig, Pid, #{}, []),
     gen_server:cast(Pid, {resolve_data, Data}).
 
 
 %% @private
-do_resolve([], _Pid, Weights) ->
+do_resolve([], _Pid, Specs, Weights) ->
     Max = case Weights of
         [{_Start, Stop, _}|_] ->
             Stop;
         [] ->
             0
     end,
-    {lists:reverse(Weights), Max};
+    {Specs, lists:reverse(Weights), Max};
 
-do_resolve([#{url:=Url}=Spec|Rest], Pid, Weights) ->
+do_resolve([#{url:=Url}=Spec|Rest], Pid, Specs, Weights) ->
     Opts = maps:get(opts, Spec, #{}),
     Pool = maps:get(pool, Spec, 1),
     UserState1 = case maps:get(refresh, Spec, false) of
@@ -379,6 +401,14 @@ do_resolve([#{url:=Url}=Spec|Rest], Pid, Weights) ->
             lager:error("NKLOG Error resolving ~s: ~p", [Url, Error]),
             []
     end,
+    Specs2 = lists:foldl(
+        fun(#nkconn{transp=Transp, ip=Ip, port=Port}=NkConn, Acc) ->
+            ConnId = {Transp, Ip, Port},
+            ConnSpec = #conn_spec{id=ConnId, nkconn=NkConn, pool=Pool},
+            Acc#{ConnId => ConnSpec}
+        end,
+        Specs,
+        ConnList),
     Weights2 = case ConnList of
         [] ->
             Weights;
@@ -386,67 +416,151 @@ do_resolve([#{url:=Url}=Spec|Rest], Pid, Weights) ->
             GroupWeight = maps:get(weight, Spec, 100),
             ConnWeight = GroupWeight div length(ConnList),
             lists:foldl(
-                fun(#nkconn{ip=Ip, port=Port}=NkConn, Acc) ->
-                    ConnSpec = #conn_spec{id={Ip, Port}, nkconn=NkConn, pool=Pool},
+                fun(#nkconn{transp=Transp, ip=Ip, port=Port}, Acc) ->
+                    ConnId = {Transp, Ip, Port},
                     case Acc of
                         [] ->
-                            [{1, ConnWeight, ConnSpec}];
-                        [{_Start, Stop, _ConnSpec}|_] ->
-                            [{Stop+1, Stop+ConnWeight, ConnSpec}|Acc]
+                            [{1, ConnWeight, ConnId}];
+                        [{_Start, Stop, _ConnId}|_] ->
+                            [{Stop+1, Stop+ConnWeight, ConnId}|Acc]
                     end
                 end,
                 Weights,
                 ConnList)
     end,
-    do_resolve(Rest, Pid, Weights2).
+    do_resolve(Rest, Pid, Specs2, Weights2).
 
 
 %% @private
-find_conn(#state{conns_select=[]}=State) ->
-    {error, no_connections, State};
+find_conn_pid(_Tries, From, #state{conn_weight=[]}=State) ->
+    gen_server:reply(From, {error, no_connections}),
+    State;
 
-find_conn(State) ->
-    find_conn(?NUM_TRIES, State).
-
-
-%% @private
-find_conn(Tries, State) when Tries > 0 ->
+find_conn_pid(Tries, From, State) ->
     #state{
         max_weight = Max,
-        conns_select = Select,
-        conns_status = ConnsStatus
+        conn_spec = ConnSpec,
+        conn_weight = Weights,
+        conn_status = ConnStatus
     } = State,
     Pos = rand:uniform(Max),
-    #conn_spec{id=ConnId, pool=Pool} = ConnSpec = do_find_conn(Pos, Select),
-    ?DEBUG("selected ~p: ~p", [Pos, ConnId], State),
-    case maps:find(ConnId, ConnsStatus) of
+    ConnId = do_find_conn(Pos, Weights),
+    Spec = maps:get(ConnId, ConnSpec),
+    #conn_spec{id=ConnId, pool=Pool} = Spec,
+    ?DEBUG("selected weight ~p: ~p", [Pos, ConnId], State),
+    case maps:find(ConnId, ConnStatus) of
         {ok, #conn_status{status=active, conn_pids=Pids}} ->
             case length(Pids) < Pool of
                 true ->
-                    case connect(ConnSpec, State) of
-                        {ok, Pid, State2} ->
-                            {ok, Pid, State2};
-                        {error, State2} ->
-                            ?DEBUG("retrying (remaining ~p)", [Tries], State2),
-                            find_conn(Tries-1, State2)
-                    end;
+                    connect(Spec, Tries, From, State);
                 false ->
                     ?DEBUG("selecting existing pid ~p: ~p", [Pos, ConnId], State),
-                    {ok, do_get_pid(Pids), State}
+                    gen_server:reply(From, {ok, do_get_pid(Pids)}),
+                    State
             end;
         _ ->
-            case connect(ConnSpec, State) of
-                {ok, Pid, State2} ->
-                    {ok, Pid, State2};
-                {error, State2} ->
-                    ?DEBUG("retrying (remaining ~p)", [Tries], State2),
-                    find_conn(Tries-1, State2)
-            end
-    end;
+            % If inactive or not yet created
+            connect(Spec, Tries, From, State)
+    end.
 
-find_conn(_Tries, State) ->
-    ?DEBUG("too many tries", [], State),
-    {error, no_connections, State}.
+
+%% @private
+connect(#conn_spec{id=ConnId, nkconn=Conn}, Tries, From, State) ->
+    #state{conn_status=ConnStatus} = State,
+    Status = maps:get(ConnId, ConnStatus, #conn_status{}),
+    case Status of
+        #conn_status{status=active} ->
+            ?DEBUG("connecting to active: ~p (tries:~p)", [ConnId, Tries], State),
+            spawn_connect(ConnId, Conn, Tries, From);
+        #conn_status{status=inactive, next_try=Next} ->
+            case nklib_util:timestamp() > Next of
+                true ->
+                    ?DEBUG("reconnecting to inactive: ~p", [ConnId], State),
+                    spawn_connect(ConnId, Conn, Tries, From);
+                false ->
+                    ?DEBUG("not yet time to recconnect to: ~p", [ConnId], State),
+                    retry(Tries, From)
+            end
+    end,
+    ConnStatus2 = ConnStatus#{ConnId => Status},
+    State#state{conn_status=ConnStatus2}.
+
+
+%% @private
+spawn_connect(ConnId, Conn, Tries, From) ->
+    Self = self(),
+    spawn_link(
+        fun() ->
+            Msg = case nkpacket_transport:connect([Conn]) of
+                {ok, Pid} ->
+                    {new_connection_ok, ConnId, Pid, Tries, From};
+                {error, Error} ->
+                    {new_connection_error, ConnId, Error, Tries, From}
+            end,
+            gen_server:cast(Self, Msg)
+        end).
+
+
+%% @private
+do_connect_ok(ConnId, Pid, Tries, From, State) ->
+    #state{
+        conn_spec = ConnSpec,
+        conn_status = ConnStatus,
+        conn_pids = ConnPids
+    } = State,
+    case maps:find(ConnId, ConnSpec) of
+        {ok, #conn_spec{pool=Pool}} ->
+            Status1 = maps:get(ConnId, ConnStatus),
+            #conn_status{conn_pids=Pids} = Status1,
+            case length(Pids) >= Pool of
+                true ->
+                    % We started too much
+                    ?DEBUG("selecting existing pid: ~p", [ConnId], State),
+                    gen_server:reply(From, {ok, do_get_pid(Pids)}),
+                    nkpacket_connection:stop(Pid),
+                    State;
+                false ->
+                    ?DEBUG("connected to ~p (~p) (~p/~p pids started)",
+                        [ConnId, Pid, length(Pids)+1, Pool], State),
+                    gen_server:reply(From, {ok, Pid}),
+                    monitor(process, Pid),
+                    Status2 = Status1#conn_status{
+                        status = active,
+                        conn_pids = [Pid|Pids],
+                        errors = 0,
+                        delay = 0
+                    },
+                    State#state{
+                        conn_status = ConnStatus#{ConnId => Status2},
+                        conn_pids = ConnPids#{Pid => ConnId}
+                    }
+            end;
+        error ->
+            % It could have disappeared in new resolve
+            retry(Tries, From),
+            State
+    end.
+
+
+%% @private
+do_connect_error(ConnId, Error, Tries, From, State) ->
+    #state{conn_status = ConnStatus} = State,
+    Status1 = maps:get(ConnId, ConnStatus),
+    #conn_status{errors=Errors, delay=Delay} = Status1,
+    Delay2 = case Delay of
+        0 -> ?INITIAL_DELAY_SECS;
+        _ -> min(2*Delay, ?MAX_DELAY_SECS)
+    end,
+    Status2 = Status1#conn_status{
+        status = inactive,
+        errors = Errors + 1,
+        delay = Delay2,
+        next_try = nklib_util:timestamp() + Delay2
+    },
+    ?LLOG(notice, "error connecting to ~p: ~p (~p errors, next try in ~p)",
+          [ConnId, Error, Errors+1, Delay2], State),
+    retry(Tries, From),
+    State#state{conn_status = ConnStatus#{ConnId => Status2}}.
 
 
 %% @private
@@ -463,62 +577,6 @@ do_get_pid([Pid]) ->
 do_get_pid(Pids) ->
     lists:nth(rand:uniform(length(Pids)), Pids).
 
-
 %% @private
-connect(#conn_spec{id=ConnId}=ConnSpec, State) ->
-    #state{conns_status=ConnStatus} = State,
-    Status = maps:get(ConnId, ConnStatus, #conn_status{}),
-    case Status of
-        #conn_status{status=active} ->
-            ?DEBUG("connecting to active: ~p", [ConnId], State),
-            do_connect(ConnSpec, Status, State);
-        #conn_status{status=inactive, next_try=Next} ->
-            case nklib_util:timestamp() > Next of
-                true ->
-                    ?DEBUG("starting next try for ~p", [ConnId], State),
-                    do_connect(ConnSpec, Status, State);
-                false ->
-                    ?DEBUG("not yet next try for ~p", [ConnId], State),
-                    {error, State}
-            end
-    end.
-
-
-%% @private
-do_connect(#conn_spec{id=ConnId, nkconn=Conn, pool=Pool}, Status, State) ->
-    #state{conns_status=ConnStatus, conn_pids=ConnPids} = State,
-    case nkpacket_transport:connect([Conn]) of
-        {ok, Pid} ->
-            monitor(process, Pid),
-            #conn_status{conn_pids=Pids} = Status,
-            Status2 = Status#conn_status{
-                status = active,
-                conn_pids = [Pid|Pids],
-                errors = 0
-            },
-            ?DEBUG("connected to ~p (~p) (~p/~p pids started)",
-                   [ConnId, Pid, length(Pids)+1, Pool], State),
-            State2 = State#state{
-                conns_status = ConnStatus#{ConnId => Status2},
-                conn_pids = ConnPids#{Pid => ConnId}
-            },
-            {ok, Pid, State2};
-        {error, Error} ->
-            Now = nklib_util:timestamp(),
-            #conn_status{errors=Errors} = Status,
-            Delay = min((Errors+1)*5, ?MAX_RETRY_TIME),
-            Status2 = Status#conn_status{
-                status = inactive,
-                errors = Errors+1,
-                next_try = Now + Delay
-            },
-            ?LLOG(notice, "error connecting to ~p: ~p (~p errors, next try in ~p)",
-                  [ConnId, Error,Errors+1,Delay], State),
-            State2 = State#state{
-                conns_status = ConnStatus#{ConnId => Status2}
-            },
-            {error, State2}
-    end.
-
-
-
+retry(Tries, From) ->
+    gen_server:cast(self(), {retry_get_pid, Tries-1, From}).
