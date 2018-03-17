@@ -137,6 +137,13 @@ do_resolve_uri(Uri, Opts) ->
             nkpacket_httpc_protocol;
         #{class:=Class} ->
             nkpacket:get_protocol(Class, Scheme);
+        #{schemes:=Schemes} ->
+            case maps:find(Scheme, Schemes) of
+                {ok, SchemeProto} ->
+                    SchemeProto;
+                error ->
+                    nkpacket:get_protocol(Scheme)
+            end;
         _ ->
             nkpacket:get_protocol(Scheme)
     end,

@@ -31,7 +31,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([sample/0, request/5]).
--export([start_link/1]).
+-export([start_link/2]).
 
 
 
@@ -54,12 +54,14 @@ sample() ->
         debug => true,
         resolve_interval => 0
     },
-    start_link(Config).
+    start_link(test, Config).
 
 
 %% ===================================================================
 %% Types
 %% ===================================================================
+
+-type id() :: nkpacket_pool:id().
 
 -type method() :: get | post | put | delete | head | patch.
 -type path() :: binary().
@@ -67,7 +69,6 @@ sample() ->
 
 -type config() ::
     #{
-        id => term(),
         targets => [
             #{
                 url => binary(),                    % Can resolve to multiple IPs
@@ -96,12 +97,12 @@ sample() ->
 
 
 %% @doc
--spec start_link(config()) ->
+-spec start_link(id(), config()) ->
     {ok, pid()} | {error, term()}.
 
-start_link(Config) ->
+start_link(Id, Config) ->
     Config2 = update_config(Config),
-    nkpacket_pool:start_link(Config2).
+    nkpacket_pool:start_link(Id, Config2).
 
 
 %% @doc
@@ -110,7 +111,7 @@ start_link(Config) ->
     {error, term()}.
 
 request(Pid, Method, Path, Body, Opts) ->
-    case nkpacket_pool:get_pid(Pid) of
+    case nkpacket_pool:get_conn_pid(Pid) of
         {ok, ConnPid} ->
             Ref = make_ref(),
             Hds = maps:get(headers, Opts, []),
