@@ -157,7 +157,7 @@ update_config(Config) ->
     Targets1 = maps:get(targets, Config, []),
     Targets2 = lists:map(
         fun(Spec1) ->
-            Opts1 = maps:get(opts, Spec1),
+            Opts1 = maps:get(opts, Spec1, #{}),
             UserState1 = case maps:get(refresh, Spec1, false) of
                 true ->
                     #{refresh_request=>{get, <<"/">>, [], <<>>}};
