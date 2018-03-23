@@ -447,7 +447,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
                     connect(Spec, Tries, From, Exclusive, State);
                 false when Exclusive==false ->
                     ?DEBUG("selecting existing pid ~p: ~p", [Pos, ConnId], State),
-                    gen_server:reply(From, {ok, do_get_pid(Pids)}),
+                    gen_server:reply(From, {ok, do_get_pid(Pids), #{conn_id=>ConnId}}),
                     State;
                 false ->
                     % We reached all possible connections
@@ -455,7 +455,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
                         {ok, Pid, State2} ->
                             ?DEBUG("selecting and locking existing pid ~p: ~p",
                                    [Pos, ConnId], State),
-                            gen_server:reply(From, {ok, Pid}),
+                            gen_server:reply(From, {ok, Pid, #{conn_id=>ConnId}}),
                             State2;
                         false ->
                             ?DEBUG("max connections reached", [], State),
@@ -530,7 +530,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
                     link(Pid),
                     ?DEBUG("connected to ~p (~p) (~p/~p pids started)",
                         [ConnId, Pid, length(Pids)+1, Pool], State),
-                    gen_server:reply(From, {ok, Pid}),
+                    gen_server:reply(From, {ok, Pid, #{conn_id=>ConnId}}),
                     monitor(process, Pid),
                     Status2 = Status1#conn_status{
                         status = active,
@@ -558,7 +558,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
                 false when Exclusive==false ->
                     % We started too much
                     ?DEBUG("selecting existing pid: ~p", [ConnId], State),
-                    gen_server:reply(From, {ok, do_get_pid(Pids)}),
+                    gen_server:reply(From, {ok, do_get_pid(Pids), #{conn_id=>ConnId}}),
                     StopFun(Pid),
                     State;
                 false ->
