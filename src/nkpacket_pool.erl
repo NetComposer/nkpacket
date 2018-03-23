@@ -58,6 +58,7 @@
 %% Types
 %% ===================================================================
 
+%% This function would be called at periodic intervals to resolve DNSs
 -type conn_resolve_fun() ::
     fun((Target::map(), Config::map(), pid()) ->
         {ok, [#nkconn{}]} | {error, term()}).
@@ -252,15 +253,13 @@ handle_cast({retry_get_conn_pid, _Tries, From, _Exclusive}, State) ->
     gen_server:reply(From, {error, no_connections}),
     {noreply, State};
 
- handle_cast({resolve_data, {Specs, Weights, Max}}, State) ->
-    case Weights of
-        [] ->
-            ?LLOG(warning, "no connections spec", [], State);
-        _ ->
-            ?DEBUG("new resolved spec: ~p", [Specs], State),
-            ?DEBUG("new resolved weights: ~p", [Weights], State),
-            ok
-    end,
+handle_cast({resolve_data, {_Specs, [], _Max}}, State) ->
+    ?LLOG(warning, "no connections spec", [], State),
+    {stop, no_weights, State};
+
+handle_cast({resolve_data, {Specs, Weights, Max}}, State) ->
+    ?DEBUG("new resolved spec: ~p", [Specs], State),
+    ?DEBUG("new resolved weights: ~p", [Weights], State),
     #state{resolve_interval=Time} = State,
     case Time > 0 of
         true ->
@@ -390,7 +389,7 @@ do_resolve([Target|Rest], Config, Pid, Fun, Specs, Weights) ->
         {ok, ConnList0} ->
             ConnList0;
         {error, Error} ->
-            lager:error("NKLOG Error resolving ~s: ~p", [Target, Error]),
+            lager:error("NkPACKET Pool error resolving ~p: ~p", [Target, Error]),
             []
     end,
     Specs2 = lists:foldl(
