@@ -102,12 +102,12 @@ start_link(Id, Config) ->
 
 %% @private
 get_conn_pid(P) ->
-    gen_server:call(find(P), get_conn_pid).
+    gen_server:call(find(P), get_conn_pid, 30000).
 
 
 %% @private
 get_exclusive_pid(P) ->
-    gen_server:call(find(P), {get_exclusive_pid, self()}).
+    gen_server:call(find(P), {get_exclusive_pid, self()}, 30000).
 
 
 %% @private
