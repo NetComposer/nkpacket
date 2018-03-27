@@ -27,10 +27,12 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([request/3, request/4, request/5, request/6]).
--export([put/0]).
+-export([s3_test_get/0, s3_test_put/0, s3_test_get_url/0, s3_test_put_url/0]).
 %-export([get/0, put/0, url_get/0, url_put/0]).
 
--include_lib("nkpacket.hrl").
+-include("nkpacket.hrl").
+-include_lib("nklib/include/nklib.hrl").
+
 
 %% ===================================================================
 %% Public
@@ -48,20 +50,21 @@ request(Url, Method, Path, Hds) ->
 
 %% @doc
 request(Url, Method, Path, Hds, Body) ->
-    request(Url, Method, Path, Hds, Body, 5000).
+    request(Url, Method, Path, Hds, Body, #{}).
 
 
 %% @doc
-request(Url, Method, Path, Hds, Body, Timeout) ->
-    Opts = #{
+request(Url, Method, Path, Hds, Body, Opts) ->
+    ConnOpts = #{
         monitor => self(),
-        user_state => #{},
-        connect_timeout => 1000,
-        idle_timeout => 60000,
-        debug => true
+        user_state => maps:with([no_host_header], Opts),
+        connect_timeout => maps:get(connect_timeout, Opts, 1000),
+        idle_timeout => maps:get(idle_timeout, Opts, 60000),
+        debug => maps:get(debug, Opts, false)
     },
-    case nkpacket:connect(Url, Opts) of
-        {ok, ConnPid, _} ->
+    Timeout = maps:get(timeout, Opts, 5000),
+    case nkpacket:connect(Url, ConnOpts) of
+        {ok, ConnPid} ->
             Ref = make_ref(),
             Msg = {
                 http,
@@ -72,9 +75,9 @@ request(Url, Method, Path, Hds, Body, Timeout) ->
                 [{to_bin(K), to_bin(V)} || {K, V} <- Hds],
                 to_bin(Body)
             },
+            lager:error("NKLOG MSG ~p", [Msg]),
             case nkpacket:send(ConnPid, Msg) of
                 {ok, ConnPid} ->
-                    lager:error("NKLOG STRT ~p ~p", [self(), Ref]),
                     receive
                         {nkpacket_httpc_protocol, Ref, {head, Status, Headers}} ->
                             request_body(Ref, Opts, Timeout, Status, Headers, []);
@@ -120,47 +123,51 @@ request_body(Ref, Opts, Timeout, Status, Headers, Chunks) ->
 % Set your credentials here
 % export MINIO_ACCESS_KEY=5UBED0Q9FB7MFZ5EWIOJ; export MINIO_SECRET_KEY=CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI; minio server 1
 
-config() ->
+-define(TEST_KEY_ID, <<"5UBED0Q9FB7MFZ5EWIOJ">>).
+-define(TEST_KEY, <<"CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI">>).
+-define(TEST_HOST, <<"http://127.0.0.1:9000">>).
+-define(TEST_BUCKET, <<"bucket1">>).
+-define(TEST_PATH, <<"/test1">>).
+
+
+s3_test_config() ->
     #{
-        key_id => <<"5UBED0Q9FB7MFZ5EWIOJ">>,
-        key => <<"CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI">>,
-        host => <<"http://127.0.0.1:9000">>
+        key_id => ?TEST_KEY_ID,
+        key => ?TEST_KEY,
+        host => ?TEST_HOST
     }.
 
 
-%%get() ->
-%%    C1 = config(),
-%%    C2 = C1#{access_method=>path},
-%%    {ReqURI, ReqHeaders} = nkpacket_httpc_s3:get_object("bucket1", "/test1", C2),
-%%    nkpacket_httpc:request(ReqURI, get, Path, Hds, <<>>).
-%%
-%%
-%%
-%%
-put() ->
-    C1 = config(),
+s3_test_get() ->
+    C = s3_test_config(),
+    {Uri, Path, Headers} = nkpacket_httpc_s3:get_object(?TEST_BUCKET, ?TEST_PATH, C),
+    request(Uri, get, Path, Headers, <<>>, #{no_host_header=>true}).
+
+
+s3_test_put() ->
+    C1 = s3_test_config(),
     C2 = C1#{
         headers => [{<<"content-type">>, <<"application/json">>}],
         params => [{<<"a">>, <<"1">>}, {<<"b">>, <<"2">>}],
         meta => [{<<"b">>, <<"2">>}],
         acl => private
     },
-    {Uri, Path, Headers} = nkpacket_httpc_s3:get_object("bucket1", "/test1", C2),
-    request(Uri, put, Path, Headers, <<"val5">>).
+    Body = <<"124">>,
+    Hash = crypto:hash(sha256, Body),
+    {Uri, Path, Headers} = nkpacket_httpc_s3:put_object(?TEST_BUCKET, ?TEST_PATH, Hash, C2),
+    request(Uri, put, Path, Headers, Body, #{no_host_header=>true}).
+
+
+s3_test_put_url() ->
+    {Uri, Path} = nkpacket_httpc_s3:make_put_url(?TEST_BUCKET, ?TEST_PATH, "application/json", 5000, s3_test_config()),
+    Body = <<"125">>,
+    request(Uri, put, Path, [{<<"content-type">>, <<"application/json">>}], Body, #{}).
 
 
 
-%%
-%%url_put() ->
-%%    URL = make_put_url("carlos-publico", "/test1", "application/json", 5000, config()),
-%%    hackney:request(put, URL, [{<<"content-type">>, <<"application/json">>}], <<>>, [with_body]).
-%%
-%%
-%%
-%%url_get() ->
-%%    URL = make_get_url("carlos-publico", "/test1", 5000, config()),
-%%    hackney:request(get, URL, [], <<>>, [with_body]).
-
+s3_test_get_url() ->
+    {Uri, Path} = nkpacket_httpc_s3:make_get_url(?TEST_BUCKET, ?TEST_PATH, 5000, s3_test_config()),
+    request(Uri, get, Path, [], <<>>, #{}).
 
 
 %% @private

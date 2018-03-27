@@ -19,9 +19,9 @@
 %% -------------------------------------------------------------------
 
 %% @doc Default implementation for HTTP1 clients
-%% Expects parameter notify_pid in user's state
 %% Will send messages {nkpacket_httpc_protocol, Ref, Term},
 %% Term :: {head, Status, Headers} | {body, Body} | {chunk, Chunk} | {error, term()}
+
 
 -module(nkpacket_httpc_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
@@ -88,16 +88,21 @@ conn_init(NkPort) ->
         error ->
             undefined
     end,
-    Host = case maps:find(host, Opts) of
+    Host1 = case maps:find(host, Opts) of
         {ok, Host0} ->
             <<Host0/binary, $:, (nklib_util:to_binary(Port))/binary>>;
         error ->
             <<(nklib_util:to_host(Ip))/binary, $:, (nklib_util:to_binary(Port))/binary>>
     end,
+    Host2 = case UserState of
+        #{no_host_header:=true} ->
+            <<>>;
+        _ ->
+            Host1
+    end,
     Hds = [{to_bin(K), to_bin(V)} || {K, V} <- maps:get(headers, UserState, [])],
-	State =
-        #state{
-        host = Host,
+	State = #state{
+        host = Host2,
         refresh_req = RefreshReq,
         headers = Hds
     },
@@ -168,21 +173,17 @@ request(Ref, Pid, Method, Path, Hds, Body, State) ->
     Method2 = nklib_util:to_upper(Method),
     Path2 = to_bin(Path),
     Hds1 = [{to_bin(H), to_bin(V)} || {H, V} <- Hds] ++ BaseHeaders,
-	Hds2 = [{<<"Host">>, Host}|Hds1],
-    {Hds3, Body2} = case is_map(Body) orelse is_list(Body) of
-		true ->
-			{
-				[{<<"Content-Type">>, <<"application/json">>}|Hds2],
-				nklib_json:encode(Body)
-			};
-		false ->
-			{Hds2, Body}
-	end,
-	BodySize = nklib_util:to_binary(iolist_size(Body2)),
-	Hds4 = [{<<"Content-Length">>, BodySize}|Hds3],
+	Hds2 = case Host of
+        <<>> ->
+            Hds1;
+        _ ->
+            [{<<"Host">>, Host}|Hds1]
+    end,
+	BodySize = nklib_util:to_binary(iolist_size(Body)),
+	Hds3 = [{<<"Content-Length">>, BodySize}|Hds2],
 	State2 = State#state{streams = Streams ++ [{Ref, Pid}]},
-	RawMsg = cow_http:request(Method2, Path2, 'HTTP/1.1', Hds4),
-	{ok, [RawMsg, Body2], State2}.
+	RawMsg = cow_http:request(Method2, Path2, 'HTTP/1.1', Hds3),
+	{ok, [RawMsg, Body], State2}.
 
 
 %% @private
@@ -350,7 +351,6 @@ find_chunked_length(<<>>, _Acc) ->
 
 %% @private
 notify(Ref, Pid, Term) when is_pid(Pid) ->
-	lager:error("NKLOG NOTIFY ~p ~p", [Pid, {nkpacket_httpc_protocol, Ref, Term}]),
     Pid ! {nkpacket_httpc_protocol, Ref, Term};
 
 notify(_Ref, _Pid, _Term) ->

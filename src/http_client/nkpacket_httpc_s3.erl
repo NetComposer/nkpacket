@@ -71,7 +71,8 @@
 	{Uri::binary(), Path::binary(), Headers::[{binary(), binary()}]}.
 
 get_object(Bucket, Path, Config) ->
-	s3_request(get, Bucket, Path, <<>>, Config).
+	Hash = crypto:hash(sha256, <<>>),
+    s3_request(get, Bucket, Path, Hash, Config).
 
 
 
@@ -81,11 +82,13 @@ get_object(Bucket, Path, Config) ->
 %%
 %% Can Use meta and acl
 %% Path must start with /
+%%
+%% Hash must be crypto:hash(sha245, Body)
 
--spec put_object(binary(), binary(), iolist(), config()) ->
+-spec put_object(binary(), binary(), binary(), config()) ->
 	{Uri::binary(), Path::binary(), Headers::[{binary(), binary()}]}.
 
-put_object(Bucket, Path, Body, Config) ->
+put_object(Bucket, Path, BodyHash, Config) ->
 	Headers1 = maps:get(headers, Config, []),
 	Headers2 = case maps:find(acl, Config) of
 		{ok, ACL} ->
@@ -114,14 +117,13 @@ put_object(Bucket, Path, Body, Config) ->
 		error ->
 			Headers2
 	end,
-	Body2 = iolist_to_binary(Body),
 	Config2 = Config#{headers=>Headers3},
-	s3_request(put, Bucket, Path, Body2, Config2).
+	s3_request(put, Bucket, Path, BodyHash, Config2).
 
 
 %% @doc Generates an URL-like access for read
 -spec make_get_url(binary(),  binary(), integer(), config()) ->
-	binary().
+    {Host::binary(), Path::binary()}.
 
 make_get_url(Bucket, Path, ExpireSecs, Config) ->
 	Expires = to_bin(nklib_util:timestamp() + ExpireSecs),
@@ -135,12 +137,12 @@ make_get_url(Bucket, Path, ExpireSecs, Config) ->
 		"&Expires=", Expires
 	]),
 	{Uri, _Domain} = get_uri(Config),
-	<<Uri/binary, Path2/binary, Qs/binary>>.
+    {Uri, <<Path2/binary, Qs/binary>>}.
 
 
 %% @doc Generates an URL-like access for write
 -spec make_put_url(binary(),  binary(), binary(), integer(), config()) ->
-	binary().
+	{Host::binary(), Path::binary()}.
 
 make_put_url(Bucket, Path, CT, ExpireSecs, Config) ->
 	Expires = to_bin(nklib_util:timestamp() + ExpireSecs),
@@ -154,7 +156,7 @@ make_put_url(Bucket, Path, CT, ExpireSecs, Config) ->
 		"&Expires=", Expires
 	]),
 	{Uri, _Domain} = get_uri(Config),
-	<<Uri/binary, Path2/binary, Qs/binary>>.
+	{Uri, <<Path2/binary, Qs/binary>>}.
 
 
 
@@ -164,7 +166,7 @@ make_put_url(Bucket, Path, CT, ExpireSecs, Config) ->
 
 
 %% @private
-s3_request(Method, Bucket, Path, Body, Config) ->
+s3_request(Method, Bucket, Path, BodyHash, Config) ->
 	Headers1 = maps:get(headers, Config, []),
 	{Uri, Domain} = get_uri(Config),
 	AccessMethod = maps:get(access_method, Config, path),
@@ -194,7 +196,7 @@ s3_request(Method, Bucket, Path, Body, Config) ->
 	end,
 	Headers2 = [{<<"host">>, Host2} | Headers1],
 	Config2 = Config#{region=>Region, service=><<"s3">>, headers=>Headers2},
-	{RequestQS, RequestHeaders} = sign_v4(Method, Path2, Body, Config2),
+	{RequestQS, RequestHeaders} = sign_v4(Method, Path2, BodyHash, Config2),
 	Path3 = list_to_binary([
 		Path2,
 		case RequestQS of
@@ -229,14 +231,15 @@ get_uri(Config) ->
 
 
 %% @private
-sign_v4(Method, Uri, Body, Config) ->
+%% Body hash must be crypto:hash(sha256, Body)
+sign_v4(Method, Uri, BodyHash, Config) ->
 	Headers1 = maps:get(headers, Config, []),
 	QueryParams1 = maps:get(params, Config, []),
 	Date = iso_8601_basic_time(),
-	BodyHash = nklib_util:hex(crypto:hash(sha256, Body)),
+	BodyHash2 = nklib_util:hex(BodyHash),
 	Headers2 = [
 		{"x-amz-date", Date},
-		{"x-amz-content-sha256", BodyHash}
+		{"x-amz-content-sha256", BodyHash2}
 		| Headers1
 	],
 	NormHeaders = [
@@ -257,7 +260,7 @@ sign_v4(Method, Uri, Body, Config) ->
 		CanonicalQueryString, $\n,
 		CanonicalHeaders, $\n,
 		SignedHeaders, $\n,
-		BodyHash
+		BodyHash2
 	],
 	Service = maps:get(service, Config, <<"s3">>),
 	Region = maps:get(region, Config, <<"eu-west-1">>),
