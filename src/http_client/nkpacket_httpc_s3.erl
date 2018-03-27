@@ -20,55 +20,10 @@
 
 
 -module(nkpacket_httpc_s3).
--export([get/0, put/0, url_get/0, url_put/0]).
 -export([get_object/3, put_object/4, make_get_url/4, make_put_url/5]).
 
 
 -include_lib("nklib/include/nklib.hrl").
-
-
-
-%% ===================================================================
-%% Test
-%% ===================================================================
-
-% Set your credentials here
-config() ->
-	#{
-		key_id => <<"5UBED0Q9FB7MFZ5EWIOJ">>,
-		key => <<"CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI">>,
-		host => <<"http://127.0.0.1:9000">>
-	}.
-
-
-get() ->
-	C1 = config(),
-	C2 = C1#{access_method=>path},
-	get_object("carlos-publico", "/test1", C2).
-
-
-
-put() ->
-	C1 = config(),
-	C2 = C1#{
-		headers => [{<<"content-type">>, <<"application/json">>}],
-		params => [{<<"a">>, <<"1">>}, {<<"b">>, <<"2">>}],
-		meta => [{<<"b">>, <<"2">>}],
-		acl => private
-	},
-	put_object("carlos-publico", "/test1", <<"val5">>, C2).
-
-
-
-url_put() ->
-	URL = make_put_url("carlos-publico", "/test1", "application/json", 5000, config()),
-	hackney:request(put, URL, [{<<"content-type">>, <<"application/json">>}], <<>>, [with_body]).
-
-
-
-url_get() ->
-	URL = make_get_url("carlos-publico", "/test1", 5000, config()),
-	hackney:request(get, URL, [], <<>>, [with_body]).
 
 
 
@@ -78,21 +33,21 @@ url_get() ->
 
 
 -type acl() ::
-private | public_read | public_read_write | authenticated_read |
-bucket_owner_read | bucket_owner_full_control.
+	private | public_read | public_read_write | authenticated_read |
+	bucket_owner_read | bucket_owner_full_control.
 
 
 -type config() ::
-#{
-key_id => binary(),
-key => binary(),
-host => binary(),
-access_method => path | vhost,
-acl => acl(),
-headers => [{iolist(), iolist()}],
-params => [{iolist(), iolist()}],
-meta => [{iolist(), iolist()}]
-}.
+	#{
+		key_id => binary(),
+		key => binary(),
+		host => binary(),
+		access_method => path | vhost,
+		acl => acl(),
+		headers => [{iolist(), iolist()}],
+		params => [{iolist(), iolist()}],
+		meta => [{iolist(), iolist()}]
+	}.
 
 
 
@@ -113,12 +68,10 @@ meta => [{iolist(), iolist()}]
 %% Path must start with /
 
 -spec get_object(binary(), binary(), config()) ->
-	{Uri::binary(), Headers::[{binary(), binary()}]}.
+	{Uri::binary(), Path::binary(), Headers::[{binary(), binary()}]}.
 
 get_object(Bucket, Path, Config) ->
-	{ReqURI, ReqHeaders} = s3_request(get, Bucket, Path, <<>>, Config),
-	io:format("URI: ~s\n", [ReqURI]),
-	hackney:request(get, ReqURI, ReqHeaders, <<>>, [with_body]).
+	s3_request(get, Bucket, Path, <<>>, Config).
 
 
 
@@ -130,7 +83,7 @@ get_object(Bucket, Path, Config) ->
 %% Path must start with /
 
 -spec put_object(binary(), binary(), iolist(), config()) ->
-	{Uri::binary(), Headers::[{binary(), binary()}]}.
+	{Uri::binary(), Path::binary(), Headers::[{binary(), binary()}]}.
 
 put_object(Bucket, Path, Body, Config) ->
 	Headers1 = maps:get(headers, Config, []),
@@ -163,8 +116,7 @@ put_object(Bucket, Path, Body, Config) ->
 	end,
 	Body2 = iolist_to_binary(Body),
 	Config2 = Config#{headers=>Headers3},
-	{ReqURI, ReqHeaders} = s3_request(put, Bucket, Path, Body2, Config2),
-	hackney:request(put, ReqURI, ReqHeaders, Body2).
+	s3_request(put, Bucket, Path, Body2, Config2).
 
 
 %% @doc Generates an URL-like access for read
@@ -214,7 +166,7 @@ make_put_url(Bucket, Path, CT, ExpireSecs, Config) ->
 %% @private
 s3_request(Method, Bucket, Path, Body, Config) ->
 	Headers1 = maps:get(headers, Config, []),
-	{Uri1, Domain} = get_uri(Config),
+	{Uri, Domain} = get_uri(Config),
 	AccessMethod = maps:get(access_method, Config, path),
 	{Host2, Path2} =  case AccessMethod of
 		vhost ->
@@ -243,8 +195,7 @@ s3_request(Method, Bucket, Path, Body, Config) ->
 	Headers2 = [{<<"host">>, Host2} | Headers1],
 	Config2 = Config#{region=>Region, service=><<"s3">>, headers=>Headers2},
 	{RequestQS, RequestHeaders} = sign_v4(Method, Path2, Body, Config2),
-	RequestURI = list_to_binary([
-		Uri1,
+	Path3 = list_to_binary([
 		Path2,
 		case RequestQS of
 			<<>> ->
@@ -253,7 +204,7 @@ s3_request(Method, Bucket, Path, Body, Config) ->
 				[$?, RequestQS]
 		end
 	]),
-	{RequestURI, RequestHeaders}.
+	{Uri, Path3, RequestHeaders}.
 
 
 %% @private

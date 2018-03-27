@@ -21,19 +21,17 @@
 %% @doc Default implementation for HTTP1 clients
 %% Expects parameter notify_pid in user's state
 %% Will send messages {nkpacket_httpc_protocol, Ref, Term},
-%% Term :: {head, Status, Headers} | {body, Body} | {chunk, Chunk}
+%% Term :: {head, Status, Headers} | {body, Body} | {chunk, Chunk} | {error, term()}
 
 -module(nkpacket_httpc_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 % -behaviour(nkpacket_protocol).
 
--export([sample/0]).
 -export([transports/1, default_port/1]).
--export([conn_init/1, conn_parse/3, conn_encode/3, conn_timeout/2]).
+-export([conn_init/1, conn_parse/3, conn_encode/3, conn_timeout/2, conn_stop/3]).
 
 -include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
-
 
 
 -define(DEBUG(Txt, Args, NkPort),
@@ -46,50 +44,6 @@
 -define(LLOG(Type, Txt, Args, NkPort),
     lager:Type("NkPACKET Conn HTTP ~p (~p) "++Txt,
         [NkPort#nkport.protocol, NkPort#nkport.transp|Args])).
-
-
-%% ===================================================================
-%% Protocol callbacks
-%% ===================================================================
-
-
-%%sample() ->
-%%    Opts = #{
-%%        monitor => self(),
-%%        user_state => {notify_pid, self()},
-%%        connect_timeout => 1000,
-%%        idle_timeout => 60000,
-%%        debug => true
-%%    },
-%%    {ok, P} = nkpacket:connect(<<"https://google.com">>, Opts),
-%%    Ref = make_ref(),
-%%    Msg = {http, Ref, <<"GET">>, <<"/">>, [], <<>>},
-%%    {ok, _} = nkpacket:send(P, Msg),
-%%    receive
-%%        {nkpacket_httpc_protocol, Ref, {head, 302, _Hds}} -> ok
-%%        after 5000 -> error(?LINE)
-%%     end,
-%%    receive
-%%        {nkpacket_httpc_protocol, Ref, {body, <<"<HTML", _/binary>>}} -> ok
-%%        after 5000 -> error(?LINE)
-%%    end.
-
-
-sample() ->
-    Opts = #{
-        monitor => self(),
-        user_state => #{
-            refresh_request => {get, <<"/">>, [{<<"host">>, <<"127.0.0.1:9000">>}], <<>>}
-        },
-        connect_timeout => 1000,
-        idle_timeout => 5000,
-        debug => true
-    },
-    {ok, P} = nkpacket:connect(<<"http://127.0.0.1:9000">>, Opts),
-    Ref = make_ref(),
-    Msg = {http, self(), Ref, <<"GET">>, <<"/">>, [{<<"host">>, <<"127.0.0.1:9000">>}], <<>>},
-    {ok, _} = nkpacket:send(P, Msg).
-
 
 
 %% ===================================================================
@@ -115,7 +69,7 @@ default_port(https) -> 443.
     refresh_req :: refresh_req() | undefined,
     headers :: [{binary(), binary()}],
     buff = <<>> :: binary(),
-    streams2 = [] :: [{reference(), pid()}],
+    streams = [] :: [{reference(), pid()}],
     next = head :: head | {body, non_neg_integer()} | chunked | stream
 }).
 
@@ -187,6 +141,20 @@ conn_timeout(_NkPort, #state{refresh_req=Refresh}=State) ->
     {ok, State}.
 
 
+%% @doc
+conn_stop(_Reason, _NkPort, #state{streams=[]}) ->
+    ok;
+
+conn_stop(_Reason, _NkPort, #state{next=head, streams=Streams}) ->
+    lists:foreach(
+        fun({Ref, Pid}) -> notify(Ref, Pid, {error, process_failed}) end,
+        Streams);
+
+conn_stop(Reason, NkPort, #state{streams=[{Ref, Pid}|Rest]}=State) ->
+    notify(Ref, Pid, {body, <<>>}),
+    conn_stop(Reason, NkPort, State#state{streams=Rest}).
+
+
 %% ===================================================================
 %% HTTP handle
 %% ===================================================================
@@ -196,7 +164,7 @@ conn_timeout(_NkPort, #state{refresh_req=Refresh}=State) ->
 	{ok, iolist(), #state{}}.
 
 request(Ref, Pid, Method, Path, Hds, Body, State) ->
-    #state{host=Host, headers=BaseHeaders, streams2=Streams} = State,
+    #state{host=Host, headers=BaseHeaders, streams=Streams} = State,
     Method2 = nklib_util:to_upper(Method),
     Path2 = to_bin(Path),
     Hds1 = [{to_bin(H), to_bin(V)} || {H, V} <- Hds] ++ BaseHeaders,
@@ -212,7 +180,7 @@ request(Ref, Pid, Method, Path, Hds, Body, State) ->
 	end,
 	BodySize = nklib_util:to_binary(iolist_size(Body2)),
 	Hds4 = [{<<"Content-Length">>, BodySize}|Hds3],
-	State2 = State#state{streams2 = Streams ++ [{Ref, Pid}]},
+	State2 = State#state{streams = Streams ++ [{Ref, Pid}]},
 	RawMsg = cow_http:request(Method2, Path2, 'HTTP/1.1', Hds4),
 	{ok, [RawMsg, Body2], State2}.
 
@@ -221,10 +189,10 @@ request(Ref, Pid, Method, Path, Hds, Body, State) ->
 -spec data(term(), iolist(), #state{}) ->
 	{ok, iolist(), #state{}} | {error, invalid_ref, #state{}}.
 
-data(_Ref, _Data, #state{streams2=[]}=State) ->
+data(_Ref, _Data, #state{streams=[]}=State) ->
 	{error, invalid_ref, State};
 
-data(Ref, Data, #state{streams2=Streams}=State) ->
+data(Ref, Data, #state{streams=Streams}=State) ->
 	case lists:last(Streams) of
 		{Ref, _} ->
 			{ok, Data, State};
@@ -239,7 +207,7 @@ data(Ref, Data, #state{streams2=Streams}=State) ->
 handle(<<>>, _NkPort, State) ->
 	{ok, State};
 
-handle(_, _NkPort, #state{streams2=[]}=State) ->
+handle(_, _NkPort, #state{streams=[]}=State) ->
 	{stop, normal, State};
 
 handle(Data, NkPort, #state{next=head, buff=Buff}=State) ->
@@ -253,7 +221,7 @@ handle(Data, NkPort, #state{next=head, buff=Buff}=State) ->
 
 handle(Data, NkPort, #state{next={body, Length}}=State) ->
     ?DEBUG("parsing body: ~s", [Data], NkPort),
-	#state{buff=Buff, streams2=[{Ref, Pid}|_]} = State,
+	#state{buff=Buff, streams=[{Ref, Pid}|_]} = State,
 	Data1 = << Buff/binary, Data/binary>>,
 	case byte_size(Data1) of
 		Length ->
@@ -269,7 +237,7 @@ handle(Data, NkPort, #state{next={body, Length}}=State) ->
 
 handle(Data, NkPort, #state{next=chunked}=State) ->
     ?DEBUG("parsing chunked: ~s", [Data], NkPort),
-	#state{buff=Buff, streams2=[{Ref, Pid}|_]} = State,
+	#state{buff=Buff, streams=[{Ref, Pid}|_]} = State,
 	Data1 = << Buff/binary, Data/binary>>,
 	case parse_chunked(Data1) of
 		{data, <<>>, Rest} ->
@@ -282,8 +250,8 @@ handle(Data, NkPort, #state{next=chunked}=State) ->
 			{ok, State#state{buff=Data1}}
 	end;
 
-handle(Data, _NkPort, #state{next=stream, streams2=[{Ref, Pid}|_]}=State) ->
-    ?DEBUG("parsing chunked: ~s", [Data], _NkPort),
+handle(Data, _NkPort, #state{next=stream, streams=[{Ref, Pid}|_]}=State) ->
+    ?DEBUG("parsing stream: ~s", [Data], _NkPort),
 	notify(Ref, Pid, {chunk, Data}),
 	{ok, State}.
 
@@ -292,11 +260,11 @@ handle(Data, _NkPort, #state{next=stream, streams2=[{Ref, Pid}|_]}=State) ->
 -spec handle_head(binary(), #nkport{}, #state{}) ->
 	{ok, #state{}}.
 
-handle_head(Data, NkPort, #state{streams2=[{Ref, Pid}|_]}=State) ->
+handle_head(Data, NkPort, #state{streams=[{Ref, Pid}|_]}=State) ->
 	{_Version, Status, _Msg, Rest} = cow_http:parse_status_line(Data),
     ?DEBUG("received head: ~s ~p ~s", [_Version, Status, _Msg], NkPort),
 	{Hds, Rest2} = cow_http:parse_headers(Rest),
-    ?DEBUG("received headeers: ~p", [Hds], NkPort),
+    ?DEBUG("received headers: ~p", [Hds], NkPort),
 	notify(Ref, Pid, {head, Status, Hds}),
 	Remaining = case lists:keyfind(<<"content-length">>, 1, Hds) of
 		{_, <<"0">>} ->
@@ -382,6 +350,7 @@ find_chunked_length(<<>>, _Acc) ->
 
 %% @private
 notify(Ref, Pid, Term) when is_pid(Pid) ->
+	lager:error("NKLOG NOTIFY ~p ~p", [Pid, {nkpacket_httpc_protocol, Ref, Term}]),
     Pid ! {nkpacket_httpc_protocol, Ref, Term};
 
 notify(_Ref, _Pid, _Term) ->
@@ -389,8 +358,8 @@ notify(_Ref, _Pid, _Term) ->
 
 
 %% @private
-do_next(#state{streams2=[_|Rest]}=State) ->
-	State#state{next=head, buff= <<>>, streams2=Rest}.
+do_next(#state{streams=[_|Rest]}=State) ->
+	State#state{next=head, buff= <<>>, streams=Rest}.
 
 
 %% @private

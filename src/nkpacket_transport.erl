@@ -226,7 +226,7 @@ do_send([Port|Rest], Msg, Opts) ->
 
 %% @private Starts a new outbound connection.
 -spec connect([nkpacket:netspec()]) ->
-    {ok, nkpacket:nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 connect([]) ->
     {error, no_transports};
@@ -242,8 +242,8 @@ connect([#nkconn{protocol=Protocol, transp=Transp, port=0} = Conn|Rest]) ->
 connect([#nkconn{} = Conn|Rest]) ->
     Fun = fun() -> do_connect(Conn) end,
     try nklib_proc:try_call(Fun, Conn, 100, ?CONN_TRIES) of
-        {ok, NkPort} ->
-            {ok, NkPort};
+        {ok, Pid} ->
+            {ok, Pid};
         {error, Error} when Rest==[] ->
             {error, Error};
         {error, _} ->
