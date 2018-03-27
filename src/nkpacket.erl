@@ -394,7 +394,7 @@ send(SendSpec, Msg, Opts) ->
 
 %% @doc Forces a new outbound connection.
 -spec connect(connect_spec()|[connect_spec()]) ->
-    {ok, nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 connect(Any) ->
     connect(Any, #{}).
@@ -402,12 +402,12 @@ connect(Any) ->
 
 %% @doc Forces a new outbound connection.
 -spec connect(connect_spec()|[connect_spec()], connect_opts()) ->
-    {ok, nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 connect(Conn, Opts) ->
     case nkpacket_resolve:resolve(Conn, Opts) of
-        {ok, Socks} ->
-            nkpacket_transport:connect(Socks);
+        {ok, SendSpecs} ->
+            nkpacket_transport:connect(SendSpecs);
         {error, Error} ->
             {error, Error}
     end.
