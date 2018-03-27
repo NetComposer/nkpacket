@@ -327,7 +327,7 @@ outbound_opts(#nkport{transp=tls, opts=Opts}) ->
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         binary, {active, false}, {nodelay, true}, {keepalive, true}
     ]
-    ++ nkpacket_util:make_tls_opts(Opts).
+    ++nkpacket_tls:make_tls_opts(Opts).
 
 
 %% @private Gets socket options for listening connections
@@ -352,7 +352,7 @@ listen_opts(#nkport{transp=tls, listen_ip=Ip, opts=Opts}) ->
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
     ]
-    ++ nkpacket_util:make_tls_opts(Opts).
+    ++nkpacket_tls:make_tls_opts(Opts).
 
 
 %% @private

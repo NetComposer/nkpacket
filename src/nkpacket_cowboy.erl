@@ -463,7 +463,7 @@ listen_opts(#nkport{transp=Transp, listen_ip=Ip, opts=Opts})
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
     ]
-    ++ nkpacket_util:make_tls_opts(Opts).
+    ++ nkpacket_tls:make_tls_opts(Opts).
 
 
 %% @private

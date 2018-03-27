@@ -26,7 +26,7 @@
 -export([get_plugin_net_syntax/1, get_plugin_net_opts/1]).
 -export([register_listener/1]).
 -export([listen_print_all/0, conn_print_all/0]).
--export([make_cache/0, make_tls_opts/1, tls_keys/0]).
+-export([make_cache/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, get_uri/4]).
 -export([init_protocol/3, call_protocol/4]).
@@ -95,41 +95,9 @@ print_all([{_Id, _Class, Pid}|Rest]) ->
 
 
 
-%% @doc Adds SSL options
--spec make_tls_opts(nkpacket:tls_types()) ->
-    list().
 
-make_tls_opts(Opts) ->
-    Opts1 = nklib_util:filtermap(
-        fun(Term) ->
-            case Term of
-                {tls_certfile, Val} -> {true, {certfile, Val}};
-                {tls_keyfile, Val} -> {true, {keyfile, Val}};
-                {tls_cacertfile, Val} -> {true, {cacertfile, Val}};
-                {tls_password, Val} -> {true, {password, Val}};
-                {tls_verify, Val} -> {true, {verify, Val}};
-                {tls_depth, Val} -> {true, {depth, Val}};
-                {tls_versions, Val} -> {true, {versions, Val}};
-                _ -> false
-            end
-        end,
-        maps:to_list(Opts)),
-    Defaults1 = nkpacket_app:get(tls_defaults),
-    Defaults2 = case lists:keymember(certfile, 1, Opts1) of
-        true -> maps:remove(keyfile, Defaults1);
-        false -> Defaults1
-    end,
-    Opts2 = maps:merge(Defaults2, maps:from_list(Opts1)),
-    Opts3 = case Opts2 of
-        #{verify:=true} -> Opts2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
-        #{verify:=false} -> maps:remove(verify, Opts2);
-        _ -> Opts2
-    end,
-    maps:to_list(Opts3).
-
-
-tls_keys() ->
-    maps:keys(nkpacket_syntax:tls_syntax()).
+%%tls_keys() ->
+%%    maps:keys(nkpacket_syntax:tls_syntax()).
 
 
 

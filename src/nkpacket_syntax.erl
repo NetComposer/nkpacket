@@ -156,7 +156,8 @@ tls_syntax() ->
         tls_password => string,
         tls_verify => boolean,
         tls_depth => {integer, 0, 16},
-        tls_versions => {list, atom}
+        tls_versions => {list, atom},
+        tls_insecure => boolean         % Avoid host check
     }.
 
 

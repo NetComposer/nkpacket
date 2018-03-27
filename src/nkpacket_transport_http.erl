@@ -365,7 +365,7 @@ outbound_opts(#nkport{transp=http}) ->
 
 outbound_opts(#nkport{transp=https, opts=Opts}) ->
     [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}]
-    ++ nkpacket_util:make_tls_opts(Opts).
+    ++ nkpacket_tls:make_tls_opts(Opts).
 
 
 
