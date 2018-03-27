@@ -26,7 +26,7 @@
 -module(nkpacket_httpc).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([request/3, request/4, request/5, request/6]).
+-export([request/3, request/4, request/5, request/6, do_request/6]).
 -export([s3_test_get/0, s3_test_put/0, s3_test_get_url/0, s3_test_put_url/0]).
 %-export([get/0, put/0, url_get/0, url_put/0]).
 
@@ -57,38 +57,42 @@ request(Url, Method, Path, Hds, Body) ->
 request(Url, Method, Path, Hds, Body, Opts) ->
     ConnOpts = #{
         monitor => self(),
-        user_state => maps:with([no_host_header], Opts),
+        user_state => #{},
         connect_timeout => maps:get(connect_timeout, Opts, 1000),
         idle_timeout => maps:get(idle_timeout, Opts, 60000),
         debug => maps:get(debug, Opts, false)
     },
-    Timeout = maps:get(timeout, Opts, 5000),
     case nkpacket:connect(Url, ConnOpts) of
         {ok, ConnPid} ->
-            Ref = make_ref(),
-            Msg = {
-                http,
-                Ref,
-                self(),
-                nklib_util:to_upper(Method),
-                to_bin(Path),
-                [{to_bin(K), to_bin(V)} || {K, V} <- Hds],
-                to_bin(Body)
-            },
-            lager:error("NKLOG MSG ~p", [Msg]),
-            case nkpacket:send(ConnPid, Msg) of
-                {ok, ConnPid} ->
-                    receive
-                        {nkpacket_httpc_protocol, Ref, {head, Status, Headers}} ->
-                            request_body(Ref, Opts, Timeout, Status, Headers, []);
-                        {nkpacket_httpc_protocol, Ref, {error, Error}} ->
-                            {error, Error}
-                    after
-                        Timeout ->
-                            {error, timeout}
-                    end;
-                {error, Error} ->
+            do_request(ConnPid, Method, Path, Hds, Body, Opts);
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
+%% @doc
+do_request(ConnPid, Method, Path, Hds, Body, Opts) ->
+    Ref = make_ref(),
+    Req = #{
+        ref => Ref,
+        pid => self(),
+        method => Method,
+        path => Path,
+        headers => Hds,
+        body => Body,
+        opts => Opts
+    },
+    Timeout = maps:get(timeout, Opts, 5000),
+    case nkpacket:send(ConnPid, {nkpacket_http, Req}) of
+        {ok, ConnPid} ->
+            receive
+                {nkpacket_httpc_protocol, Ref, {head, Status, Headers}} ->
+                    do_request_body(Ref, Opts, Timeout, Status, Headers, []);
+                {nkpacket_httpc_protocol, Ref, {error, Error}} ->
                     {error, Error}
+            after
+                Timeout ->
+                    {error, timeout}
             end;
         {error, Error} ->
             {error, Error}
@@ -96,10 +100,10 @@ request(Url, Method, Path, Hds, Body, Opts) ->
 
 
 %% @private
-request_body(Ref, Opts, Timeout, Status, Headers, Chunks) ->
+do_request_body(Ref, Opts, Timeout, Status, Headers, Chunks) ->
     receive
         {nkpacket_httpc_protocol, Ref, {chunk, Data}} ->
-            request_body(Ref, Opts, Timeout, Status, Headers, [Data|Chunks]);
+            do_request_body(Ref, Opts, Timeout, Status, Headers, [Data|Chunks]);
         {nkpacket_httpc_protocol, Ref, {body, Body}} ->
             case Chunks of
                 [] ->
@@ -170,7 +174,7 @@ s3_test_get_url() ->
     request(Uri, get, Path, [], <<>>, #{}).
 
 
-%% @private
-to_bin(Term) when is_binary(Term) -> Term;
-to_bin(Term) -> nklib_util:to_binary(Term).
+%%%% @private
+%%to_bin(Term) when is_binary(Term) -> Term;
+%%to_bin(Term) -> nklib_util:to_binary(Term).
 

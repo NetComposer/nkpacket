@@ -101,7 +101,7 @@ sample() ->
     {ok, pid()} | {error, term()}.
 
 start_link(Id, Config) ->
-    Config2 = update_config(Config),
+    Config2 = make_pool_config(Config),
     nkpacket_pool:start_link(Id, Config2).
 
 
@@ -112,48 +112,16 @@ start_link(Id, Config) ->
 
 request(Pid, Method, Path, Body, Opts) ->
     case nkpacket_pool:get_conn_pid(Pid) of
-        {ok, ConnPid} ->
-            Ref = make_ref(),
+        {ok, ConnPid, _Meta} ->
             Hds = maps:get(headers, Opts, []),
-            Timeout = maps:get(timeout, Opts, 5000),
-            case nkpacket:send(ConnPid, {http, Ref, self(), Method, Path, Hds, Body}) of
-                {ok, ConnPid} ->
-                    receive
-                        {nkpacket_httpc_protocol, Ref, {head, Status, Headers}} ->
-                            request_body(Ref, Opts, Timeout, Status, Headers, [])
-                    after
-                        Timeout ->
-                            {error, timeout}
-                    end;
-                {error, Error} ->
-                    {error, Error}
-            end;
+            nkpacket_httpc:do_request(ConnPid, Method, Path, Hds, Body, Opts);
         {error, Error} ->
             {error, Error}
     end.
 
 
 %% @private
-request_body(Ref, Opts, Timeout, Status, Headers, Chunks) ->
-    receive
-        {nkpacket_httpc_protocol, Ref, {chunk, Data}} ->
-            request_body(Ref, Opts, Timeout, Status, Headers, [Data|Chunks]);
-        {nkpacket_httpc_protocol, Ref, {body, Body}} ->
-            case Chunks of
-                [] ->
-                    {ok, Status, Headers, Body};
-                _ when Body == <<>> ->
-                    {ok, Status, Headers, list_to_binary(lists:reverse(Chunks))};
-                _ ->
-                    {error, invalid_chunked}
-            end
-        after Timeout ->
-            {error, timeout}
-    end.
-
-
-%% @private
-update_config(Config) ->
+make_pool_config(Config) ->
     Targets1 = maps:get(targets, Config, []),
     Targets2 = lists:map(
         fun(Spec1) ->

@@ -47,6 +47,24 @@
 
 
 %% ===================================================================
+%% Types
+%% ===================================================================
+
+-type request() ::
+    #{
+        method => atom() | binary(),
+        path => binary,
+        headers => [{string()|binary(), string()|binary()}],
+        body => iolist(),
+        ref => reference(),
+        pid => pid(),
+        opts => #{
+            no_host_header => boolean()
+        }
+    }.
+
+
+%% ===================================================================
 %% Protocol callbacks
 %% ===================================================================
 
@@ -61,12 +79,9 @@ transports(_) -> [https, http].
 default_port(http) -> 80;
 default_port(https) -> 443.
 
--type refresh_req() ::
-    {Method::binary(), Path::binary(), Hds::[{binary(), binary()}], Body::binary()}.
-
 -record(state, {
     host :: binary(),
-    refresh_req :: refresh_req() | undefined,
+    refresh_req :: request() | undefined,
     headers :: [{binary(), binary()}],
     buff = <<>> :: binary(),
     streams = [] :: [{reference(), pid()}],
@@ -80,11 +95,17 @@ default_port(https) -> 443.
 
 conn_init(NkPort) ->
 	#nkport{remote_ip=Ip, remote_port=Port, opts=Opts} = NkPort,
-    {ok, UserState} = nkpacket:get_user_state(NkPort),
+    {ok, UserState1} = nkpacket:get_user_state(NkPort),
 	?DEBUG("protocol init", [], NkPort),
-    RefreshReq = case maps:find(refresh_request, UserState) of
-        {ok, {Method1, Path1, Hds1, Body1}} ->
-            {http, refresh, none, nklib_util:to_upper(Method1), Path1, Hds1, Body1};
+    UserState2 = case UserState1 of
+        undefined ->
+            #{};
+        _ ->
+            UserState1
+    end,
+    RefreshReq = case maps:find(refresh_request, UserState2) of
+        {ok, Req1} ->
+            Req1#{ref=>refresh};
         error ->
             undefined
     end,
@@ -94,13 +115,13 @@ conn_init(NkPort) ->
         error ->
             <<(nklib_util:to_host(Ip))/binary, $:, (nklib_util:to_binary(Port))/binary>>
     end,
-    Host2 = case UserState of
+    Host2 = case UserState2 of
         #{no_host_header:=true} ->
             <<>>;
         _ ->
             Host1
     end,
-    Hds = [{to_bin(K), to_bin(V)} || {K, V} <- maps:get(headers, UserState, [])],
+    Hds = [{to_bin(K), to_bin(V)} || {K, V} <- maps:get(headers, UserState2, [])],
 	State = #state{
         host = Host2,
         refresh_req = RefreshReq,
@@ -125,10 +146,10 @@ conn_parse(Data, NkPort, State) ->
 	{ok, nkpacket:raw_msg(), #state{}} | {error, term(), #state{}} |
 	{stop, Reason::term()}.
 
-conn_encode({http, Ref, Pid, Method, Path, Hds, Body}, _NkPort, State) ->
-	request(Ref, Pid, Method, Path, Hds, Body, State);
+conn_encode({nkpacket_http, Request}, _NkPort, State) ->
+	request(Request, State);
 
-conn_encode({data, Ref, Data}, _NkPort, State) ->
+conn_encode({nkpacket_data, Ref, Data}, _NkPort, State) ->
 	data(Ref, Data, State).
 
 %% @doc This function is called when the idle_timer timeout fires
@@ -142,7 +163,7 @@ conn_timeout(_NkPort, #state{refresh_req=undefined}=State) ->
 
 conn_timeout(_NkPort, #state{refresh_req=Refresh}=State) ->
     ?DEBUG("sending refresh", [], _NkPort),
-    nkpacket_connection:send_async(self(), Refresh),
+    nkpacket_connection:send_async(self(), {nkpacket_http, Refresh}),
     {ok, State}.
 
 
@@ -165,24 +186,27 @@ conn_stop(Reason, NkPort, #state{streams=[{Ref, Pid}|Rest]}=State) ->
 %% ===================================================================
 
 %% @private
--spec request(term(), pid()|none, binary(), binary(), list(), iolist(), #state{}) ->
+-spec request(request(), #state{}) ->
 	{ok, iolist(), #state{}}.
 
-request(Ref, Pid, Method, Path, Hds, Body, State) ->
+request(#{ref:=Ref}=Req, State) ->
     #state{host=Host, headers=BaseHeaders, streams=Streams} = State,
-    Method2 = nklib_util:to_upper(Method),
-    Path2 = to_bin(Path),
-    Hds1 = [{to_bin(H), to_bin(V)} || {H, V} <- Hds] ++ BaseHeaders,
-	Hds2 = case Host of
-        <<>> ->
-            Hds1;
+    Method2 = nklib_util:to_upper(maps:get(method, Req, <<"GET">>)),
+    Path2 = to_bin(maps:get(path, Req, <<"/">>)),
+    Hds1 = maps:get(headers, Req, []) ++ BaseHeaders,
+    Hds2 = [{to_bin(H), to_bin(V)} || {H, V} <- Hds1],
+	Hds3 = case maps:get(opts, Req, #{}) of
+        #{no_host_header:=true} ->
+            Hds2;
         _ ->
-            [{<<"Host">>, Host}|Hds1]
+            [{<<"Host">>, Host}|Hds2]
     end,
-	BodySize = nklib_util:to_binary(iolist_size(Body)),
-	Hds3 = [{<<"Content-Length">>, BodySize}|Hds2],
+    Body = to_bin(maps:get(body, Req, <<>>)),
+	BodySize = nklib_util:to_binary(byte_size(Body)),
+	Hds4 = [{<<"Content-Length">>, BodySize}|Hds3],
+    Pid = maps:get(pid, Req, none),
 	State2 = State#state{streams = Streams ++ [{Ref, Pid}]},
-	RawMsg = cow_http:request(Method2, Path2, 'HTTP/1.1', Hds3),
+	RawMsg = cow_http:request(Method2, Path2, 'HTTP/1.1', Hds4),
 	{ok, [RawMsg, Body], State2}.
 
 

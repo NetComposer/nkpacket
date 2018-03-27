@@ -101,11 +101,17 @@ start_link(Id, Config) ->
 
 
 %% @private
+-spec get_conn_pid(id()|pid()) ->
+    {ok, pid(), Meta::map()} | {error, term()}.
+
 get_conn_pid(P) ->
     gen_server:call(find(P), get_conn_pid, 30000).
 
 
 %% @private
+-spec get_exclusive_pid(id()|pid()) ->
+    {ok, pid(), Meta::map()} | {error, term()}.
+
 get_exclusive_pid(P) ->
     gen_server:call(find(P), {get_exclusive_pid, self()}, 30000).
 
@@ -144,7 +150,8 @@ find(Id) ->
 -record(conn_spec, {
     id :: conn_id(),
     nkconn :: #nkconn{},
-    pool :: integer()
+    pool :: integer(),
+    meta :: map()
 }).
 
 -record(conn_status, {
@@ -385,17 +392,17 @@ do_resolve([], _Config, _Pid, _Fun, Specs, Weights) ->
 
 do_resolve([Target|Rest], Config, Pid, Fun, Specs, Weights) ->
     Pool = maps:get(pool, Target, 1),
-    ConnList = case Fun(Target, Config, Pid) of
-        {ok, ConnList0} ->
-            ConnList0;
+    {ConnList, Meta} = case Fun(Target, Config, Pid) of
+        {ok, ConnList0, Meta0} ->
+            {ConnList0, Meta0};
         {error, Error} ->
             lager:error("NkPACKET Pool error resolving ~p: ~p", [Target, Error]),
-            []
+            {[], #{}}
     end,
     Specs2 = lists:foldl(
         fun(#nkconn{transp=Transp, ip=Ip, port=Port}=NkConn, Acc) ->
             ConnId = {Transp, Ip, Port},
-            ConnSpec = #conn_spec{id=ConnId, nkconn=NkConn, pool=Pool},
+            ConnSpec = #conn_spec{id=ConnId, nkconn=NkConn, pool=Pool, meta=Meta},
             Acc#{ConnId => ConnSpec}
         end,
         Specs,
@@ -437,7 +444,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
     Pos = rand:uniform(Max),
     ConnId = do_find_conn(Pos, Weights),
     Spec = maps:get(ConnId, ConnSpec),
-    #conn_spec{id=ConnId, pool=Pool} = Spec,
+    #conn_spec{id=ConnId, pool=Pool, meta=Meta} = Spec,
     ?DEBUG("selected weight ~p: ~p", [Pos, ConnId], State),
     case maps:find(ConnId, ConnStatus) of
         {ok, #conn_status{status=active, conn_pids=Pids}} ->
@@ -447,7 +454,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
                     connect(Spec, Tries, From, Exclusive, State);
                 false when Exclusive==false ->
                     ?DEBUG("selecting existing pid ~p: ~p", [Pos, ConnId], State),
-                    gen_server:reply(From, {ok, do_get_pid(Pids), #{conn_id=>ConnId}}),
+                    gen_server:reply(From, {ok, do_get_pid(Pids), Meta#{conn_id=>ConnId}}),
                     State;
                 false ->
                     % We reached all possible connections
@@ -455,7 +462,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
                         {ok, Pid, State2} ->
                             ?DEBUG("selecting and locking existing pid ~p: ~p",
                                    [Pos, ConnId], State),
-                            gen_server:reply(From, {ok, Pid, #{conn_id=>ConnId}}),
+                            gen_server:reply(From, {ok, Pid, Meta#{conn_id=>ConnId}}),
                             State2;
                         false ->
                             ?DEBUG("max connections reached", [], State),
@@ -520,7 +527,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
         conn_stop_fun = StopFun
     } = State,
     case maps:find(ConnId, ConnSpec) of
-        {ok, #conn_spec{pool=Pool}} ->
+        {ok, #conn_spec{pool=Pool, meta=Meta}} ->
             Status1 = maps:get(ConnId, ConnStatus),
             #conn_status{conn_pids=Pids} = Status1,
             case length(Pids) < Pool of
@@ -530,7 +537,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
                     link(Pid),
                     ?DEBUG("connected to ~p (~p) (~p/~p pids started)",
                         [ConnId, Pid, length(Pids)+1, Pool], State),
-                    gen_server:reply(From, {ok, Pid, #{conn_id=>ConnId}}),
+                    gen_server:reply(From, {ok, Pid, Meta#{conn_id=>ConnId}}),
                     monitor(process, Pid),
                     Status2 = Status1#conn_status{
                         status = active,
@@ -558,7 +565,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
                 false when Exclusive==false ->
                     % We started too much
                     ?DEBUG("selecting existing pid: ~p", [ConnId], State),
-                    gen_server:reply(From, {ok, do_get_pid(Pids), #{conn_id=>ConnId}}),
+                    gen_server:reply(From, {ok, do_get_pid(Pids), Meta#{conn_id=>ConnId}}),
                     StopFun(Pid),
                     State;
                 false ->
@@ -645,7 +652,12 @@ retry(Tries, From, Exclusive) ->
 conn_resolve_fun(#{url:=Url}=Target, _Config, Pid) ->
     Opts1 = maps:get(opts, Target, #{}),
     Opts2 = Opts1#{monitor => Pid},
-    nkpacket_resolve:resolve(Url, Opts2).
+    case nkpacket_resolve:resolve(Url, Opts2) of
+        {ok, ConnList} ->
+            {ok, ConnList, #{url=>Url}};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 
 %% @private
