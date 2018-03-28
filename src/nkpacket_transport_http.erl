@@ -357,6 +357,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=http}
         Timeout0 ->
             Timeout0
     end,
+    ?DEBUG("connecting to http:~p:~p (~p)", [Ip, Port, SocketOpts]),
     case gen_tcp:connect(Ip, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} ->
             {ok, inet, Socket};
@@ -378,6 +379,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=https
         _ ->
             Ip
     end,
+    ?DEBUG("connecting to https:~p:~p (~p)", [Host, Port, SocketOpts]),
     case ssl:connect(Host, Port, SocketOpts, ConnTimeout) of
         {ok, Socket} ->
             {ok, ssl, Socket};

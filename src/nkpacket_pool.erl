@@ -386,7 +386,7 @@ do_resolve([], _Config, _Pid, _Fun, Specs, []) ->
     {Specs, [], 0};
 
 do_resolve([], _Config, _Pid, _Fun, Specs, Weights) ->
-    [{_Start, Max}|_] = Weights,
+    [{_Start, Max, _ConnId}|_] = Weights,
     {Specs, lists:reverse(Weights), Max};
 
 do_resolve([Target|Rest], Config, Pid, Fun, Specs, Weights) ->
