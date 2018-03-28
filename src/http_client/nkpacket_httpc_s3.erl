@@ -44,9 +44,9 @@
 		host => binary(),
 		access_method => path | vhost,
 		acl => acl(),
-		headers => [{iolist(), iolist()}],
-		params => [{iolist(), iolist()}],
-		meta => [{iolist(), iolist()}]
+		headers => [{string()|binary(), string()|binary()}],
+		params => [{string()|binary(), string()|binary()}],
+		meta => [{string()|binary(), binary()}]
 	}.
 
 

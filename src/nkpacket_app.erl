@@ -50,7 +50,7 @@ start() ->
 
 %% @private OTP standard start callback
 start(_Type, _Args) ->
-    put(tls_defaults, nkpacket_syntax:tls_defaults()),
+    put(default_certs, nkpacket_tls:defaults_certs()),
     Syntax = nkpacket_syntax:app_syntax(),
     case nklib_config:load_env(nkpacket, Syntax) of
         {ok, _} ->

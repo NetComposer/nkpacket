@@ -61,7 +61,7 @@
 %% This function would be called at periodic intervals to resolve DNSs
 -type conn_resolve_fun() ::
     fun((Target::map(), Config::map(), pid()) ->
-        {ok, [#nkconn{}]} | {error, term()}).
+        {ok, [#nkconn{}], Meta::map()} | {error, term()}).
 
 -type conn_start_fun() :: fun((#nkconn{}) -> {ok, pid()} | {error, term()}).
 
@@ -170,7 +170,7 @@ find(Id) ->
     conn_spec :: #{conn_id() => #conn_spec{}},
     conn_weight :: [{Start::integer(), Stop::integer(), conn_id()}],
     conn_status :: #{conn_id() => #conn_status{}},
-    conn_pids2 :: #{pid() => {conn_id(), Mon::reference()|undefined}},
+    conn_pids :: #{pid() => {conn_id(), Mon::reference()|undefined}},
     conn_user_mons :: #{reference() => pid()},
     max_weight :: integer(),
     resolve_interval :: integer(),
@@ -194,8 +194,9 @@ init([Id, Config]) ->
         conn_spec = #{},
         conn_weight = [],
         conn_status = #{},
-        conn_pids2 = #{},
+        conn_pids = #{},
         conn_user_mons = #{},
+        max_weight = 0,
         debug = maps:get(debug, Config, false),
         headers = maps:get(headers, Config, []),
         resolve_interval = maps:get(resolve_interval, Config, 0),
@@ -236,14 +237,14 @@ handle_call(Msg, _From, State) ->
     {noreply, #state{}} | {stop, term(), #state{}}.
 
 handle_cast({release_exclusive_pid, ConnPid}, State) ->
-    #state{conn_pids2=ConnPids, conn_user_mons=Mons} = State,
+    #state{conn_pids=ConnPids, conn_user_mons=Mons} = State,
     case maps:find(ConnPid, ConnPids) of
         {ok, {ConnId, Mon}} when is_reference(Mon) ->
             ?DEBUG("releasing connection: ~p", [ConnId], State),
             demonitor(Mon),
             ConnPids2 = ConnPids#{ConnPid => {ConnId, undefined}},
             Mons2 = maps:remove(Mon, Mons),
-            State2 = State#state{conn_pids2=ConnPids2, conn_user_mons=Mons2},
+            State2 = State#state{conn_pids=ConnPids2, conn_user_mons=Mons2},
             {noreply, State2};
         _ ->
             ?LLOG(notice, "received release for invalid connection", [], State),
@@ -309,7 +310,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     {noreply, State};
 
 handle_info({'DOWN', Mon, process, Pid, Reason}=Msg, State) ->
-    #state{conn_pids2=ConnPids, conn_user_mons=Mons, conn_status=ConnStatus} = State,
+    #state{conn_pids=ConnPids, conn_user_mons=Mons, conn_status=ConnStatus} = State,
     case maps:take(Pid, ConnPids) of
         {{ConnId, UserMon}, ConnPids2} ->
             ?DEBUG("connection ~p down (~p)", [ConnId, Reason], State),
@@ -325,7 +326,7 @@ handle_info({'DOWN', Mon, process, Pid, Reason}=Msg, State) ->
                     maps:remove(UserMon, Mons)
             end,
             State2 = State#state{
-                conn_pids2 = ConnPids2,
+                conn_pids = ConnPids2,
                 conn_user_mons = Mons2,
                 conn_status = ConnStatus2
             },
@@ -336,7 +337,7 @@ handle_info({'DOWN', Mon, process, Pid, Reason}=Msg, State) ->
                     {ConnId, Mon} = maps:get(ConnPid, ConnPids),
                     ?DEBUG("user ~p down, releasing ~p", [Pid, ConnId], State),
                     ConnPids2 = ConnPids#{ConnPid => {ConnId, undefined}},
-                    State2 = State#state{conn_pids2=ConnPids2, conn_user_mons=Mons2},
+                    State2 = State#state{conn_pids=ConnPids2, conn_user_mons=Mons2},
                     {noreply, State2};
                 error ->
                     lager:warning("Module ~p received unexpected info: ~p (~p)",
@@ -362,7 +363,7 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(_Reason, #state{conn_pids2=ConnPids, conn_stop_fun=Fun}=State) ->
+terminate(_Reason, #state{conn_pids=ConnPids, conn_stop_fun=Fun}=State) ->
     Pids = maps:keys(ConnPids),
     ?DEBUG("stopping pids: ~p", [Pids], State),
     lists:foreach(fun(Pid) -> Fun(Pid) end, Pids),
@@ -381,13 +382,11 @@ resolve(Pid, Fun, #{targets:=Targets}=Config) ->
 
 
 %% @private
+do_resolve([], _Config, _Pid, _Fun, Specs, []) ->
+    {Specs, [], 0};
+
 do_resolve([], _Config, _Pid, _Fun, Specs, Weights) ->
-    Max = case Weights of
-        [{_Start, Stop, _}|_] ->
-            Stop;
-        [] ->
-            0
-    end,
+    [{_Start, Max}|_] = Weights,
     {Specs, lists:reverse(Weights), Max};
 
 do_resolve([Target|Rest], Config, Pid, Fun, Specs, Weights) ->
@@ -522,7 +521,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
     #state{
         conn_spec = ConnSpec,
         conn_status = ConnStatus,
-        conn_pids2 = ConnPids,
+        conn_pids = ConnPids,
         conn_user_mons = Mons,
         conn_stop_fun = StopFun
     } = State,
@@ -559,7 +558,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
                     end,
                     State#state{
                         conn_status = ConnStatus#{ConnId => Status2},
-                        conn_pids2 = ConnPids#{Pid => {ConnId, Mon}},
+                        conn_pids = ConnPids#{Pid => {ConnId, Mon}},
                         conn_user_mons = Mons2
                     };
                 false when Exclusive==false ->
@@ -619,7 +618,7 @@ do_get_pid(Pids) ->
 
 %% @private
 do_get_exclusive_pid(Pids, {true, UserPid}, State) ->
-    #state{conn_pids2=ConnPids, conn_user_mons=Mons} = State,
+    #state{conn_pids=ConnPids, conn_user_mons=Mons} = State,
     Pids2 = lists:filter(
         fun(Pid) ->
             case maps:get(Pid, ConnPids) of
@@ -636,7 +635,7 @@ do_get_exclusive_pid(Pids, {true, UserPid}, State) ->
             {ConnId, undefined} = maps:get(Pid, ConnPids),
             Mon = monitor(process, UserPid),
             State2 = State#state{
-                conn_pids2 = ConnPids#{Pid => {ConnId, Mon}},
+                conn_pids = ConnPids#{Pid => {ConnId, Mon}},
                 conn_user_mons = Mons#{Mon => Pid}
             },
             {ok, Pid, State2}

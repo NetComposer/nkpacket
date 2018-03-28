@@ -132,7 +132,7 @@ tls() ->
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	timer:sleep(1000),
 
-	% Sending a request wihout a matching started listener
+	% Sending a request without a matching started listener
 	Uri = "<test://localhost:"++integer_to_list(ListenPort1)++";transport=tls>",
 	{ok, _} = nkpacket:send(Uri, msg1, M2#{idle_timeout=>1000, class=>dom2}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,

@@ -22,7 +22,7 @@
 
 -module(nkpacket_tls).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
--export([make_tls_opts/1]).
+-export([make_outbound_opts/1, make_inbound_opts/1, defaults_certs/0]).
 -export([partial_chain/1]).
 
 -include("nkpacket.hrl").
@@ -32,12 +32,13 @@
 %% Public
 %% ===================================================================
 
+
 %% @doc Adds SSL options
--spec make_tls_opts(nkpacket:tls_types()) ->
+-spec make_outbound_opts(nkpacket:tls_types()) ->
     list().
 
-make_tls_opts(#{tls_verify:=host, host:=Host}) ->
-    Defaults = default_ssl(),
+make_outbound_opts(#{tls_verify:=host, host:=Host}) ->
+    Defaults = default_outbound(),
     Opts = Defaults#{
         verify => verify_peer,
         depth => 99,
@@ -50,12 +51,24 @@ make_tls_opts(#{tls_verify:=host, host:=Host}) ->
     },
     maps:to_list(Opts);
 
-make_tls_opts(#{tls_verify:=host}=Opts) ->
+make_outbound_opts(#{tls_verify:=host}=Opts) ->
     lager:warning("NkPACKET: TLS host is not available"),
-    make_tls_opts(maps:remove(tls_verify, Opts));
+    make_outbound_opts(maps:remove(tls_verify, Opts));
 
-make_tls_opts(Opts) ->
-    Defaults = default_ssl(),
+make_outbound_opts(Opts) ->
+    make_opts(Opts, default_outbound()).
+
+
+%% @doc Adds SSL options
+-spec make_inbound_opts(nkpacket:tls_types()) ->
+    list().
+
+make_inbound_opts(Opts) ->
+    make_opts(Opts, default_inbound()).
+
+
+%% @private
+make_opts(Opts, Defaults) ->
     Opts2 = maps:fold(
         fun(Key, Val, Acc) ->
             case Key of
@@ -77,17 +90,22 @@ make_tls_opts(Opts) ->
         _ ->
             maps:remove(verify, Opts2)
     end,
-    lager:notice("TLS Opts: ~p", [maps:remove(cacerts, Opts3)]),
     maps:to_list(Opts3).
 
 
-default_ssl() ->
+default_outbound() ->
     #{
         secure_renegotiate => true,
         reuse_sessions => true,
         honor_cipher_order => true,
-        versions => ['tlsv1.2', 'tlsv1.1', tlsv1, sslv3],
-        ciphers => ciphers()
+        ciphers => ciphers(),
+        versions => ['tlsv1.2', 'tlsv1.1', tlsv1, sslv3]
+    }.
+
+default_inbound() ->
+    Certs = nkpacket_app:get(default_certs),
+    Certs#{
+        versions => ['tlsv1.2', 'tlsv1.1', tlsv1]
     }.
 
 
@@ -132,6 +150,17 @@ ciphers() ->
         "ECDH-RSA-AES128-SHA",
         "AES128-SHA"
     ].
+
+defaults_certs() ->
+    case code:priv_dir(nkpacket) of
+        PrivDir when is_list(PrivDir) ->
+            #{
+                certfile => filename:join(PrivDir, "cert.pem"),
+                keyfile => filename:join(PrivDir, "key.pem")
+            };
+        _ ->
+            #{}
+    end.
 
 
 %% @private

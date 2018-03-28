@@ -163,9 +163,11 @@ s3_test_put() ->
 
 
 s3_test_put_url() ->
-    {Uri, Path} = nkpacket_httpc_s3:make_put_url(?TEST_BUCKET, ?TEST_PATH, "application/json", 5000, s3_test_config()),
+    CT = <<"application/json">>,
+    {Uri, Path} = nkpacket_httpc_s3:make_put_url(?TEST_BUCKET, ?TEST_PATH, CT,
+                                                 5000, s3_test_config()),
     Body = <<"125">>,
-    request(Uri, put, Path, [{<<"content-type">>, <<"application/json">>}], Body, #{}).
+    request(Uri, put, Path, [{<<"content-type">>, CT}], Body, #{}).
 
 
 

@@ -162,11 +162,11 @@
 
 -type tls_types() ::
     #{
+        tls_verify => host | boolean(),
         tls_certfile => string(),
         tls_keyfile => string(),
         tls_cacertfile => string(),
         tls_password => string(),
-        tls_verify => boolean(),
         tls_depth => 0..16,
         tls_versions => [atom()]
     }.

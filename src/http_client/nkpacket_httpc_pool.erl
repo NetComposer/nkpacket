@@ -71,10 +71,10 @@ sample() ->
     #{
         targets => [
             #{
-                url => binary(),                    % Can resolve to multiple IPs
+                url => string()|binary(),           % Can resolve to multiple IPs
                 opts => nkpacket:connect_opts(),    % Can include debug
-                weigth => integer(),                % Shared weight for all IPs
-                pool => integer,                    % Connections to start
+                weight => integer(),                % Shared weight for all IPs
+                pool => integer(),                  % Connections to start
                 refresh => boolean(),               % Send a periodic GET / (idle_timeout)
                 headers => [{binary(), binary()}]   % To include in each request
             }

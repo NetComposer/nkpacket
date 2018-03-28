@@ -301,7 +301,7 @@ start_link(Ref, Socket, TranspModule, [#nkport{opts=Meta} = NkPort]) ->
 
 %% @private Gets socket options for outbound connections
 -spec connect_outbound(#nkport{}) ->
-    {ok, inet|ssl, inet:socket()}.
+    {ok, inet|ssl, inet:socket()} | {error, term()}.
 
 connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=tcp}=NkPort) ->
     SocketOpts = outbound_opts(NkPort),
@@ -320,7 +320,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=tcp}=
     end;
 
 connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=tls}=NkPort) ->
-    SocketOpts = outbound_opts(NkPort) ++ nkpacket_tls:make_tls_opts(Opts),
+    SocketOpts = outbound_opts(NkPort) ++ nkpacket_tls:make_outbound_opts(Opts),
     ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
         undefined ->
             nkpacket_config_cache:connect_timeout();
@@ -378,7 +378,7 @@ listen_opts(#nkport{transp=tls, listen_ip=Ip, opts=Opts}) ->
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
     ]
-    ++nkpacket_tls:make_tls_opts(Opts).
+    ++nkpacket_tls:make_inbound_opts(Opts).
 
 
 %% @private

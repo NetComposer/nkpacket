@@ -451,7 +451,7 @@ terminate(Reason, _Req, ConnPid) ->
 
 %% @private Gets socket options for outbound connections
 -spec connect_outbound(#nkport{}) ->
-    {ok, inet|ssl, inet:socket()}.
+    {ok, inet|ssl, inet:socket()} | {error, term()}.
 
 connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=ws}) ->
     SocketOpts = outbound_opts(),
@@ -470,7 +470,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=ws}) 
     end;
 
 connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=wss}) ->
-    SocketOpts = outbound_opts() ++ nkpacket_tls:make_tls_opts(Opts),
+    SocketOpts = outbound_opts() ++ nkpacket_tls:make_outbound_opts(Opts),
     ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
         undefined ->
             nkpacket_config_cache:connect_timeout();

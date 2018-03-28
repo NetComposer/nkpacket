@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([app_syntax/0]).
--export([syntax/0, safe_syntax/0, tls_syntax/0, tls_defaults/0, packet_syntax/0, resolve_syntax/1]).
+-export([syntax/0, safe_syntax/0, tls_syntax/0, packet_syntax/0, resolve_syntax/1]).
 -export([spec_http_proto/3, spec_headers/1]).
 
 -include("nkpacket.hrl").
@@ -142,20 +142,6 @@ tls_syntax() ->
 
 add_tls_syntax(Syntax) ->
     maps:merge(Syntax, tls_syntax()).
-
-
-tls_defaults() ->
-    Base = case code:priv_dir(nkpacket) of
-        PrivDir when is_list(PrivDir) ->
-            #{
-                certfile => filename:join(PrivDir, "cert.pem"),
-                keyfile => filename:join(PrivDir, "key.pem")
-            };
-        _ ->
-            #{}
-    end,
-    %% Avoid SSLv3
-    Base#{versions => ['tlsv1.2', 'tlsv1.1', 'tlsv1']}.
 
 
 packet_syntax() ->
