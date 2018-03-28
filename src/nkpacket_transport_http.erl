@@ -58,22 +58,11 @@ get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=Transp}=NkPor
     {ok, nkpacket:nkport(), binary()} | {error, term()}.
 
 connect(NkPort) ->
-    #nkport{
-        transp     = Transp,
-        remote_ip  = Ip,
-        remote_port= Port,
-        opts       = Opts
-    } = NkPort,
+    #nkport{opts=Opts} = NkPort,
     Debug = maps:get(debug, Opts, false),
     put(nkpacket_debug, Debug),
-    SocketOpts = outbound_opts(NkPort),
-    TranspMod = case Transp of http -> ranch_tcp; https -> ranch_ssl end,
-    ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
-        undefined -> nkpacket_config_cache:connect_timeout();
-        Timeout0 -> Timeout0
-    end,
-    case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
-        {ok, Socket} ->
+    case connect_outbound(NkPort) of
+        {ok, TranspMod, Socket} ->
             TranspMod:setopts(Socket, [{active, once}]),
             {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
             Opts1 = maps:merge(#{path => <<"/">>}, Opts),
@@ -357,16 +346,54 @@ cowboy_init(Pid, Req, PathList, _FilterMeta, Env) ->
 %% ===================================================================
 
 %% @private Gets socket options for outbound connections
--spec outbound_opts(#nkport{}) ->
-    list().
+-spec connect_outbound(#nkport{}) ->
+    {ok, inet|ssl, inet:socket()} | {error, term()}.
 
-outbound_opts(#nkport{transp=http}) ->
-    [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}];
+connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=http}) ->
+    SocketOpts = outbound_opts(),
+    ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
+        undefined ->
+            nkpacket_config_cache:connect_timeout();
+        Timeout0 ->
+            Timeout0
+    end,
+    case gen_tcp:connect(Ip, Port, SocketOpts, ConnTimeout) of
+        {ok, Socket} ->
+            {ok, inet, Socket};
+        {error, Error} ->
+            {error, Error}
+    end;
 
-outbound_opts(#nkport{transp=https, opts=Opts}) ->
-    [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}]
-    ++ nkpacket_tls:make_tls_opts(Opts).
+connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=https}) ->
+    SocketOpts = outbound_opts() ++ nkpacket_tls:make_tls_opts(Opts),
+    ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
+        undefined ->
+            nkpacket_config_cache:connect_timeout();
+        Timeout0 ->
+            Timeout0
+    end,
+    Host = case Opts of
+        #{tls_verify:=host, host:=Host0} ->
+            binary_to_list(Host0);
+        _ ->
+            Ip
+    end,
+    case ssl:connect(Host, Port, SocketOpts, ConnTimeout) of
+        {ok, Socket} ->
+            {ok, ssl, Socket};
+        {error, Error} ->
+            {error, Error}
+    end.
 
+%% @private
+outbound_opts() ->
+    [
+        binary,
+        {active, false},
+        {nodelay, true},
+        {keepalive, true},
+        {packet, raw}
+    ].
 
 
 %% @private

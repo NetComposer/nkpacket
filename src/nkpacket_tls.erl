@@ -23,6 +23,7 @@
 -module(nkpacket_tls).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([make_tls_opts/1]).
+-export([partial_chain/1]).
 
 -include("nkpacket.hrl").
 -include_lib("public_key/include/OTP-PUB-KEY.hrl").
@@ -35,103 +36,175 @@
 -spec make_tls_opts(nkpacket:tls_types()) ->
     list().
 
-make_tls_opts(Opts) ->
-    Opts1 = nklib_util:filtermap(
-        fun(Term) ->
-            case Term of
-                {tls_certfile, Val} -> {true, {certfile, Val}};
-                {tls_keyfile, Val} -> {true, {keyfile, Val}};
-                {tls_cacertfile, Val} -> {true, {cacertfile, Val}};
-                {tls_password, Val} -> {true, {password, Val}};
-                {tls_verify, Val} -> {true, {verify, Val}};
-                {tls_depth, Val} -> {true, {depth, Val}};
-                {tls_versions, Val} -> {true, {versions, Val}};
-                _ -> false
-            end
-        end,
-        maps:to_list(Opts)),
-    Defaults1 = nkpacket_app:get(tls_defaults),
-    Defaults2 = case lists:keymember(certfile, 1, Opts1) of
-        true ->
-            maps:remove(keyfile, Defaults1);
-        false ->
-            Defaults1
-    end,
-    Opts2 = maps:merge(Defaults2, maps:from_list(Opts1)),
-    Opts3 = case Opts2 of
-        #{verify:=true} ->
-            Opts2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
-        #{verify:=false} ->
-            maps:remove(verify, Opts2);
-        _ ->
-            Opts2
-    end,
-    Opts4 = case Opts of
-        #{tls_insecure:=true} ->
-            Opts3;
-        _ ->
-            case maps:is_key(verify, Opts3) of
-                true ->
-                    Opts3;
-                false ->
-                    maps:merge(verify_host(Opts), Opts3)
-            end
-    end,
-    maps:to_list(Opts4).
-
-
-%% @private
-verify_host(#{host:=Host}) ->
-    #{
+make_tls_opts(#{tls_verify:=host, host:=Host}) ->
+    Defaults = default_ssl(),
+    Opts = Defaults#{
         verify => verify_peer,
         depth => 99,
         cacerts => certifi:cacerts(),
-        partial_chain => fun partial_chain/1,
+        partial_chain => fun ?MODULE:partial_chain/1,
         verify_fun => {
             fun ssl_verify_hostname:verify_fun/3,
-            [{check_hostname, Host}]
+            [{check_hostname, binary_to_list(Host)}]
         }
-    };
+    },
+    maps:to_list(Opts);
 
-verify_host(_) ->
-    #{}.
+make_tls_opts(#{tls_verify:=host}=Opts) ->
+    lager:warning("NkPACKET: TLS host is not available"),
+    make_tls_opts(maps:remove(tls_verify, Opts));
+
+make_tls_opts(Opts) ->
+    Defaults = default_ssl(),
+    Opts2 = maps:fold(
+        fun(Key, Val, Acc) ->
+            case Key of
+                tls_verify -> Acc#{verify => Val};
+                tls_certfile -> Acc#{certfile => Val};
+                tls_keyfile -> Acc#{keyfile => Val};
+                tls_cacertfile -> Acc#{cacertfile => Val};
+                tls_password -> Acc#{password => Val};
+                tls_depth -> Acc#{depth => Val};
+                tls_versions -> Acc#{versions => Val};
+                _ -> Acc
+            end
+        end,
+        Defaults,
+        Opts),
+    Opts3 = case Opts2 of
+        #{verify:=true} ->
+            Opts2#{verify=>verify_peer, fail_if_no_peer_cert=>true};
+        _ ->
+            maps:remove(verify, Opts2)
+    end,
+    lager:notice("TLS Opts: ~p", [maps:remove(cacerts, Opts3)]),
+    maps:to_list(Opts3).
+
+
+default_ssl() ->
+    #{
+        secure_renegotiate => true,
+        reuse_sessions => true,
+        honor_cipher_order => true,
+        versions => ['tlsv1.2', 'tlsv1.1', tlsv1, sslv3],
+        ciphers => ciphers()
+    }.
+
+
+%% from Hackney and https://wiki.mozilla.org/Security/Server_Side_TLS
+ciphers() ->
+    [
+        "ECDHE-ECDSA-AES256-GCM-SHA384",
+        "ECDHE-RSA-AES256-GCM-SHA384",
+        "ECDHE-ECDSA-AES256-SHA384",
+        "ECDHE-RSA-AES256-SHA384",
+        "ECDHE-ECDSA-DES-CBC3-SHA",
+        "ECDH-ECDSA-AES256-GCM-SHA384",
+        "ECDH-RSA-AES256-GCM-SHA384",
+        "ECDH-ECDSA-AES256-SHA384",
+        "ECDH-RSA-AES256-SHA384",
+        "DHE-DSS-AES256-GCM-SHA384",
+        "DHE-DSS-AES256-SHA256",
+        "AES256-GCM-SHA384",
+        "AES256-SHA256",
+        "ECDHE-ECDSA-AES128-GCM-SHA256",
+        "ECDHE-RSA-AES128-GCM-SHA256",
+        "ECDHE-ECDSA-AES128-SHA256",
+        "ECDHE-RSA-AES128-SHA256",
+        "ECDH-ECDSA-AES128-GCM-SHA256",
+        "ECDH-RSA-AES128-GCM-SHA256",
+        "ECDH-ECDSA-AES128-SHA256",
+        "ECDH-RSA-AES128-SHA256",
+        "DHE-DSS-AES128-GCM-SHA256",
+        "DHE-DSS-AES128-SHA256",
+        "AES128-GCM-SHA256",
+        "AES128-SHA256",
+        "ECDHE-ECDSA-AES256-SHA",
+        "ECDHE-RSA-AES256-SHA",
+        "DHE-DSS-AES256-SHA",
+        "ECDH-ECDSA-AES256-SHA",
+        "ECDH-RSA-AES256-SHA",
+        "AES256-SHA",
+        "ECDHE-ECDSA-AES128-SHA",
+        "ECDHE-RSA-AES128-SHA",
+        "DHE-DSS-AES128-SHA",
+        "ECDH-ECDSA-AES128-SHA",
+        "ECDH-RSA-AES128-SHA",
+        "AES128-SHA"
+    ].
 
 
 %% @private
 partial_chain(Certs) ->
-    Certs1 = lists:reverse(
-        [{Cert, public_key:pkix_decode_cert(Cert, otp)} || Cert <- Certs]),
-    CACerts = certifi:cacerts(),
-    CACerts1 = [public_key:pkix_decode_cert(Cert, otp) || Cert <- CACerts],
-    case find(Certs1, CACerts1) of
-        {ok, Trusted} ->
-            {trusted_ca, element(1, Trusted)};
-        _ ->
-            unknown_ca
+    find_partial_chain(lists:reverse(Certs)).
+
+
+%% @private
+find_partial_chain([]) ->
+    unknown_ca;
+
+find_partial_chain([Cert|Rest]) ->
+    case check_cert(certifi:cacerts(), Cert) of
+        true ->
+            {trusted_ca, Cert};
+        false ->
+            find_partial_chain(Rest)
     end.
 
 
 %% @private
-find([{_, Cert}=First|Rest], CACerts) ->
-    case check_cert(CACerts, Cert) of
+check_cert([], _Cert) ->
+    false;
+
+check_cert([CACert|Rest], Cert) ->
+    case extract_public_key_info(CACert) == extract_public_key_info(Cert) of
         true ->
-            {ok, First};
+            true;
         false ->
-            find(Rest, CACerts)
-    end;
-
-find([], _) ->
-    error.
-
-
-%% @private
-check_cert(CACerts, Cert) ->
-    lists:any(
-        fun(CACert) ->
-            extract_public_key_info(CACert) == extract_public_key_info(Cert)
-        end,
-        CACerts).
+            check_cert(Rest, Cert)
+    end.
 
 extract_public_key_info(Cert) ->
-    ((Cert#'OTPCertificate'.tbsCertificate)#'OTPTBSCertificate'.subjectPublicKeyInfo).
+    Cert2 = public_key:pkix_decode_cert(Cert, otp),
+    ((Cert2#'OTPCertificate'.tbsCertificate)#'OTPTBSCertificate'.subjectPublicKeyInfo).
+
+
+
+%% Code from hackney, previous is much cleaner but not tested
+
+%%%% code from rebar3 undert BSD license
+%%partial_chain(Certs) ->
+%%    Certs1 = lists:reverse([{Cert, public_key:pkix_decode_cert(Cert, otp)} ||
+%%        Cert <- Certs]),
+%%    CACerts = certifi:cacerts(),
+%%    CACerts1 = [public_key:pkix_decode_cert(Cert, otp) || Cert <- CACerts],
+%%
+%%    case find(fun({_, Cert}) ->
+%%        check_cert(CACerts1, Cert)
+%%    end, Certs1) of
+%%        {ok, Trusted} ->
+%%            {trusted_ca, element(1, Trusted)};
+%%        _ ->
+%%            unknown_ca
+%%    end.
+%%
+%%extract_public_key_info(Cert) ->
+%%    ((Cert#'OTPCertificate'.tbsCertificate)#'OTPTBSCertificate'.subjectPublicKeyInfo).
+%%
+%%check_cert(CACerts, Cert) ->
+%%    lists:any(fun(CACert) ->
+%%        extract_public_key_info(CACert) == extract_public_key_info(Cert)
+%%    end, CACerts).
+%%
+%%-spec find(fun(), list()) -> {ok, term()} | error.
+%%find(Fun, [Head|Tail]) when is_function(Fun) ->
+%%    case Fun(Head) of
+%%        true ->
+%%            {ok, Head};
+%%        false ->
+%%            find(Fun, Tail)
+%%    end;
+%%find(_Fun, []) ->
+%%    error.
+
 

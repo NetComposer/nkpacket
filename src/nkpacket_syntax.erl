@@ -128,36 +128,15 @@ safe_syntax() ->
     maps:with(Opts, Syntax).
 
 
-
-%%uri_syntax() ->
-%%    #{
-%%        idle_timeout => pos_integer,
-%%        connect_timeout => nat_integer,
-%%        no_dns_cache => boolean,
-%%        host => host,
-%%        path => path,
-%%        %user => binary,
-%%        %password => binary,
-%%        ws_proto => lower,
-%%        tls_certfile => string,
-%%        tls_keyfile => string,
-%%        tls_cacertfile => string,
-%%        tls_password => string,
-%%        tls_verify => boolean,
-%%        tls_depth => {integer, 0, 16}
-%%    }.
-
-
 tls_syntax() ->
     #{
+        tls_verify => {atom, [host, true, false]},
         tls_certfile => string,
         tls_keyfile => string,
         tls_cacertfile => string,
         tls_password => string,
-        tls_verify => boolean,
         tls_depth => {integer, 0, 16},
-        tls_versions => {list, atom},
-        tls_insecure => boolean         % Avoid host check
+        tls_versions => {list, atom}
     }.
 
 

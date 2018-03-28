@@ -77,22 +77,11 @@ get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=Transp}=NkPor
     {ok, nkpacket:nkport(), binary()} | {error, term()}.
          
 connect(NkPort) ->
-    #nkport{
-        transp     = Transp,
-        remote_ip  = Ip,
-        remote_port= Port,
-        opts       = Opts
-    } = NkPort,
+    #nkport{opts=Opts} = NkPort,
     Debug = maps:get(debug, Opts, false),
     put(nkpacket_debug, Debug),
-    SocketOpts = outbound_opts(NkPort),
-    TranspMod = case Transp of ws -> tcp, ranch_tcp; wss -> ranch_ssl end,
-    ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
-        undefined -> nkpacket_config_cache:connect_timeout();
-        Timeout0 -> Timeout0
-    end,
-    case TranspMod:connect(Ip, Port, SocketOpts, ConnTimeout) of
-        {ok, Socket} -> 
+    case connect_outbound(NkPort) of
+        {ok, TranspMod, Socket} ->
             {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
             Opts1 = maps:merge(#{path => <<"/">>}, Opts),
             NkPort1 = NkPort#nkport{
@@ -460,18 +449,62 @@ terminate(Reason, _Req, ConnPid) ->
 %% Util
 %% ===================================================================
 
+%% @private Gets socket options for outbound connections
+-spec connect_outbound(#nkport{}) ->
+    {ok, inet|ssl, inet:socket()}.
+
+connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=ws}) ->
+    SocketOpts = outbound_opts(),
+    ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
+        undefined ->
+            nkpacket_config_cache:connect_timeout();
+        Timeout0 ->
+            Timeout0
+    end,
+    ?DEBUG("connect to: ws:~p:~p (~p)", [Ip, Port, SocketOpts]),
+    case gen_tcp:connect(Ip, Port, SocketOpts, ConnTimeout) of
+        {ok, Socket} ->
+            {ok, inet, Socket};
+        {error, Error} ->
+            {error, Error}
+    end;
+
+connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=wss}) ->
+    SocketOpts = outbound_opts() ++ nkpacket_tls:make_tls_opts(Opts),
+    ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
+        undefined ->
+            nkpacket_config_cache:connect_timeout();
+        Timeout0 ->
+            Timeout0
+    end,
+    Host = case Opts of
+        #{tls_verify:=host, host:=Host0} ->
+            binary_to_list(Host0);
+        _ ->
+            Ip
+    end,
+    ?DEBUG("connect to: wss:~p:~p (~p)", [Host, Port, SocketOpts]),
+    case ssl:connect(Host, Port, SocketOpts, ConnTimeout) of
+        {ok, Socket} ->
+            {ok, ssl, Socket};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 
 %% @private Gets socket options for outbound connections
--spec outbound_opts(#nkport{}) ->
+-spec outbound_opts() ->
     list().
 
-outbound_opts(#nkport{transp=ws}) ->
-    [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}];
+outbound_opts() ->
+    [
+        binary,
+        {active, false},
+        {nodelay, true},
+        {keepalive, true},
+        {packet, raw}
+    ].
 
-outbound_opts(#nkport{transp=wss, opts=Opts}) ->
-    [binary, {active, false}, {nodelay, true}, {keepalive, true}, {packet, raw}]
-    ++nkpacket_tls:make_tls_opts(Opts).
 
 
 
