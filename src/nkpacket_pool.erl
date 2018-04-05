@@ -241,7 +241,7 @@ handle_cast({release_exclusive_pid, ConnPid}, State) ->
     case maps:find(ConnPid, ConnPids) of
         {ok, {ConnId, Mon}} when is_reference(Mon) ->
             ?DEBUG("releasing connection: ~p", [ConnId], State),
-            demonitor(Mon),
+            nklib_util:demonitor(Mon),
             ConnPids2 = ConnPids#{ConnPid => {ConnId, undefined}},
             Mons2 = maps:remove(Mon, Mons),
             State2 = State#state{conn_pids=ConnPids2, conn_user_mons=Mons2},
