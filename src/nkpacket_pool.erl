@@ -25,6 +25,9 @@
 %% in that case one of the connections is selected randomly. If not,
 %% a new connection is started
 %% If we cannot connect to a destination, is marked as failed and retried later
+%% You can also get an exclusive connection, that would be blocked for everyone else
+%% If none is available, new ones will be started (up to max_exclusive)
+%% You must release the connection to be reused, if the process fails it will stop
 %% @see nkpacket_httpc_pool for sample
 
 -module(nkpacket_pool).
@@ -76,7 +79,8 @@
                 url => binary(),                    % Can resolve to multiple IPs
                 opts => nkpacket:connect_opts(),    % Can include debug
                 weigth => integer(),                % Shared weight for all IPs
-                pool => integer                     % Connections to start
+                pool => integer(),                  % Connections to start,
+                max_exclusive => integer()          % Default is pool
             }
         ],
         debug => boolean(),
@@ -109,6 +113,11 @@ get_conn_pid(P) ->
 
 
 %% @private
+%% Gets an exclusive connection, if one is available
+%% Otherwise, you would get {error, max_connections_reached}
+%% Must call release_exclusive_pid/2 to release the connection
+%% If the process fails without releasing, the connection will be stopped
+%% (since it can be in a inconsistent state)
 -spec get_exclusive_pid(id()|pid()) ->
     {ok, pid(), Meta::map()} | {error, term()}.
 
@@ -151,6 +160,7 @@ find(Id) ->
     id :: conn_id(),
     nkconn :: #nkconn{},
     pool :: integer(),
+    max_exclusive :: integer(),
     meta :: map()
 }).
 
@@ -310,12 +320,17 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     {noreply, State};
 
 handle_info({'DOWN', Mon, process, Pid, Reason}=Msg, State) ->
-    #state{conn_pids=ConnPids, conn_user_mons=Mons, conn_status=ConnStatus} = State,
+    #state{
+        conn_pids = ConnPids,
+        conn_user_mons = Mons,
+        conn_status = ConnStatus,
+        conn_stop_fun = StopFun
+    } = State,
     case maps:take(Pid, ConnPids) of
         {{ConnId, UserMon}, ConnPids2} ->
             ?DEBUG("connection ~p down (~p)", [ConnId, Reason], State),
             Status1 = maps:get(ConnId, ConnStatus),
-            #conn_status{conn_pids=Pids}= Status1,
+            #conn_status{conn_pids=Pids} = Status1,
             Status2 = Status1#conn_status{conn_pids=Pids -- [Pid]},
             ConnStatus2 = ConnStatus#{ConnId => Status2},
             Mons2 = case UserMon of
@@ -335,9 +350,11 @@ handle_info({'DOWN', Mon, process, Pid, Reason}=Msg, State) ->
             case maps:take(Mon, Mons) of
                 {ConnPid, Mons2} ->
                     {ConnId, Mon} = maps:get(ConnPid, ConnPids),
-                    ?DEBUG("user ~p down, releasing ~p", [Pid, ConnId], State),
-                    ConnPids2 = ConnPids#{ConnPid => {ConnId, undefined}},
-                    State2 = State#state{conn_pids=ConnPids2, conn_user_mons=Mons2},
+                    ?LLOG(notice, "exclusive user ~p down, stopping ~p",
+                          [Pid, ConnId], State),
+                    %% Connection may be in inconsistent state, stop it
+                    StopFun(Pid),
+                    State2 = State#state{conn_user_mons=Mons2},
                     {noreply, State2};
                 error ->
                     lager:warning("Module ~p received unexpected info: ~p (~p)",
@@ -363,10 +380,10 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(_Reason, #state{conn_pids=ConnPids, conn_stop_fun=Fun}=State) ->
+terminate(_Reason, #state{conn_pids=ConnPids, conn_stop_fun=StopFun}=State) ->
     Pids = maps:keys(ConnPids),
     ?DEBUG("stopping pids: ~p", [Pids], State),
-    lists:foreach(fun(Pid) -> Fun(Pid) end, Pids),
+    lists:foreach(fun(Pid) -> StopFun(Pid) end, Pids),
     ok.
 
 
@@ -391,6 +408,7 @@ do_resolve([], _Config, _Pid, _Fun, Specs, Weights) ->
 
 do_resolve([Target|Rest], Config, Pid, Fun, Specs, Weights) ->
     Pool = maps:get(pool, Target, 1),
+    Max = maps:get(max_exclusive, Target, Pool),
     {ConnList, Meta} = case Fun(Target, Config, Pid) of
         {ok, ConnList0, Meta0} ->
             {ConnList0, Meta0};
@@ -401,7 +419,13 @@ do_resolve([Target|Rest], Config, Pid, Fun, Specs, Weights) ->
     Specs2 = lists:foldl(
         fun(#nkconn{transp=Transp, ip=Ip, port=Port}=NkConn, Acc) ->
             ConnId = {Transp, Ip, Port},
-            ConnSpec = #conn_spec{id=ConnId, nkconn=NkConn, pool=Pool, meta=Meta},
+            ConnSpec = #conn_spec{
+                id = ConnId,
+                nkconn = NkConn,
+                pool = Pool,
+                max_exclusive = Max,
+                meta=Meta
+            },
             Acc#{ConnId => ConnSpec}
         end,
         Specs,
@@ -443,35 +467,70 @@ find_conn_pid(Tries, From, Exclusive, State) ->
     Pos = rand:uniform(Max),
     ConnId = do_find_conn(Pos, Weights),
     Spec = maps:get(ConnId, ConnSpec),
-    #conn_spec{id=ConnId, pool=Pool, meta=Meta} = Spec,
+    #conn_spec{id=ConnId, pool=Pool, max_exclusive=Max, meta=Meta} = Spec,
     ?DEBUG("selected weight ~p: ~p", [Pos, ConnId], State),
     case maps:find(ConnId, ConnStatus) of
         {ok, #conn_status{status=active, conn_pids=Pids}} ->
-            case length(Pids) < Pool of
+            ActivePids = length(Pids),
+            case ActivePids < Pool of
                 true ->
                     % Slots still available
                     connect(Spec, Tries, From, Exclusive, State);
                 false when Exclusive==false ->
                     ?DEBUG("selecting existing pid ~p: ~p", [Pos, ConnId], State),
-                    gen_server:reply(From, {ok, do_get_pid(Pids), Meta#{conn_id=>ConnId}}),
+                    Pid = do_get_random_pid(Pids),
+                    gen_server:reply(From, {ok, Pid, Meta#{conn_id=>ConnId}}),
                     State;
                 false ->
                     % We reached all possible connections
-                    case do_get_exclusive_pid(Pids, Exclusive, State) of
-                        {ok, Pid, State2} ->
-                            ?DEBUG("selecting and locking existing pid ~p: ~p",
-                                   [Pos, ConnId], State),
+                    case find_conn_pid_exclusive(Pids, Exclusive, State) of
+                        {ok, Pid, ConnId, State2} ->
+                            ?DEBUG("selecting and locking existing pid: ~p", [ConnId], State2),
                             gen_server:reply(From, {ok, Pid, Meta#{conn_id=>ConnId}}),
                             State2;
-                        false ->
-                            ?DEBUG("max connections reached", [], State),
-                            gen_server:reply(From, {error, max_connections_reached}),
-                            State
+                        {error, no_free_connections} ->
+                            case ActivePids < Max of
+                                true ->
+                                    connect(Spec, Tries, From, Exclusive, State);
+                                false ->
+                                    ?DEBUG("max connections reached", [], State),
+                                    gen_server:reply(From, {error, max_connections_reached}),
+                                    State
+                            end
                     end
             end;
         _ ->
             % If inactive or not yet created
             connect(Spec, Tries, From, Exclusive, State)
+    end.
+
+
+%% @private
+find_conn_pid_exclusive(Pids, {true, UserPid}, State) ->
+    #state{
+        conn_pids= ConnPids,
+        conn_user_mons = Mons
+    } = State,
+    Pids2 = lists:filter(
+        fun(Pid) ->
+            case maps:get(Pid, ConnPids) of
+                {_ConnId, undefined} -> true;
+                {_ConnId, _OldRef} -> false
+            end
+        end,
+        Pids),
+    case Pids2 of
+        [] ->
+            {error, no_free_connections};
+        _ ->
+            Pid = do_get_random_pid(Pids2),
+            {ConnId, undefined} = maps:get(Pid, ConnPids),
+            Mon = monitor(process, UserPid),
+            State2 = State#state{
+                conn_pids = ConnPids#{Pid => {ConnId, Mon}},
+                conn_user_mons = Mons#{Mon => Pid}
+            },
+            {ok, Pid, ConnId, State2}
     end.
 
 
@@ -564,7 +623,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
                 false when Exclusive==false ->
                     % We started too much
                     ?DEBUG("selecting existing pid: ~p", [ConnId], State),
-                    gen_server:reply(From, {ok, do_get_pid(Pids), Meta#{conn_id=>ConnId}}),
+                    gen_server:reply(From, {ok, do_get_random_pid(Pids), Meta#{conn_id=>ConnId}}),
                     StopFun(Pid),
                     State;
                 false ->
@@ -610,36 +669,14 @@ do_find_conn(Pos, [_|Rest]) ->
 
 
 %% @private
-do_get_pid([Pid]) ->
+do_get_random_pid([Pid]) ->
     Pid;
-do_get_pid(Pids) ->
+do_get_random_pid(Pids) ->
     lists:nth(rand:uniform(length(Pids)), Pids).
 
 
-%% @private
-do_get_exclusive_pid(Pids, {true, UserPid}, State) ->
-    #state{conn_pids=ConnPids, conn_user_mons=Mons} = State,
-    Pids2 = lists:filter(
-        fun(Pid) ->
-            case maps:get(Pid, ConnPids) of
-                {_ConnId, undefined} -> true;
-                {_ConnId, _OldRef} -> false
-            end
-        end,
-        Pids),
-    case Pids2 of
-        [] ->
-            false;
-        _ ->
-            Pid = do_get_pid(Pids2),
-            {ConnId, undefined} = maps:get(Pid, ConnPids),
-            Mon = monitor(process, UserPid),
-            State2 = State#state{
-                conn_pids = ConnPids#{Pid => {ConnId, Mon}},
-                conn_user_mons = Mons#{Mon => Pid}
-            },
-            {ok, Pid, State2}
-    end.
+
+
 
 
 %% @private
