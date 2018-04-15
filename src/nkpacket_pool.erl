@@ -467,7 +467,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
     Pos = rand:uniform(Max),
     ConnId = do_find_conn(Pos, Weights),
     Spec = maps:get(ConnId, ConnSpec),
-    #conn_spec{id=ConnId, pool=Pool, max_exclusive=Max, meta=Meta} = Spec,
+    #conn_spec{id=ConnId, pool=Pool, max_exclusive=MaxExclusive, meta=Meta} = Spec,
     ?DEBUG("selected weight ~p: ~p", [Pos, ConnId], State),
     case maps:find(ConnId, ConnStatus) of
         {ok, #conn_status{status=active, conn_pids=Pids}} ->
@@ -489,7 +489,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
                             gen_server:reply(From, {ok, Pid, Meta#{conn_id=>ConnId}}),
                             State2;
                         {error, no_free_connections} ->
-                            case ActivePids < Max of
+                            case ActivePids < MaxExclusive of
                                 true ->
                                     connect(Spec, Tries, From, Exclusive, State);
                                 false ->
