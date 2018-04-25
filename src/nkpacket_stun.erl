@@ -40,7 +40,7 @@
 
 -type method() :: binding | unknown.
 
--type attribute() :: 
+-type attribute() ::
         {mapped_address, {inet:ip_address(), inet:port_number()}} | {username, binary()} |
         {message_integrity, binary()} | {error_code, binary()} |
         {unknown_attributes, binary()} | {realm, binary()} | {nonce, binary()} |
@@ -103,11 +103,11 @@ get_stun_servers(List) ->
 
 %% @doc Decodes a STUN packet
 -spec decode(Packet::binary()) ->
-    {Class::class(), Method::method(), Id::binary(), 
+    {Class::class(), Method::method(), Id::binary(),
         Attributes::[attribute()]} | error.
 
-decode(<<0:2, M1:5, C1:1, M2:3, C2:1, M3:4, Length:16, 16#2112A442:32, 
-        Id:96, Msg/binary>>) 
+decode(<<0:2, M1:5, C1:1, M2:3, C2:1, M3:4, Length:16, 16#2112A442:32,
+        Id:96, Msg/binary>>)
         when byte_size(Msg)==Length ->
     Class = case <<C1:1, C2:1>> of
         <<2#00:2>> -> request;
@@ -130,7 +130,7 @@ decode(_) ->
     {Id::binary(), Msg::binary()}.
 
 binding_request() ->
-    Id = crypto:rand_bytes(12),
+    Id = crypto:strong_rand_bytes(12),
     {Id, <<16#0001:16, 0:16, 16#2112A442:32, Id/binary>>}.
 
 
@@ -146,7 +146,7 @@ binding_response(Id, {I1, I2, I3, I4}, P) ->
     <<XP1, XP2>> = crypto:exor(<<P1, P2>>, <<33, 18>>),
     <<XI1:8, XI2:8, XI3:8, XI4:8>> = crypto:exor(<<I1, I2, I3, I4>>, <<33, 18, 164, 66>>),
     % Binding, 12 bytes, Cookie, Id, xor_mapping_address, 8 bytes, ipv4 (1), port, ip
-    <<16#0101:16, 12:16, 16#2112A442:32, Id/binary,  
+    <<16#0101:16, 12:16, 16#2112A442:32, Id/binary,
       16#0020:16, 8:16, 1:16, XP1, XP2, XI1, XI2, XI3, XI4>>.
 
 
@@ -155,7 +155,7 @@ binding_response(Id, {I1, I2, I3, I4}, P) ->
 %% ===================================================================
 
 %% @private Process a list of STUN attributes
--spec attributes(binary()) -> 
+-spec attributes(binary()) ->
     [attribute()].
 
 attributes(Msg) ->
@@ -171,12 +171,12 @@ attributes(<<Type:16, Length:16, Rest/binary>>, Acc) ->
                 % Must-process attributes
                 16#0001 ->
                     case Data of
-                        <<1:16, Port:16, A:8, B:8, C:8, D:8>> -> 
+                        <<1:16, Port:16, A:8, B:8, C:8, D:8>> ->
                             {mapped_address, {{A,B,C,D}, Port}};
-                        <<2:16, Port:16, A:16, B:16, C:16, D:16, 
-                                         E:16, F:16, G:16, H:16>> ->  
+                        <<2:16, Port:16, A:16, B:16, C:16, D:16,
+                                         E:16, F:16, G:16, H:16>> ->
                             {mapped_address, {{A,B,C,D,E,F,G,H}, Port}};
-                        _ -> 
+                        _ ->
                             {{error, Type}, Data}
                     end;
                 16#0006 -> {username, Data};
@@ -185,22 +185,22 @@ attributes(<<Type:16, Length:16, Rest/binary>>, Acc) ->
                 16#000A -> {unknown_attributes, Data};
                 16#0014 -> {realm, Data};
                 16#0015 -> {nonce, Data};
-                16#0020 -> 
+                16#0020 ->
                     case Data of
-                        <<1:16, PA:8, PB:8, IA:8, IB:8, IC:8, ID:8>> -> 
+                        <<1:16, PA:8, PB:8, IA:8, IB:8, IC:8, ID:8>> ->
                             P1 = crypto:exor(<<PA, PB>>, <<33,18>>),
                             P2 = binary:decode_unsigned(P1),
-                            <<A:8, B:8, C:8, D:8>> 
+                            <<A:8, B:8, C:8, D:8>>
                                 = crypto:exor(<<IA, IB, IC, ID>>, <<33,18,164,66>>),
                             {xor_mapped_address, {{A,B,C,D}, P2}};
-                        % <<2:16, Port:16, Ip:128>> ->  
+                        % <<2:16, Port:16, Ip:128>> ->
                         %     % IPv6 NOT DONE YET
                         %     {xor_mapped_address, {Ip, Port}};
-                        _ -> 
+                        _ ->
                             {{error, Type}, Data}
                     end;
                 % Optional attributes
-                16#8022 -> {software, Data};                
+                16#8022 -> {software, Data};
                 16#8023 -> {alternate_server, Data};
                 16#8028 -> {fingerprint, Data};
                 _ -> {{unknown, Type}, Data}
@@ -232,21 +232,21 @@ get_stun_servers([], _Socket, _Local, List) ->
         false ->
             ok
     end,
-    Stuns = [{StunIp, StunPort} 
+    Stuns = [{StunIp, StunPort}
              || {_ExtIp, _Type, StunIp, StunPort, _Time} <- lists:keysort(5, List)],
     {ExtIp, Stuns};
 
 get_stun_servers([Uri|Rest], Socket, Local, Acc) ->
     {Host, Port} = case nklib_parse:uris(Uri) of
-        error ->  
+        error ->
             {nklib_util:to_list(Uri), 0};
-        [#uri{domain=Host0, port=Port0}|_] -> 
+        [#uri{domain=Host0, port=Port0}|_] ->
             {nklib_util:to_list(Host0), Port0}
     end,
     Ips = case inet:getaddrs(Host, inet) of
-        {ok, Ips0} -> 
+        {ok, Ips0} ->
             Ips0;
-        {error, _} -> 
+        {error, _} ->
             case inet:getaddrs(Host, inet6) of
                 {ok, Ips1} -> Ips1;
                 {error, _} -> []
@@ -341,7 +341,7 @@ stun_test() ->
     {Id, Request} = binding_request(),
     ?assertMatch({request, binding, Id, []}, decode(Request)),
     Response = binding_response(Id, {1,2,3,4}, 5),
-    ?assertMatch({response, binding, Id, [{xor_mapped_address,{{1,2,3,4},5}}]}, 
+    ?assertMatch({response, binding, Id, [{xor_mapped_address,{{1,2,3,4},5}}]},
                     decode(Response)).
 
 client_test() ->
