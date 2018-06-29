@@ -31,7 +31,7 @@
 -behaviour(cowboy_middleware).
 
 -export([start/2, get_all/0, get_filters/2]).
--export([reply/2, reply/3, reply/4]).
+-export([reply/2, reply/3, reply/4, stream_reply/3, stream_body/3]).
 -export([init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
 -export([execute/2]).
@@ -149,6 +149,24 @@ reply(Code, Hds, Body, Req) when is_list(Hds) ->
     cowboy_req:reply(Code, maps:from_list(Hds), Body, Req).
 
 
+%% @doc Sends a cowboy stream reply
+-spec stream_reply(cowboy:http_status(), cowboy:http_headers(),cowboy_req:req()) ->
+    cowboy_req:req().
+
+stream_reply(Code, Hds, Req) when is_map(Hds) ->
+    cowboy_req:stream_reply(Code, Hds, Req);
+
+stream_reply(Code, Hds, Req) when is_list(Hds) ->
+    cowboy_req:stream_reply(Code, Hds, Req).
+
+
+%% @doc Sends a cowboy stream reply
+-spec stream_body(iodata(), fin|nofin, cowboy_req:req()) ->
+    ok.
+
+stream_body(Body, Fin, Req) when Fin==fin;Fin==nofin ->
+    ok = cowboy_req:stream_body(Body, Fin, Req).
+
 %% ===================================================================
 %% gen_server
 %% ===================================================================
@@ -201,6 +219,7 @@ init([NkPort, #cowboy_filter{}=Filter]) ->
                     nkpacket_config_cache:http_timeout()
             end,
             %% @see cowboy_http:opts()
+            %% Use global idle_timeout for Cowboy's idle_timeout
             Allowed = [
                 inactivity_timeout, max_empty_lines,
                 max_header_name_length, max_header_value_length, max_headers,
