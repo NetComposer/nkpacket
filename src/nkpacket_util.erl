@@ -249,8 +249,7 @@ init_protocol(Protocol, Fun, Arg) ->
             try 
                 Protocol:Fun(Arg)
             catch
-                Class:Reason ->
-                    Stacktrace = erlang:get_stacktrace(),
+                Class:Reason:Stacktrace ->
                     lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
                                 [Class, Reason, Protocol, Fun, Arg, Stacktrace]),
                     erlang:Class([{reason, Reason}, {stacktrace, Stacktrace}])
@@ -288,8 +287,7 @@ call_protocol(Fun, Args, State, Pos) ->
                         {Class, Value, setelement(Pos+1, State, ProtoState1)}
                 end
             catch
-                EClass:Reason ->
-                    Stacktrace = erlang:get_stacktrace(),
+                EClass:Reason:Stacktrace ->
                     lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
                                 [EClass, Reason, Protocol, Fun, Args, Stacktrace]),
                     erlang:EClass([{reason, Reason}, {stacktrace, Stacktrace}])
