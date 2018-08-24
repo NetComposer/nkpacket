@@ -39,8 +39,8 @@
 
 -type config() ::
 	#{
-		key_id => binary(),
 		key => binary(),
+		secret => binary(),
 		host => binary(),
 		access_method => path | vhost,
 		acl => acl(),
@@ -129,8 +129,8 @@ make_get_url(Bucket, Path, ExpireSecs, Config) ->
 	Expires = to_bin(nklib_util:timestamp() + ExpireSecs),
 	Path2 = list_to_binary([$/, Bucket, Path]),
 	ToSign = list_to_binary(["GET\n\n\n", Expires, $\n, Path2]),
-	#{key_id:=KeyId, key:=Key} = Config,
-	Enc = base64:encode(crypto:hmac(sha, Key, ToSign)),
+	#{key:=KeyId, secret:=Secret} = Config,
+	Enc = base64:encode(crypto:hmac(sha, Secret, ToSign)),
 	Qs = list_to_binary([
 		"?AWSAccessKeyId=", url_encode(KeyId),
 		"&Signature=", url_encode(Enc),
@@ -148,8 +148,8 @@ make_put_url(Bucket, Path, CT, ExpireSecs, Config) ->
 	Expires = to_bin(nklib_util:timestamp() + ExpireSecs),
 	Path2 = list_to_binary([$/, Bucket, Path]),
 	ToSign = list_to_binary(["PUT\n\n", CT, $\n, Expires, $\n, Path2]),
-	#{key_id:=KeyId, key:=Key} = Config,
-	Enc = base64:encode(crypto:hmac(sha, Key, ToSign)),
+	#{key:=KeyId, secret:=Secret} = Config,
+	Enc = base64:encode(crypto:hmac(sha, Secret, ToSign)),
 	Qs = list_to_binary([
 		"?AWSAccessKeyId=", url_encode(KeyId),
 		"&Signature=", url_encode(Enc),
@@ -272,9 +272,9 @@ sign_v4(Method, Uri, BodyHash, Config) ->
 		CredentialScope, $\n,
 		nklib_util:hex(crypto:hash(sha256, Request))
 	],
-	KeyId = maps:get(key_id, Config),
-	Key = maps:get(key, Config),
-	KDate = crypto:hmac(sha256, <<"AWS4", Key/binary>>, Date2),
+	KeyId = maps:get(key, Config),
+	Secret = maps:get(secret, Config),
+	KDate = crypto:hmac(sha256, <<"AWS4", Secret/binary>>, Date2),
 	KRegion = crypto:hmac(sha256, KDate, Region),
 	KService = crypto:hmac(sha256, KRegion, Service),
 	SigningKey = crypto:hmac(sha256, KService, <<"aws4_request">>),

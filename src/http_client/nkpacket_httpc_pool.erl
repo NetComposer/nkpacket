@@ -63,9 +63,6 @@ sample() ->
 
 -type id() :: nkpacket_pool:id().
 
--type method() :: get | post | put | delete | head | patch.
--type path() :: binary().
--type body() :: iolist().
 
 -type config() ::
     #{
@@ -106,9 +103,9 @@ start_link(Id, Config) ->
 
 
 %% @doc
--spec request(pid(), method(), path(), body(), request_opts()) ->
-    {ok, Status::100..599, Headers::[{binary(), binary()}], Body::binary()} |
-    {error, term()}.
+-spec request(pid(), nkpacket_httpc:method(), nkpacket:path(), nkpacket:body(), request_opts()) ->
+    {ok, nkpacket_httpc:status(), [nkpacket_httpc:header()], nkpacket_httpc:body()}
+    | {error, term()}.
 
 request(Pid, Method, Path, Body, Opts) ->
     case nkpacket_pool:get_conn_pid(Pid) of

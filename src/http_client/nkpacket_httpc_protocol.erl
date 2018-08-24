@@ -57,10 +57,7 @@
         headers => [{string()|binary(), string()|binary()}],
         body => iolist(),
         ref => reference(),
-        pid => pid(),
-        opts => #{
-            no_host_header => boolean()
-        }
+        pid => pid()
     }.
 
 
@@ -109,21 +106,15 @@ conn_init(NkPort) ->
         error ->
             undefined
     end,
-    Host1 = case maps:find(host, Opts) of
+    Host = case maps:find(host, Opts) of
         {ok, Host0} ->
             <<Host0/binary, $:, (nklib_util:to_binary(Port))/binary>>;
         error ->
             <<(nklib_util:to_host(Ip))/binary, $:, (nklib_util:to_binary(Port))/binary>>
     end,
-    Host2 = case UserState2 of
-        #{no_host_header:=true} ->
-            <<>>;
-        _ ->
-            Host1
-    end,
     Hds = [{to_bin(K), to_bin(V)} || {K, V} <- maps:get(headers, UserState2, [])],
 	State = #state{
-        host = Host2,
+        host = Host,
         refresh_req = RefreshReq,
         headers = Hds
     },
@@ -195,13 +186,16 @@ request(#{ref:=Ref}=Req, State) ->
     Path2 = to_bin(maps:get(path, Req, <<"/">>)),
     Hds1 = maps:get(headers, Req, []) ++ BaseHeaders,
     Hds2 = [{to_bin(H), to_bin(V)} || {H, V} <- Hds1],
-	Hds3 = case maps:get(opts, Req, #{}) of
-        #{no_host_header:=true} ->
+	Hds3 = case
+        lists:keymember(<<"host">>, 1, Hds2) orelse
+        lists:keymember(<<"Host">>, 1, Hds2)
+    of
+        true ->
             Hds2;
-        _ ->
+        false ->
             [{<<"Host">>, Host}|Hds2]
     end,
-    Body = to_bin(maps:get(body, Req, <<>>)),
+	Body = to_bin(maps:get(body, Req, <<>>)),
 	BodySize = nklib_util:to_binary(byte_size(Body)),
 	Hds4 = [{<<"Content-Length">>, BodySize}|Hds3],
     Pid = maps:get(pid, Req, none),

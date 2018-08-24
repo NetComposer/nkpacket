@@ -27,11 +27,29 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([request/3, request/4, request/5, request/6, do_request/6]).
--export([s3_test_get/0, s3_test_put/0, s3_test_get_url/0, s3_test_put_url/0]).
-%-export([get/0, put/0, url_get/0, url_put/0]).
+-export([test/0, s3_test_get/0, s3_test_put/0, s3_test_get_url/0, s3_test_put_url/0]).
+-export_type([method/0, path/0, header/0, body/0]).
 
 -include("nkpacket.hrl").
 -include_lib("nklib/include/nklib.hrl").
+
+
+%% ===================================================================
+%% Types
+%% ===================================================================
+
+-type method() :: get | post | put | delete | head | patch.
+-type path() :: binary().
+-type header() :: {binary(), binary()}.
+-type body() :: iolist().
+-type status() :: 100..599.
+
+-type opts() ::
+    nkpacket:connect_opts() |
+    #{
+        headers => [header()]       % Headers to include in all requests
+    }.
+
 
 
 %% ===================================================================
@@ -39,25 +57,37 @@
 %% ===================================================================
 
 %% @doc
+-spec request(nkpacket:connect_spec(), method(), path()) ->
+    {ok, status(), [header()], binary()} | {error, term()}.
+
 request(Url, Method, Path) ->
     request(Url, Method, Path, []).
 
 
 %% @doc
+-spec request(nkpacket:connect_spec(), method(), path(), [header()]) ->
+    {ok, status(), [header()], binary()} | {error, term()}.
+
 request(Url, Method, Path, Hds) ->
     request(Url, Method, Path, Hds, <<>>).
 
 
 %% @doc
+-spec request(nkpacket:connect_spec(), method(), path(), [header()], body()) ->
+    {ok, status(), [header()], binary()} | {error, term()}.
+
 request(Url, Method, Path, Hds, Body) ->
     request(Url, Method, Path, Hds, Body, #{}).
 
 
 %% @doc
+-spec request(nkpacket:connect_spec(), method(), path(), [header()], body(), opts()) ->
+    {ok, status(), [header()], binary()} | {error, term()}.
+
 request(Url, Method, Path, Hds, Body, Opts) ->
     ConnOpts = #{
         monitor => self(),
-        user_state => #{},
+        user_state => maps:with([headers], Opts),
         connect_timeout => maps:get(connect_timeout, Opts, 1000),
         idle_timeout => maps:get(idle_timeout, Opts, 60000),
         debug => maps:get(debug, Opts, false)
@@ -71,6 +101,9 @@ request(Url, Method, Path, Hds, Body, Opts) ->
 
 
 %% @doc
+-spec do_request(pid(), method(), path(), [header()], body(), opts()) ->
+    {ok, status(), [header()], binary()} | {error, term()}.
+
 do_request(ConnPid, Method, Path, Hds, Body, Opts) ->
     Ref = make_ref(),
     Req = #{
@@ -79,8 +112,7 @@ do_request(ConnPid, Method, Path, Hds, Body, Opts) ->
         method => Method,
         path => Path,
         headers => Hds,
-        body => Body,
-        opts => Opts
+        body => Body
     },
     Timeout = maps:get(timeout, Opts, 5000),
     case nkpacket:send(ConnPid, {nkpacket_http, Req}) of
@@ -125,19 +157,27 @@ do_request_body(Ref, Opts, Timeout, Status, Headers, Chunks) ->
 %% ===================================================================
 
 % Set your credentials here
-% export MINIO_ACCESS_KEY=5UBED0Q9FB7MFZ5EWIOJ; export MINIO_SECRET_KEY=CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI; minio server 1
+% export MINIO_ACCESS_KEY=5UBED0Q9FB7MFZ5EWIOJ; export MINIO_SECRET_KEY=CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI; minio server .
 
--define(TEST_KEY_ID, <<"5UBED0Q9FB7MFZ5EWIOJ">>).
--define(TEST_KEY, <<"CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI">>).
+-define(TEST_KEY, <<"5UBED0Q9FB7MFZ5EWIOJ">>).
+-define(TEST_SECRET, <<"CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI">>).
 -define(TEST_HOST, <<"http://127.0.0.1:9000">>).
 -define(TEST_BUCKET, <<"bucket1">>).
 -define(TEST_PATH, <<"/test1">>).
 
 
+test() ->
+    {ok, 200, _, <<>>} = s3_test_put(),
+    {ok, 200, _, <<"124">>} = s3_test_get(),
+    {ok, 200, _, <<>>} = s3_test_put_url(),
+    {ok, 200, _, <<"125">>} = s3_test_get_url(),
+    ok.
+
+
 s3_test_config() ->
     #{
-        key_id => ?TEST_KEY_ID,
         key => ?TEST_KEY,
+        secret => ?TEST_SECRET,
         host => ?TEST_HOST
     }.
 
@@ -145,7 +185,8 @@ s3_test_config() ->
 s3_test_get() ->
     C = s3_test_config(),
     {Uri, Path, Headers} = nkpacket_httpc_s3:get_object(?TEST_BUCKET, ?TEST_PATH, C),
-    request(Uri, get, Path, Headers, <<>>, #{no_host_header=>true}).
+    Opts = #{tls_verify => host, no_host_header=>true},
+    request(Uri, get, Path, Headers, <<>>, Opts).
 
 
 s3_test_put() ->
@@ -159,7 +200,8 @@ s3_test_put() ->
     Body = <<"124">>,
     Hash = crypto:hash(sha256, Body),
     {Uri, Path, Headers} = nkpacket_httpc_s3:put_object(?TEST_BUCKET, ?TEST_PATH, Hash, C2),
-    request(Uri, put, Path, Headers, Body, #{no_host_header=>true}).
+    Opts = #{tls_verify => host, no_host_header=>true},
+    request(Uri, put, Path, Headers, Body, Opts).
 
 
 s3_test_put_url() ->
@@ -167,13 +209,15 @@ s3_test_put_url() ->
     {Uri, Path} = nkpacket_httpc_s3:make_put_url(?TEST_BUCKET, ?TEST_PATH, CT,
                                                  5000, s3_test_config()),
     Body = <<"125">>,
-    request(Uri, put, Path, [{<<"content-type">>, CT}], Body, #{}).
+    Opts = #{tls_verify => host},
+    request(Uri, put, Path, [{<<"content-type">>, CT}], Body, Opts).
 
 
 
 s3_test_get_url() ->
     {Uri, Path} = nkpacket_httpc_s3:make_get_url(?TEST_BUCKET, ?TEST_PATH, 5000, s3_test_config()),
-    request(Uri, get, Path, [], <<>>, #{}).
+    Opts = #{tls_verify => host},
+    request(Uri, get, Path, [], <<>>, Opts).
 
 
 %%%% @private

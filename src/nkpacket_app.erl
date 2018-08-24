@@ -64,6 +64,7 @@ start(_Type, _Args) ->
             ExtIp = nklib_util:to_host(nkpacket_app:get(ext_ip)),
             lager:info("Main IP is ~s (~s). External IP is ~s", 
                        [MainIp, MainIp6, ExtIp]),
+            code:ensure_loaded(nkpacket_httpc_protocol),
             {ok, Pid};
         {error, Error} ->
             lager:error("Config error: ~p", [Error]),
