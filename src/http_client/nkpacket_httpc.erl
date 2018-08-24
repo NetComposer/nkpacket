@@ -26,7 +26,7 @@
 -module(nkpacket_httpc).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([request/3, request/4, request/5, request/6, do_request/6]).
+-export([request/3, request/4, request/5, request/6, do_connect/2, do_request/6]).
 -export([test/0, s3_test_get/0, s3_test_put/0, s3_test_get_url/0, s3_test_put_url/0]).
 -export_type([method/0, path/0, header/0, body/0]).
 
@@ -85,6 +85,19 @@ request(Url, Method, Path, Hds, Body) ->
     {ok, status(), [header()], binary()} | {error, term()}.
 
 request(Url, Method, Path, Hds, Body, Opts) ->
+    case do_connect(Url, Opts) of
+        {ok, ConnPid} ->
+            do_request(ConnPid, Method, Path, Hds, Body, Opts);
+        {error, Error} ->
+            {error, Error}
+    end.
+
+
+%% @doc
+-spec do_connect(nkpacket:connect_spec(), opts()) ->
+    {ok, pid()} | {error, term()}.
+
+do_connect(Url, Opts) ->
     ConnOpts = #{
         monitor => self(),
         user_state => maps:with([headers], Opts),
@@ -94,7 +107,7 @@ request(Url, Method, Path, Hds, Body, Opts) ->
     },
     case nkpacket:connect(Url, ConnOpts) of
         {ok, ConnPid} ->
-            do_request(ConnPid, Method, Path, Hds, Body, Opts);
+            {ok, ConnPid};
         {error, Error} ->
             {error, Error}
     end.
@@ -181,12 +194,14 @@ s3_test_config() ->
         host => ?TEST_HOST
     }.
 
+opts() ->
+    #{tls_verify => host}.
+
 
 s3_test_get() ->
     C = s3_test_config(),
     {Uri, Path, Headers} = nkpacket_httpc_s3:get_object(?TEST_BUCKET, ?TEST_PATH, C),
-    Opts = #{tls_verify => host, no_host_header=>true},
-    request(Uri, get, Path, Headers, <<>>, Opts).
+    request(Uri, get, Path, Headers, <<>>, opts()).
 
 
 s3_test_put() ->
@@ -200,8 +215,7 @@ s3_test_put() ->
     Body = <<"124">>,
     Hash = crypto:hash(sha256, Body),
     {Uri, Path, Headers} = nkpacket_httpc_s3:put_object(?TEST_BUCKET, ?TEST_PATH, Hash, C2),
-    Opts = #{tls_verify => host, no_host_header=>true},
-    request(Uri, put, Path, Headers, Body, Opts).
+    request(Uri, put, Path, Headers, Body, opts()).
 
 
 s3_test_put_url() ->
@@ -209,15 +223,13 @@ s3_test_put_url() ->
     {Uri, Path} = nkpacket_httpc_s3:make_put_url(?TEST_BUCKET, ?TEST_PATH, CT,
                                                  5000, s3_test_config()),
     Body = <<"125">>,
-    Opts = #{tls_verify => host},
-    request(Uri, put, Path, [{<<"content-type">>, CT}], Body, Opts).
+    request(Uri, put, Path, [{<<"content-type">>, CT}], Body, opts()).
 
 
 
 s3_test_get_url() ->
     {Uri, Path} = nkpacket_httpc_s3:make_get_url(?TEST_BUCKET, ?TEST_PATH, 5000, s3_test_config()),
-    Opts = #{tls_verify => host},
-    request(Uri, get, Path, [], <<>>, Opts).
+    request(Uri, get, Path, [], <<>>, opts()).
 
 
 %%%% @private

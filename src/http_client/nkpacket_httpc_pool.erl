@@ -52,7 +52,7 @@ sample() ->
             }
         ],
         debug => true,
-        resolve_interval => 0
+        resolve_interval_secs => 0
     },
     start_link(test, Config).
 
@@ -77,7 +77,7 @@ sample() ->
             }
         ],
         debug => boolean(),
-        resolve_interval => integer()               % Secs, 0 to avoid
+        resolve_interval_secs => integer()               % Secs, 0 to avoid
     }.
 
 -type request_opts() ::

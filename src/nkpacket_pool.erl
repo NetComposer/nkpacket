@@ -84,7 +84,7 @@
             }
         ],
         debug => boolean(),
-        resolve_interval => integer(),               % Secs, 0 to avoid
+        resolve_interval_secs => integer(),               % Secs, 0 to avoid
         conn_resolve_fun => conn_resolve_fun(),
         conn_start_fun => conn_start_fun(),
         conn_stop_fun => conn_stop_fun()
@@ -183,7 +183,7 @@ find(Id) ->
     conn_pids :: #{pid() => {conn_id(), Mon::reference()|undefined}},
     conn_user_mons :: #{reference() => pid()},
     max_weight :: integer(),
-    resolve_interval :: integer(),
+    resolve_interval_secs :: integer(),
     conn_resolve_fun :: conn_resolve_fun(),
     conn_start_fun :: conn_start_fun(),
     conn_stop_fun :: conn_start_fun(),
@@ -209,7 +209,7 @@ init([Id, Config]) ->
         max_weight = 0,
         debug = maps:get(debug, Config, false),
         headers = maps:get(headers, Config, []),
-        resolve_interval = maps:get(resolve_interval, Config, 0),
+        resolve_interval_secs = maps:get(resolve_interval_secs, Config, 0),
         conn_resolve_fun = maps:get(conn_resolve_fun, Config, fun ?MODULE:conn_resolve_fun/3),
         conn_start_fun = maps:get(conn_start_fun, Config, fun ?MODULE:conn_start_fun/1),
         conn_stop_fun = maps:get(conn_stop_fun, Config, fun ?MODULE:conn_stop_fun/1)
@@ -278,7 +278,7 @@ handle_cast({resolve_data, {_Specs, [], _Max}}, State) ->
 handle_cast({resolve_data, {Specs, Weights, Max}}, State) ->
     ?DEBUG("new resolved spec: ~p", [Specs], State),
     ?DEBUG("new resolved weights: ~p", [Weights], State),
-    #state{resolve_interval=Time} = State,
+    #state{resolve_interval_secs=Time} = State,
     case Time > 0 of
         true ->
             erlang:send_after(Time*1000, self(), launch_resolve);
