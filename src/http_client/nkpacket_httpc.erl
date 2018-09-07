@@ -27,7 +27,6 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([request/3, request/4, request/5, request/6, do_connect/2, do_request/6]).
--export([test/0, s3_test_get/0, s3_test_put/0, s3_test_get_url/0, s3_test_put_url/0]).
 -export_type([method/0, path/0, header/0, body/0]).
 
 -include("nkpacket.hrl").
@@ -38,7 +37,7 @@
 %% Types
 %% ===================================================================
 
--type method() :: get | post | put | delete | head | patch.
+-type method() :: get | post | put | delete | head | patch | binary().
 -type path() :: binary().
 -type header() :: {binary(), binary()}.
 -type body() :: iolist().
@@ -117,7 +116,7 @@ do_connect(Url, Opts) ->
 -spec do_request(pid(), method(), path(), [header()], body(), opts()) ->
     {ok, status(), [header()], binary()} | {error, term()}.
 
-do_request(ConnPid, Method, Path, Hds, Body, Opts) ->
+do_request(ConnPid, Method, Path, Hds, Body, Opts) when is_atom(Method) ->
     Ref = make_ref(),
     Req = #{
         ref => Ref,
@@ -141,6 +140,14 @@ do_request(ConnPid, Method, Path, Hds, Body, Opts) ->
             end;
         {error, Error} ->
             {error, Error}
+    end;
+
+do_request(ConnPid, Method, Path, Hds, Body, Opts) ->
+    case catch binary_to_existing_atom(nklib_util:to_lower(Method), latin1) of
+        Method2 when is_atom(Method2) ->
+            do_request(ConnPid, Method2, Path, Hds, Body, Opts);
+        _ ->
+            {error, method_unknown}
     end.
 
 
@@ -163,76 +170,3 @@ do_request_body(Ref, Opts, Timeout, Status, Headers, Chunks) ->
     after Timeout ->
         {error, timeout2}
     end.
-
-
-%% ===================================================================
-%% S3 Test
-%% ===================================================================
-
-% Set your credentials here
-% export MINIO_ACCESS_KEY=5UBED0Q9FB7MFZ5EWIOJ; export MINIO_SECRET_KEY=CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI; minio server .
-
--define(TEST_KEY, <<"5UBED0Q9FB7MFZ5EWIOJ">>).
--define(TEST_SECRET, <<"CaK4frX0uixBOh16puEsWEvdjQ3X3RTDvkvE+tUI">>).
--define(TEST_HOST, <<"http://127.0.0.1:9000">>).
--define(TEST_BUCKET, <<"bucket1">>).
--define(TEST_PATH, <<"/test1">>).
-
-
-test() ->
-    {ok, 200, _, <<>>} = s3_test_put(),
-    {ok, 200, _, <<"124">>} = s3_test_get(),
-    {ok, 200, _, <<>>} = s3_test_put_url(),
-    {ok, 200, _, <<"125">>} = s3_test_get_url(),
-    ok.
-
-
-s3_test_config() ->
-    #{
-        key => ?TEST_KEY,
-        secret => ?TEST_SECRET,
-        host => ?TEST_HOST
-    }.
-
-opts() ->
-    #{tls_verify => host}.
-
-
-s3_test_get() ->
-    C = s3_test_config(),
-    {Uri, Path, Headers} = nkpacket_httpc_s3:get_object(?TEST_BUCKET, ?TEST_PATH, C),
-    request(Uri, get, Path, Headers, <<>>, opts()).
-
-
-s3_test_put() ->
-    C1 = s3_test_config(),
-    C2 = C1#{
-        headers => [{<<"content-type">>, <<"application/json">>}],
-        params => [{<<"a">>, <<"1">>}, {<<"b">>, <<"2">>}],
-        meta => [{<<"b">>, <<"2">>}],
-        acl => private
-    },
-    Body = <<"124">>,
-    Hash = crypto:hash(sha256, Body),
-    {Uri, Path, Headers} = nkpacket_httpc_s3:put_object(?TEST_BUCKET, ?TEST_PATH, Hash, C2),
-    request(Uri, put, Path, Headers, Body, opts()).
-
-
-s3_test_put_url() ->
-    CT = <<"application/json">>,
-    {Uri, Path} = nkpacket_httpc_s3:make_put_url(?TEST_BUCKET, ?TEST_PATH, CT,
-                                                 5000, s3_test_config()),
-    Body = <<"125">>,
-    request(Uri, put, Path, [{<<"content-type">>, CT}], Body, opts()).
-
-
-
-s3_test_get_url() ->
-    {Uri, Path} = nkpacket_httpc_s3:make_get_url(?TEST_BUCKET, ?TEST_PATH, 5000, s3_test_config()),
-    request(Uri, get, Path, [], <<>>, opts()).
-
-
-%%%% @private
-%%to_bin(Term) when is_binary(Term) -> Term;
-%%to_bin(Term) -> nklib_util:to_binary(Term).
-
