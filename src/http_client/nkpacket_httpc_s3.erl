@@ -21,7 +21,7 @@
 
 %% S3 client
 -module(nkpacket_httpc_s3).
--export([get_object/3, put_object/5, make_get_url/4, make_put_url/5]).
+-export([get_object/3, get_meta/3, put_object/5, make_get_url/4, make_put_url/5, delete/3]).
 -export([test/0]).
 
 -include_lib("nklib/include/nklib.hrl").
@@ -71,6 +71,17 @@ get_object(Bucket, Path, Config) ->
 	nklib_aws:request_v4(Config2).
 
 
+-spec get_meta(binary(), binary(), config()) ->
+	{Method::binary(), Uri::binary(), [{binary(), binary()}]}.
+
+get_meta(Bucket, Path, Config) ->
+	Config2 = Config#{
+		method => head,
+		path => list_to_binary([$/, Bucket, Path]),
+		service => s3
+	},
+	nklib_aws:request_v4(Config2).
+
 
 %% @doc
 %% Valid Headers:
@@ -110,6 +121,17 @@ put_object(Bucket, Path, CT, BodyHash, Config) ->
 	},
 	nklib_aws:request_v4(Config2).
 
+
+-spec delete(binary(), binary(), config()) ->
+	{Method::binary(), Uri::binary(), [{binary(), binary()}]}.
+
+delete(Bucket, Path, Config) ->
+	Config2 = Config#{
+		method => delete,
+		path => list_to_binary([$/, Bucket, Path]),
+		service => s3
+	},
+	nklib_aws:request_v4(Config2).
 
 
 %% @doc Generates an URL-like access for read
