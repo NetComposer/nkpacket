@@ -35,7 +35,8 @@
 -export([stop_all/0, stop_all/1]).
 -export([get_id_pids/1, send/2, send/3]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
--export([get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1, get_local_bin/1]).
+-export([get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1, get_local_bin/1,
+         get_external_url/1]).
 -export([get_class/1, get_id/1, get_user_state/1]).
 
 -export_type([id/0, class/0, transport/0, protocol/0, nkport/0, nkconn/0]).
@@ -111,6 +112,9 @@
         host => string() | binary(),            % Listen only on this host
         path => string() | binary(),            % Listen on this path and subpaths
         get_headers => boolean() | [binary()],  % Get all headers or some
+        external_host => binary(),              % For callbacks
+        external_path => binary(),              % For callbacks
+        external_port => inet:port_number(),    % For callbacks
         cowboy_opts => cowboy_http_opts(),
 
         % WS/WSS
@@ -562,6 +566,16 @@ get_user_state(#nkport{user_state=UserState}) ->
     {ok, UserState};
 get_user_state(Id) ->
     apply_nkport(Id, fun get_user_state/1).
+
+
+%% @doc
+-spec get_external_url(nkport()) ->
+    {ok, binary()|undefined} | {error, term()}.
+
+get_external_url(#nkport{opts=Opts}) ->
+    {ok, maps:get(external_url, Opts, undefined)};
+get_external_url(Id) ->
+    apply_nkport(Id, fun get_external_url/1).
 
 
 %% @private Finds a listening transport of Proto.

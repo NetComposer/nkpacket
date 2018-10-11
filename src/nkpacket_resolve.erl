@@ -113,10 +113,52 @@ do_resolve_nkconn(#nkconn{protocol=Protocol, opts=Opts0} = Conn, Opts) ->
     Opts3 = maps:merge(Opts0, Opts2),
     case nkpacket_util:parse_opts(Opts3) of
         {ok, Opts4} ->
-            {ok, [Conn#nkconn{opts=Opts4}]};
+            Conn2 = Conn#nkconn{opts=Opts4},
+            Conn3 = resolve_external(Conn2),
+            {ok, [Conn3]};
         {error, Error} ->
             {error, Error}
     end.
+
+
+%% @private
+%% Generates key "external_url" for http transports
+%% No final '/'
+resolve_external(#nkconn{transp=Transp}=Conn) when Transp==http; Transp==https ->
+    #nkconn{ip=Ip, port=Port, opts=Opts} = Conn,
+    Ext1 = list_to_binary([
+        nklib_util:to_binary(Transp), "://",
+        case maps:get(external_host, Opts, <<>>) of
+            <<>> ->
+                nklib_util:to_host(Ip);
+            ExtHost ->
+                ExtHost
+        end,
+        case
+            case maps:get(external_port, Opts, 0) of
+                0 ->
+                    Port;
+                ExtPort ->
+                    ExtPort
+            end
+        of
+            80 when Transp == http ->
+                <<>>;
+            443 when Transp == https ->
+                <<>>;
+            MyPort ->
+                [":", integer_to_binary(MyPort)]
+        end,
+        filename:join([
+            maps:get(path, Opts, "/"),
+            maps:get(external_path, Opts, "/")
+        ])
+    ]),
+    Ext2 = nklib_url:norm(Ext1),
+    Conn#nkconn{opts=Opts#{external_url=>Ext2}};
+
+resolve_external(Conn) ->
+    Conn.
 
 
 %% @private
@@ -211,10 +253,12 @@ do_resolve_uri(Uri, Opts) ->
         Opts4 = maps:without([resolve_type, protocol], Opts3),
         case nkpacket_dns:resolve(Uri, Opts3#{protocol=>Protocol}) of
             {ok, Addrs} ->
-                Conns = [ 
-                    #nkconn{protocol=Protocol, transp=Transp, ip=Addr, port=Port, opts=Opts4}
-                    || {Transp, Addr, Port} <- Addrs
-                ],
+                Conns = lists:map(
+                    fun({Transp, Addr, Port}) ->
+                        Conn = #nkconn{protocol=Protocol, transp=Transp, ip=Addr, port=Port, opts=Opts4},
+                        resolve_external(Conn)
+                    end,
+                    Addrs),
                 {ok, Conns};
             {error, Error} ->
                 {error, Error}
