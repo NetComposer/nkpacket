@@ -36,7 +36,7 @@
 -export([get_id_pids/1, send/2, send/3]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
 -export([get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1, get_local_bin/1,
-         get_external_url/1]).
+         get_external_url/1, get_debug/1]).
 -export([get_class/1, get_id/1, get_user_state/1]).
 
 -export_type([id/0, class/0, transport/0, protocol/0, nkport/0, nkconn/0]).
@@ -417,8 +417,6 @@ connect(Conn, Opts) ->
     end.
 
 
-
-
 %% @doc Gets the current pids for a listener or connection
 -spec get_id_pids(id()|nkport()|pid()) ->
     [pid()].
@@ -555,7 +553,7 @@ get_class(Id) ->
 get_id(#nkport{id=Id, class=Class}) ->
     {ok, Class, Id};
 get_id(Id) ->
-    apply_nkport(Id, fun get_user_state/1).
+    apply_nkport(Id, fun get_id/1).
 
 
 %% @doc
@@ -576,6 +574,15 @@ get_external_url(#nkport{opts=Opts}) ->
     {ok, maps:get(external_url, Opts, undefined)};
 get_external_url(Id) ->
     apply_nkport(Id, fun get_external_url/1).
+
+%% @doc
+-spec get_debug(id()|pid()|nkport()) ->
+    {ok, boolean()} | error.
+
+get_debug(#nkport{opts=Opts}) ->
+    {ok, maps:get(debug, Opts, false)};
+get_debug(Id) ->
+    apply_nkport(Id, fun get_debug/1).
 
 
 %% @private Finds a listening transport of Proto.
