@@ -19,6 +19,32 @@
 %% -------------------------------------------------------------------
 
 %% @doc Resolver
+%%
+%% - An 'id' will always be added to returned conn if not present
+%%
+%% - If it is a #nkconn{}, {connect, #nkconn{}} or {current, #nkconn{}}:
+%%      - call options are merged with nkconn's options,
+%%        and also with protocol's options if resolve_opts/0 is exported.
+%%      - options a are parsed and added to nkconn's options.
+%%
+%% - If it is an #uri{}:
+%%      - a protocol is found:
+%%          - if 'protocol' present in options, that's is
+%%          - If not, but http or https, is nkpacket_httpc_protocol
+%%          - If 'class' is present in options, nkpacket:get_protocol(Class, Scheme) is called
+%%          - If 'schemes' is present, protocol is extracted from it if present
+%%          - If nothing works, nkpacket:get_protocol(Scheme) is called
+%%      - protocols' resolve_opts/0 is called to get additional options
+%%      - uri's options are processed:
+%%          - 'host' is added if not standard
+%%          - 'user' and 'pass' are added
+%%          - 'headers' is added
+%%      - uri's options and parameter options are parsed and merged
+%%      - nkpacket_dns:resolve(Uri, Opts) is called with the protocol to get #nkconn{}'s
+%%
+%% - Pid's and #nkport's are only allowed if resolve_type = send
+%%
+%% - User uris are parsed and, if an #uri{} is found, it tries again
 
 
 -module(nkpacket_resolve).
@@ -40,6 +66,9 @@ resolve(Any) ->
 
 
 %% @private
+-spec resolve([nkpacket:send_spec()], nkpacket:resolve_opts()) ->
+    {ok, [nkpacket:send_spec()]} | {error, term()}.
+
 resolve([], _Opts) ->
     {ok, []};
 
@@ -56,8 +85,24 @@ resolve([], _Opts, Acc) ->
 
 resolve([#nkconn{}=Conn|Rest], Opts, Acc) ->
     case do_resolve_nkconn(Conn, Opts) of
-        {ok, Conns} ->
-            resolve(Rest, Opts, Acc++Conns);
+        {ok, Conn2} ->
+            resolve(Rest, Opts, [Conn2|Acc]);
+        {error, Error} ->
+            {error, Error}
+    end;
+
+resolve([{connect, #nkconn{}=Conn}|Rest], #{resolve_type:=send}=Opts, Acc) ->
+    case do_resolve_nkconn(Conn, Opts) of
+        {ok, Conn2} ->
+            resolve(Rest, Opts, [{connect, Conn2}|Acc]);
+        {error, Error} ->
+            {error, Error}
+    end;
+
+resolve([{current, #nkconn{}=Conn}|Rest], #{resolve_type:=send}=Opts, Acc) ->
+    case do_resolve_nkconn(Conn, Opts) of
+        {ok, Conn2} ->
+            resolve(Rest, Opts, [{current ,Conn2}|Acc]);
         {error, Error} ->
             {error, Error}
     end;
@@ -75,22 +120,6 @@ resolve([Pid|Rest], #{resolve_type:=send}=Opts, Acc) when is_pid(Pid) ->
 
 resolve([#nkport{}=Port|Rest], #{resolve_type:=send}=Opts, Acc) ->
     resolve(Rest, Opts, Acc++[Port]);
-
-resolve([{connect, #nkconn{}=Conn}|Rest], #{resolve_type:=send}=Opts, Acc) ->
-    case do_resolve_nkconn(Conn, Opts) of
-        {ok, Conns} ->
-            resolve(Rest, Opts, Acc++[{connect, C} || C <- Conns]);
-        {error, Error} ->
-            {error, Error}
-    end;
-
-resolve([{current, #nkconn{}=Conn}|Rest], #{resolve_type:=send}=Opts, Acc) ->
-    case do_resolve_nkconn(Conn, Opts) of
-        {ok, Conns} ->
-            resolve(Rest, Opts, Acc++[{current ,C} || C <- Conns]);
-        {error, Error} ->
-            {error, Error}
-    end;
 
 resolve([Uri|Rest], Opts, Acc) ->
     case nklib_parse:uris(Uri) of
@@ -115,7 +144,7 @@ do_resolve_nkconn(#nkconn{protocol=Protocol, opts=Opts0} = Conn, Opts) ->
         {ok, Opts4} ->
             Conn2 = Conn#nkconn{opts=Opts4},
             Conn3 = resolve_external(Conn2),
-            {ok, [Conn3]};
+            {ok, Conn3};
         {error, Error} ->
             {error, Error}
     end.

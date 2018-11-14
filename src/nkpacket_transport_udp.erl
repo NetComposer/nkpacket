@@ -166,18 +166,20 @@ init([NkPort]) ->
         transp     = udp,
         listen_ip  = ListenIp,
         listen_port= ListenPort,
-        opts       = Meta
+        opts       = Opts
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
-    Debug = maps:get(debug, Meta, false),
+    Debug = maps:get(debug, Opts, false),
     put(nkpacket_debug, Debug),
     try
         % ListenOpts = [binary, {reuseaddr, true}, {ip, ListenIp}, {active, once}],
         ListenOpts = [binary, {ip, ListenIp}, {active, once}],
         Socket = case nkpacket_transport:open_port(NkPort, ListenOpts) of
-            {ok, Socket0}  -> Socket0;
-            {error, Error} -> throw(Error) 
+            {ok, Socket0}  ->
+                Socket0;
+            {error, Error} ->
+                throw(Error)
         end,
         {ok, {LocalIp, LocalPort}} = inet:sockname(Socket),
         Self = self(),
@@ -188,7 +190,7 @@ init([NkPort]) ->
             pid = Self,
             socket = Socket
         },
-        TcpPid = case Meta of
+        TcpPid = case Opts of
             #{udp_starts_tcp:=true} -> 
                 TcpNkPort = NkPort1#nkport{id={udp_to_tcp, Id}, transp=tcp},
                 case nkpacket_transport_tcp:start_link(TcpNkPort) of
@@ -203,26 +205,28 @@ init([NkPort]) ->
                 undefined
         end,
         nkpacket_util:register_listener(NkPort),
-        ConnMeta = maps:with(?CONN_LISTEN_OPTS, Meta),
-        ConnPort = NkPort1#nkport{opts=ConnMeta},
+        ConnOpts = maps:with(?CONN_LISTEN_OPTS, Opts),
+        ConnPort = NkPort1#nkport{opts=ConnOpts},
         ListenType = case size(ListenIp) of
             4 -> nkpacket_listen4;
             8 -> nkpacket_listen6
         end,
         nklib_proc:put({ListenType, Class, Protocol, udp}, ConnPort),
         {ok, ProtoState} = nkpacket_util:init_protocol(Protocol, listen_init, NkPort1),
-        MonRef = case Meta of
-            #{monitor:=UserRef} -> erlang:monitor(process, UserRef);
-            _ -> undefined
+        MonRef = case Opts of
+            #{monitor:=UserRef} ->
+                erlang:monitor(process, UserRef);
+            _ ->
+                undefined
         end,        
         State = #state{
             nkport = ConnPort,
             socket = Socket,
             tcp_pid = TcpPid,
-            no_connections = maps:get(udp_no_connections, Meta, false),
-            reply_stun = maps:get(udp_stun_reply, Meta, false),
+            no_connections = maps:get(udp_no_connections, Opts, false),
+            reply_stun = maps:get(udp_stun_reply, Opts, false),
             stuns = [],
-            timer_t1 = maps:get(udp_stun_t1, Meta, 500),
+            timer_t1 = maps:get(udp_stun_t1, Opts, 500),
             protocol = Protocol,
             proto_state = ProtoState,
             monitor_ref = MonRef
@@ -490,7 +494,7 @@ read_packets(Ip, Port, Packet, #state{no_connections=true, nkport=NkPort}=State,
 
 read_packets(Ip, Port, Packet, #state{socket=Socket}=State, N) ->
     case do_connect(Ip, Port, State) of
-        {ok, Pid} ->
+        {ok, Pid} when is_pid(Pid) ->
             nkpacket_connection:incoming(Pid, Packet),
             case N>0 andalso gen_udp:recv(Socket, 0, 0) of
                 {ok, {Ip1, Port1, Packet1}} -> 
@@ -511,7 +515,7 @@ do_connect(Ip, Port, State) ->
 %% @private
 do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
     #nkport{class=Class, protocol=Proto, opts=ListenMeta} = NkPort,
-    Conn = #nkconn{protocol=Proto, transp=sctp, ip=Ip, port=Port, opts=#{class=>Class}},
+    Conn = #nkconn{protocol=Proto, transp=udp, ip=Ip, port=Port, opts=#{class=>Class}},
     case nkpacket_transport:get_connected(Conn) of
         [Pid|_] -> 
             {ok, Pid};

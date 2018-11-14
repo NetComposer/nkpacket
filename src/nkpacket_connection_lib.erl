@@ -22,7 +22,7 @@
 -module(nkpacket_connection_lib).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([is_max/0, raw_send/2, raw_send_sync/2, raw_stop/1, apply_msg_fun/2]).
+-export([is_max/0, raw_send/2, raw_send_sync/2, raw_stop/1]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include_lib("kernel/include/inet_sctp.hrl").
@@ -64,8 +64,10 @@ raw_send(#nkport{transp=udp, opts=Opts} = NkPort, Data) ->
         false ->
             #nkport{socket=Socket, remote_ip=Ip, remote_port=Port} = NkPort,
             case gen_udp:send(Socket, Ip, Port, Data) of
-                {error, emsgsize} -> {error, udp_too_large};
-                Other -> Other
+                {error, emsgsize} ->
+                    {error, udp_too_large};
+                Other ->
+                    Other
             end
     end;
 
@@ -179,15 +181,3 @@ raw_stop(#nkport{socket=Pid}) when is_pid(Pid) ->
 raw_stop(_) ->
     {error, invalid_transport}.
 
-
-%% @private
--spec apply_msg_fun(term(), #nkport{}) ->
-    term().
-
-apply_msg_fun(Msg, #nkport{opts=Opts} = NkPort) ->
-    case Opts of
-        #{pre_send_fun:=Fun} ->
-            Fun(Msg, NkPort);
-        _ ->
-            Msg
-    end.

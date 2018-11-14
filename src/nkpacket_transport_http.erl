@@ -213,10 +213,10 @@ handle_call({nkpacket_start, Ip, Port, Pid}, _From, State) ->
             % and the cowboy process (using 'socket')
             % TODO Should the connection call the http_init of the protocol?
             case nkpacket_connection:start(NkPort1) of
-                {ok, #nkport{}=NkPort2} ->
-                    ?DEBUG("listener accepted connection: ~p", 
-                          [NkPort2]),
-                    {reply, {ok, NkPort2#nkport{opts=Opts}}, State};
+                {ok, ConnPid} ->
+                    NkPort2 = NkPort1#nkport{pid=ConnPid, opts=Opts},
+                    ?DEBUG("listener accepted connection: ~p", [NkPort2]),
+                    {reply, {ok, NkPort2}, State};
                 {error, Error} ->
                     ?DEBUG("listener did not accepted connection:"
                             " ~p", [Error]),

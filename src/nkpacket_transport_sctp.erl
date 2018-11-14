@@ -175,8 +175,10 @@ handle_call({nkpacket_connect, ConnPort}, From, State) ->
         pending_conns = Conns
     } = State,
     Timeout = case maps:get(connect_timeout, Meta, undefined) of
-        undefined -> nkpacket_config_cache:connect_timeout();
-        Timeout0 -> Timeout0
+        undefined ->
+            nkpacket_config_cache:connect_timeout();
+        Timeout0 ->
+            Timeout0
     end,
     Self = self(),
     Fun = fun() ->
@@ -268,7 +270,7 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
         Data when is_binary(Data) ->
             [#sctp_sndrcvinfo{assoc_id=AssocId}] = Anc,
             case do_connect(Ip, Port, AssocId, State) of
-                {ok, #nkport{pid=Pid}} ->
+                {ok, Pid} when is_pid(Pid) ->
                     nkpacket_connection:incoming(Pid, Data);
                 {error, Error} ->
                     ?LLOG(info, "error ~p on SCTP connection up", [Error])

@@ -128,6 +128,7 @@ safe_syntax() ->
         external_path,
         external_port,
         ws_proto,
+        headers,                % Not sure
         debug
     ] ++ maps:keys(tls_syntax()),
     Syntax = syntax(),

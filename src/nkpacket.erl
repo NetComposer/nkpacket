@@ -328,16 +328,6 @@ get_listener(Conn) ->
 get_listener(Conn, Opts) ->
     case nkpacket_resolve:resolve(Conn, Opts) of
         {ok, [#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=#{id:=Id}=Opts2}]} ->
-            % Resolve will allways add the 'id' field
-%%            Opts3 = case Transp==http orelse Transp==https of
-%%                true ->
-%%                    WebProto = nkpacket_util:make_web_proto(Opts2),
-%%                    Opts2#{http_proto=>WebProto};
-%%                _ ->
-%%                    Opts2
-%%            end,
-            Opts3 = Opts2,
-            % We cannot yet generate id, port can be 0
             NkPort = #nkport{
                 id         = maps:get(id, Opts2),
                 class      = maps:get(class, Opts2, none),
@@ -345,8 +335,8 @@ get_listener(Conn, Opts) ->
                 transp     = Transp,
                 listen_ip  = Ip,
                 listen_port= Port,
-                opts       = maps:without([id, class, user_state], Opts3),
-                user_state = maps:get(user_state, Opts3, undefined)
+                opts       = maps:without([id, class, user_state], Opts2),
+                user_state = maps:get(user_state, Opts2, undefined)
             },
             case nkpacket_transport:get_listener(NkPort) of
                 {ok, Listener} ->
@@ -384,8 +374,9 @@ send(SendSpec, Msg) ->
 %% @doc Sends a message to a connection
 %% If a class is included, it will try to reuse any existing connection of the same class
 %% (except if force_new option is set)
+%% If option pre_send_fun is used, an updated message will be returned along the pid
 -spec send(send_spec() | [send_spec()], term(), send_opts()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, pid()} | {ok, pid(), term()} | {error, term()}.
 
 send(SendSpec, Msg, Opts) ->
     case nkpacket_resolve:resolve(SendSpec, Opts#{resolve_type=>send}) of
@@ -406,7 +397,7 @@ connect(Any) ->
 
 %% @doc Forces a new outbound connection.
 -spec connect(connect_spec()|[connect_spec()], connect_opts()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, #nkport{}} | {error, term()}.
 
 connect(Conn, Opts) ->
     case nkpacket_resolve:resolve(Conn, Opts) of

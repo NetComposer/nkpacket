@@ -698,7 +698,12 @@ conn_resolve_fun(#{url:=Url}=Target, _Config, Pid) ->
 
 %% @private
 conn_start_fun(NkConn) ->
-    nkpacket_transport:connect([NkConn]).
+    case nkpacket_transport:connect([NkConn]) of
+        {ok, #nkport{pid=Pid}} ->
+            {ok, Pid};
+        {error, Error} ->
+            {error, Error}
+    end.
 
 
 %% @private

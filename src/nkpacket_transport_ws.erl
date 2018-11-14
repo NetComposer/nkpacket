@@ -355,7 +355,7 @@ cowboy_init(Pid, Req, _PathList, FilterMeta, Env) ->
 
 websocket_init(NkPort) ->
     case nkpacket_connection:start(NkPort#nkport{socket=self()}) of
-        {ok, #nkport{pid=ConnPid}} ->
+        {ok, ConnPid} ->
             {ok, ConnPid};
         {error, Error} ->
             ?LLOG(notice, "WS could not start session: ~p", [Error]),

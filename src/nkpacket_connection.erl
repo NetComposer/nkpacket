@@ -36,7 +36,7 @@
 
 -define(CALL_TIMEOUT, 180000).
 
-%% To get debug info, the current process musr hace 'nkpacket_debug=true'
+%% To get debug info, the current process must have 'nkpacket_debug=true'
 
 
 -define(DEBUG(Txt, Args, NkPort),
@@ -58,18 +58,13 @@
 
 %% @doc Starts a new transport process for an already started connection
 -spec start(nkpacket:nkport()) ->
-    {ok, nkpacket:nkport()} | {error, term()}.
+    {ok, pid()} | {error, term()}.
 
 start(#nkport{}=NkPort) ->
     case nkpacket_connection_lib:is_max() of
         false -> 
             % Connection will monitor pid() in NkPort and option 'monitor'
-            case gen_server:start(?MODULE, [NkPort], []) of
-                {ok, Pid} ->
-                    {ok, NkPort#nkport{pid=Pid}};
-                {error, Error} ->
-                    {error, Error}
-            end;
+            gen_server:start(?MODULE, [NkPort], []);
         true ->
             {error, max_connections}
     end.
@@ -81,14 +76,18 @@ start(#nkport{}=NkPort) ->
         
 connect(#nkport{transp=udp, pid=Pid}=NkPort) ->
     case is_pid(Pid) of
-        true -> nkpacket_transport_udp:connect(NkPort);
-        false -> {error, no_listening_transport}
+        true ->
+            nkpacket_transport_udp:connect(NkPort);
+        false ->
+            {error, no_listening_transport}
     end;
         
 connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
     case is_pid(Pid) of
-        true -> nkpacket_transport_sctp:connect(NkPort);
-        false -> {error, no_listening_transport}
+        true ->
+            nkpacket_transport_sctp:connect(NkPort);
+        false ->
+            {error, no_listening_transport}
     end;
 
 connect(#nkport{transp=Transp}=NkPort)
@@ -111,21 +110,27 @@ connect(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
 
 
 %% @doc Sends a new message to a started connection
+% If nkport's options has pre_send_fun, {ok, NewMsg} will be returned
 -spec send(nkpacket:nkport()|pid(), term()) ->
-    ok | {error, term()}.
+    ok | {ok, term()} | {error, term()}.
 
 send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
     case erlang:function_exported(Protocol, conn_encode, 2) of
         true ->
-            Msg2 = nkpacket_connection_lib:apply_msg_fun(Msg, NkPort),
+            % Perform an out-of-band send
+            {Updated, Msg2} = update_msg(Msg, NkPort),
+            lager:error("NKLOG UPDATED ~p", [Updated]),
             case Protocol:conn_encode(Msg2, NkPort) of
                 {ok, OutMsg} ->
                     % If we calling inside the connection process, the 
                     % nkpacket_debug tag will be present
-                    % Otherwhise, we need to set it or add check to #nkport.meta
+                    % Otherwise, we need to set it or add check to #nkport.meta
                     % (debug should be present there)
                     ?DEBUG("raw send: ~p", [OutMsg], NkPort),
                     case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
+                        ok when Updated ->
+                            reset_timeout(Pid),
+                            {ok, Msg2};
                         ok ->
                             reset_timeout(Pid),
                             ok;
@@ -139,6 +144,7 @@ send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
                     {error, encode_error}
             end;
         false when is_pid(Pid) ->
+            % Perform an in-band send
             send(Pid, Msg)
     end;
 
@@ -146,11 +152,26 @@ send(Pid, _Msg) when Pid==self() ->
     {error, same_process};
 
 send(Pid, Msg) when is_pid(Pid) ->
+    lager:error("NKLOG TO PID"),
+
     case catch gen_server:call(Pid, {nkpacket_send, Msg}, 180000) of
         {'EXIT', _} ->
             {error, no_process};
         Other ->
             Other
+    end.
+
+
+%% @private
+-spec update_msg(term(), #nkport{}) ->
+    term().
+
+update_msg(Msg, #nkport{opts=Opts} = NkPort) ->
+    case Opts of
+        #{pre_send_fun:=Fun} ->
+            {true, Fun(Msg, NkPort)};
+        _ ->
+            {false, Msg}
     end.
 
 
@@ -758,12 +779,18 @@ do_parse(Data, #state{nkport=#nkport{protocol=Protocol}=NkPort}=State) ->
 
 %% @private
 do_send(Msg, #state{nkport=NkPort}=State) ->
-    Msg2 = nkpacket_connection_lib:apply_msg_fun(Msg, NkPort),
+    {Updated, Msg2} = update_msg(Msg, NkPort),
     case encode(Msg2, State) of
         {ok, OutMsg, State1} ->
             ?DEBUG("send: ~p", [OutMsg], NkPort),
-            Reply = nkpacket_connection_lib:raw_send(NkPort, OutMsg),
-            {ok, Reply, restart_timer(State1)};
+            case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
+                ok when Updated ->
+                    {ok, {ok, Msg2}, restart_timer(State1)};
+                ok ->
+                    {ok, ok, restart_timer(State1)};
+                {error, Error} ->
+                    {stop, Error, State1}
+            end;
         {stop, Reason, State1} ->
             {stop, Reason, State1}
     end.
