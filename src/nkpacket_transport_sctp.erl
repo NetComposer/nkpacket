@@ -64,12 +64,12 @@ get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=sctp}=NkPort)
 
 %% @private Starts a new connection to a remote server
 -spec connect(nkpacket:nkport()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, #nkport{}} | {error, term()}.
 
 connect(#nkport{transp=sctp, pid=Pid}=NkPort) ->
     case catch gen_server:call(Pid, {nkpacket_connect, NkPort}, 180000) of
-        {ok, ConnPid} -> 
-            {ok, ConnPid};
+        {ok, NkPort2} ->
+            {ok, NkPort2};
         {error, Error} ->
             {error, Error};
         {'EXIT', Error} -> 
@@ -165,9 +165,9 @@ init([NkPort]) ->
 
 handle_call({nkpacket_connect, ConnPort}, From, State) ->
     #nkport{
-        remote_ip  = Ip,
-        remote_port= Port,
-        opts       = Meta
+        remote_ip = Ip,
+        remote_port = Port,
+        opts = Meta
     } = ConnPort,
     #state{
         socket = Socket, 
@@ -195,11 +195,11 @@ handle_call({nkpacket_connect, ConnPort}, From, State) ->
         end
     end,
     ConnPid = spawn_link(Fun),
-    State1 = State#state{
+    State2 = State#state{
         pending_froms = [{{Ip, Port}, From, Meta}|Froms],
         pending_conns = [ConnPid|Conns]
     },
-    {noreply, State1};
+    {noreply, State2};
 
 handle_call({nkpacket_apply_nkport, Fun}, _From, #state{nkport=NkPort}=State) ->
     {reply, Fun(NkPort), State};
@@ -209,9 +209,12 @@ handle_call(nkpacket_stop, _From, State) ->
 
 handle_call(Msg, From, #state{nkport=NkPort}=State) ->
     case call_protocol(listen_handle_call, [Msg, From, NkPort], State) of
-        undefined -> {noreply, State};
-        {ok, State1} -> {noreply, State1};
-        {stop, Reason, State1} -> {stop, Reason, State1}
+        undefined ->
+            {noreply, State};
+        {ok, State1} ->
+            {noreply, State1};
+        {stop, Reason, State1} ->
+            {stop, Reason, State1}
     end.
 
 
@@ -270,7 +273,7 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
         Data when is_binary(Data) ->
             [#sctp_sndrcvinfo{assoc_id=AssocId}] = Anc,
             case do_connect(Ip, Port, AssocId, State) of
-                {ok, Pid} when is_pid(Pid) ->
+                {ok, #nkport{pid=Pid}} when is_pid(Pid) ->
                     nkpacket_connection:incoming(Pid, Data);
                 {error, Error} ->
                     ?LLOG(info, "error ~p on SCTP connection up", [Error])

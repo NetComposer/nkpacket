@@ -78,13 +78,13 @@ connect(NkPort) ->
     case connect_outbound(NkPort) of
         {ok, InetMod, Socket} ->
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
-            NkPort1 = NkPort#nkport{
+            NkPort2 = NkPort#nkport{
                 local_ip = LocalIp,
                 local_port = LocalPort,
                 socket = Socket
             },
             InetMod:setopts(Socket, [{active, once}]),
-            {ok, NkPort1};
+            {ok, NkPort2};
         {error, Error} -> 
             {error, Error}
     end.

@@ -65,14 +65,14 @@ connect(NkPort) ->
         {ok, TranspMod, Socket} ->
             TranspMod:setopts(Socket, [{active, once}]),
             {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
-            Opts1 = maps:merge(#{path => <<"/">>}, Opts),
-            NkPort1 = NkPort#nkport{
-                local_ip  = LocalIp,
-                local_port= LocalPort,
-                socket    = Socket,
-                opts      = Opts1
+            Opts2 = maps:merge(#{path => <<"/">>}, Opts),
+            NkPort2 = NkPort#nkport{
+                local_ip = LocalIp,
+                local_port = LocalPort,
+                socket = Socket,
+                opts = Opts2
             },
-            {ok, NkPort1};
+            {ok, NkPort2};
         {error, Error} ->
             {error, Error}
     end.

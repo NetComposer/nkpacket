@@ -93,8 +93,8 @@ get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=udp}=NkPort) 
          
 connect(#nkport{transp=udp, pid=Pid}=NkPort) ->
     case catch gen_server:call(Pid, {nkpacket_connect, NkPort}, 180000) of
-        {ok, ConnPid} -> 
-            {ok, ConnPid};
+        {ok, NkPort2} ->
+            {ok, NkPort2};
         {error, Error} ->
             {error, Error};
         {'EXIT', Error} -> 
@@ -494,7 +494,7 @@ read_packets(Ip, Port, Packet, #state{no_connections=true, nkport=NkPort}=State,
 
 read_packets(Ip, Port, Packet, #state{socket=Socket}=State, N) ->
     case do_connect(Ip, Port, State) of
-        {ok, Pid} when is_pid(Pid) ->
+        {ok, #nkport{pid=Pid}} when is_pid(Pid) ->
             nkpacket_connection:incoming(Pid, Packet),
             case N>0 andalso gen_udp:recv(Socket, 0, 0) of
                 {ok, {Ip1, Port1, Packet1}} -> 
@@ -518,19 +518,21 @@ do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
     Conn = #nkconn{protocol=Proto, transp=udp, ip=Ip, port=Port, opts=#{class=>Class}},
     case nkpacket_transport:get_connected(Conn) of
         [Pid|_] -> 
-            {ok, Pid};
+            {ok, NkPort#nkport{pid=Pid}};
         [] ->
-            Meta1 = case Meta of
-                undefined -> ListenMeta;
-                _ -> maps:merge(ListenMeta, Meta)
+            Meta2 = case Meta of
+                undefined ->
+                    ListenMeta;
+                _ ->
+                    maps:merge(ListenMeta, Meta)
             end,
-            NkPort1 = NkPort#nkport{
-                remote_ip  = Ip,
-                remote_port= Port,
-                opts       = Meta1
+            NkPort2 = NkPort#nkport{
+                remote_ip = Ip,
+                remote_port = Port,
+                opts = Meta2
             },
             % Connection will monitor us using nkport's pid
-            nkpacket_connection:start(NkPort1)
+            nkpacket_connection:start(NkPort2)
     end.
 
 

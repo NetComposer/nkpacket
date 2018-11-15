@@ -307,20 +307,20 @@ do_connect(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts
             BaseMeta2 = maps:without([host, path], BaseMeta),
             Opts2 = maps:merge(BaseMeta2, Opts),
             ConnPort = BasePort2#nkport{
-                id         = maps:get(id, Opts),
-                class      = maps:get(class, Opts, none),
-                transp     = Transp,
-                protocol   = Protocol,
-                remote_ip  = Ip,
-                remote_port= Port,
-                opts       = maps:without([id, class, user_state], Opts2),
+                id = maps:get(id, Opts),
+                class = maps:get(class, Opts, none),
+                transp = Transp,
+                protocol = Protocol,
+                remote_ip = Ip,
+                remote_port = Port,
+                opts = maps:without([id, class, user_state], Opts2),
                 user_state = maps:get(user_state, Opts2, undefined)
             },
             % If we found a listening transport, connection will monitor it
             case nkpacket_connection:connect(ConnPort) of
-                {ok, Pid} ->
+                {ok, ConnNkPort} ->
                     % The real used nkport can be different (with local tcp port f.e.)
-                    {ok, ConnPort#nkport{pid=Pid}};
+                    {ok, ConnNkPort};
                 {error, Error} ->
                     {error, Error}
             end

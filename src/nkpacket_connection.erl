@@ -126,7 +126,7 @@ send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
                     % nkpacket_debug tag will be present
                     % Otherwise, we need to set it or add check to #nkport.meta
                     % (debug should be present there)
-                    ?DEBUG("raw send: ~p", [OutMsg], NkPort),
+                    ?DEBUG("raw DIRECT socket send: ~p", [OutMsg], NkPort),
                     case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
                         ok when Updated ->
                             reset_timeout(Pid),
@@ -386,9 +386,9 @@ init([NkPort]) ->
         true -> nkpacket_connection_ws:init(#{});
         _ -> undefined
     end,
-    NkPort1 = NkPort#nkport{pid=self()},
+    NkPort2 = NkPort#nkport{pid=self()},
     % We need to store some meta in case someone calls get_nkport
-    StoredNkPort = NkPort1#nkport{
+    StoredNkPort = NkPort2#nkport{
         opts=maps:with([host, path, ws_proto, debug], Opts)},
     State = #state{
         transp = Transp,
@@ -405,7 +405,7 @@ init([NkPort]) ->
     },
     %% 'user' key is only sent to conn_init, then it is removed
     ?DEBUG("started to/from ~p:~p (~p, ~p)", [Ip, Port, Class, self()], NkPort),
-    case nkpacket_util:init_protocol(Protocol, conn_init, NkPort1) of
+    case nkpacket_util:init_protocol(Protocol, conn_init, NkPort2) of
         {ok, ProtoState} ->
             State1 = State#state{proto_state=ProtoState},
             {ok, restart_timer(State1)};
@@ -430,9 +430,9 @@ ranch_init(NkPort, Ref) ->
 %% @private
 conn_init(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
     case nkpacket_transport_tcp:connect(NkPort) of
-        {ok, NkPort1} ->
-            {ok, State} = init([NkPort1]),
-            ok = proc_lib:init_ack({ok, self()}),
+        {ok, NkPort2} ->
+            {ok, State} = init([NkPort2]),
+            ok = proc_lib:init_ack({ok, NkPort2#nkport{pid=self()}}),
             gen_server:enter_loop(?MODULE, [], State);
         {error, Error} ->
             proc_lib:init_ack({error, Error})
@@ -440,13 +440,15 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==tcp; Transp==tls ->
 
 conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
     case nkpacket_transport_ws:connect(NkPort) of
-        {ok, NkPort1, Rest} ->
-            {ok, State} = init([NkPort1]),
+        {ok, NkPort2, Rest} ->
+            {ok, State} = init([NkPort2]),
             case Rest of
-                <<>> -> ok;
-                _ -> incoming(self(), Rest)
+                <<>> ->
+                    ok;
+                _ ->
+                    incoming(self(), Rest)
             end,
-            ok = proc_lib:init_ack({ok, self()}),
+            ok = proc_lib:init_ack({ok, NkPort2#nkport{pid=self()}}),
             gen_server:enter_loop(?MODULE, [], State);
         {error, Error} ->
             proc_lib:init_ack({error, Error})
@@ -454,9 +456,9 @@ conn_init(#nkport{transp=Transp}=NkPort) when Transp==ws; Transp==wss ->
 
 conn_init(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
     case nkpacket_transport_http:connect(NkPort) of
-        {ok, NkPort1} ->
-            {ok, State} = init([NkPort1]),
-            ok = proc_lib:init_ack({ok, self()}),
+        {ok, NkPort2} ->
+            {ok, State} = init([NkPort2]),
+            ok = proc_lib:init_ack({ok, NkPort2#nkport{pid=self()}}),
             gen_server:enter_loop(?MODULE, [], State);
         {error, Error} ->
             proc_lib:init_ack({error, Error})
@@ -782,7 +784,7 @@ do_send(Msg, #state{nkport=NkPort}=State) ->
     {Updated, Msg2} = update_msg(Msg, NkPort),
     case encode(Msg2, State) of
         {ok, OutMsg, State1} ->
-            ?DEBUG("send: ~p", [OutMsg], NkPort),
+            ?DEBUG("raw send (process): ~p", [OutMsg], NkPort),
             case nkpacket_connection_lib:raw_send(NkPort, OutMsg) of
                 ok when Updated ->
                     {ok, {ok, Msg2}, restart_timer(State1)};

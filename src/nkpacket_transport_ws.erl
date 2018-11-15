@@ -83,21 +83,21 @@ connect(NkPort) ->
     case connect_outbound(NkPort) of
         {ok, TranspMod, Socket} ->
             {ok, {LocalIp, LocalPort}} = TranspMod:sockname(Socket),
-            Opts1 = maps:merge(#{path => <<"/">>}, Opts),
-            NkPort1 = NkPort#nkport{
-                local_ip  = LocalIp,
-                local_port= LocalPort,
-                socket    = Socket,
-                opts      = Opts1
+            Opts2 = maps:merge(#{path => <<"/">>}, Opts),
+            NkPort2 = NkPort#nkport{
+                local_ip = LocalIp,
+                local_port = LocalPort,
+                socket = Socket,
+                opts  = Opts2
             },
-            case nkpacket_connection_ws:start_handshake(NkPort1) of
+            case nkpacket_connection_ws:start_handshake(NkPort2) of
                 {ok, WsProto, Rest} -> 
                     Opts2 = case WsProto of
-                        undefined -> Opts1;
-                        _ -> Opts1#{ws_proto=>WsProto}
+                        undefined -> Opts2;
+                        _ -> Opts2#{ws_proto=>WsProto}
                     end,
                     TranspMod:setopts(Socket, [{active, once}]),
-                    {ok, NkPort1#nkport{opts=Opts2}, Rest};
+                    {ok, NkPort2#nkport{opts=Opts2}, Rest};
                 {error, Error} ->
                     {error, Error}
             end;
