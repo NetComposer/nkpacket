@@ -152,6 +152,7 @@ do_resolve_nkconn(#nkconn{protocol=Protocol, opts=Opts0} = Conn, Opts) ->
 
 %% @private
 %% Generates key "external_url" for http transports
+%% Using external_host, external_port and external_path
 %% No final '/'
 resolve_external(#nkconn{transp=Transp}=Conn) when Transp==http; Transp==https ->
     #nkconn{ip=Ip, port=Port, opts=Opts} = Conn,
@@ -159,7 +160,12 @@ resolve_external(#nkconn{transp=Transp}=Conn) when Transp==http; Transp==https -
         nklib_util:to_binary(Transp), "://",
         case maps:get(external_host, Opts, <<>>) of
             <<>> ->
-                nklib_util:to_host(Ip);
+                case nklib_util:to_host(Ip) of
+                    <<"0.0.0.0">> ->
+                        <<"127.0.0.1">>;
+                    IpHost ->
+                        IpHost
+                end;
             ExtHost ->
                 ExtHost
         end,
@@ -179,8 +185,8 @@ resolve_external(#nkconn{transp=Transp}=Conn) when Transp==http; Transp==https -
                 [":", integer_to_binary(MyPort)]
         end,
         filename:join([
-            maps:get(path, Opts, "/"),
-            maps:get(external_path, Opts, "/")
+            maps:get(external_path, Opts, "/"),
+            maps:get(path, Opts, "/")
         ])
     ]),
     Ext2 = nklib_url:norm(Ext1),
