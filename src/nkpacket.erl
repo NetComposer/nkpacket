@@ -81,6 +81,9 @@
 
 
 %% Options for listeners
+%% - external_url: If defined (for example http://host:port/path)
+%%   will be included in nkport
+%%   If not defined, for http/s transports, nkpacket will generate it
 -type listen_opts() ::
     #{
         % Common options
@@ -112,9 +115,7 @@
         host => string() | binary(),            % Listen only on this host
         path => string() | binary(),            % Listen on this path and subpaths
         get_headers => boolean() | [binary()],  % Get all headers or some
-        external_host => binary(),              % For callbacks
-        external_path => binary(),              % For callbacks
-        external_port => inet:port_number(),    % For callbacks
+        external_url => binary(),               % See above
         cowboy_opts => cowboy_http_opts(),
 
         % WS/WSS

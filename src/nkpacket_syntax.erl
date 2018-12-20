@@ -94,9 +94,7 @@ syntax() ->
         host => host,
         path => path,
         get_headers => [boolean, {list, binary}],
-        external_host => host,
-        external_path => binary,
-        external_port => pos_integer,
+        external_url => binary,
         cowboy_opts => map,
         ws_proto => lower,
         headers => fun ?MODULE:spec_headers/1,
@@ -124,9 +122,7 @@ safe_syntax() ->
         user,
         password,
         get_headers,
-        external_host,
-        external_path,
-        external_port,
+        external_url,
         ws_proto,
         headers,                % Not sure
         debug

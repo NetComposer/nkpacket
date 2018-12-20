@@ -143,7 +143,7 @@ do_resolve_nkconn(#nkconn{protocol=Protocol, opts=Opts0} = Conn, Opts) ->
     case nkpacket_util:parse_opts(Opts3) of
         {ok, Opts4} ->
             Conn2 = Conn#nkconn{opts=Opts4},
-            Conn3 = resolve_external(Conn2),
+            Conn3 = gen_external_url(Conn2),
             {ok, Conn3};
         {error, Error} ->
             {error, Error}
@@ -151,48 +151,36 @@ do_resolve_nkconn(#nkconn{protocol=Protocol, opts=Opts0} = Conn, Opts) ->
 
 
 %% @private
-%% Generates key "external_url" for http transports
-%% Using external_host, external_port and external_path
-%% No final '/'
-resolve_external(#nkconn{transp=Transp}=Conn) when Transp==http; Transp==https ->
+%% Generates key "external_url" if not yet present
+gen_external_url(#nkconn{transp=Transp}=Conn) when Transp==http; Transp==https ->
     #nkconn{ip=Ip, port=Port, opts=Opts} = Conn,
-    Ext1 = list_to_binary([
-        nklib_util:to_binary(Transp), "://",
-        case maps:get(external_host, Opts, <<>>) of
-            <<>> ->
+    case maps:get(external_url, Opts, <<>>) of
+        <<>> ->
+            ExtUrl1 = list_to_binary([
+                nklib_util:to_binary(Transp), "://",
                 case nklib_util:to_host(Ip) of
                     <<"0.0.0.0">> ->
                         <<"127.0.0.1">>;
                     IpHost ->
                         IpHost
-                end;
-            ExtHost ->
-                ExtHost
-        end,
-        case
-            case maps:get(external_port, Opts, 0) of
-                0 ->
-                    Port;
-                ExtPort ->
-                    ExtPort
-            end
-        of
-            80 when Transp == http ->
-                <<>>;
-            443 when Transp == https ->
-                <<>>;
-            MyPort ->
-                [":", integer_to_binary(MyPort)]
-        end,
-        filename:join([
-            maps:get(external_path, Opts, "/"),
-            maps:get(path, Opts, "/")
-        ])
-    ]),
-    Ext2 = nklib_url:norm(Ext1),
-    Conn#nkconn{opts=Opts#{external_url=>Ext2}};
+                end,
+                case Port of
+                    80 when Transp == http ->
+                        <<>>;
+                    443 when Transp == https ->
+                        <<>>;
+                    MyPort ->
+                        [":", integer_to_binary(MyPort)]
+                end,
+                maps:get(path, Opts, "/")
+            ]),
+            ExtUrl2 = nklib_url:norm(ExtUrl1),
+            Conn#nkconn{opts=Opts#{external_url=>ExtUrl2}};
+        _ ->
+            Conn
+    end;
 
-resolve_external(Conn) ->
+gen_external_url(Conn) ->
     Conn.
 
 
@@ -291,7 +279,7 @@ do_resolve_uri(Uri, Opts) ->
                 Conns = lists:map(
                     fun({Transp, Addr, Port}) ->
                         Conn = #nkconn{protocol=Protocol, transp=Transp, ip=Addr, port=Port, opts=Opts4},
-                        resolve_external(Conn)
+                        gen_external_url(Conn)
                     end,
                     Addrs),
                 {ok, Conns};
