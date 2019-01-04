@@ -79,7 +79,7 @@ basic() ->
 	end,
 
 	Uri = "<test://localhost:"++integer_to_list(ListenPort1)++";transport=tcp>",
-	{ok, _} = nkpacket:send(Uri, msg1, M2#{idle_timeout=>5000, class=>dom2, debug=>true}),
+	{ok, _} = nkpacket:send(Uri, msg1, M2#{idle_timeout=>5000, class=>dom2, debug=>true, base_nkport=>true}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -133,8 +133,9 @@ tls() ->
 	timer:sleep(1000),
 
 	% Sending a request without a matching started listener
+
 	Uri = "<test://localhost:"++integer_to_list(ListenPort1)++";transport=tls>",
-	{ok, _} = nkpacket:send(Uri, msg1, M2#{idle_timeout=>1000, class=>dom2}),
+	{ok, _} = nkpacket:send(Uri, msg1, M2#{idle_timeout=>1000, class=>dom2, base_nkport=>false}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -205,8 +206,9 @@ send() ->
 	receive {Ref1, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, listen_init} -> ok after 1000 -> error(?LINE) end,
-	% {ok, {_, _, _, _Listen1}} = nkpacket:get_local(Udp1),	
-	{ok, {_, udp, _, Listen2}} = nkpacket:get_local(Udp2),	
+%%	{ok, {_, _, _, Listen1}} = nkpacket:get_local(Udp1),
+	{ok, {_, udp, _, Listen2}} = nkpacket:get_local(Udp2),
+
 
 	% Invalid sends
 	lager:warning("Next warning about a invalid send specification is expected"),
@@ -214,19 +216,25 @@ send() ->
 	Base0 = #nkconn{protocol=test_protocol, transp=tcp, ip={0,0,0,0}, port=Listen2},
 	Base1 = Base0#nkconn{ip={127,0,0,1}},
 	{error, no_transports} = nkpacket:send({current, Base0}, msg1),
-	{error, no_listening_transport} = nkpacket:send(Base1#nkconn{transp=sctp}, msg1),
+	{error, no_listening_transport} = nkpacket:send(Base1#nkconn{transp=sctp}, msg1, #{base_nkport=>true}),
 	Msg = crypto:strong_rand_bytes(5000),
 	% No class
+
+%%	{ok, _, _Udp3} = nkpacket:start_listener(#nkconn{protocol=test_protocol, transp=udp, opts=#{class=>dom3}}),
 	{error, no_listening_transport} = nkpacket:send(Base1#nkconn{transp=udp, opts=M1}, {msg1, Msg}),
 
-    {error, udp_too_large} = nkpacket:send({connect, Base1#nkconn{transp=udp, opts=M1#{class=>dom1, udp_max_size=>1500}}}, {msg1, Msg}),
+    {error, udp_too_large} = nkpacket:send({connect, Base1#nkconn{transp=udp, opts=M1#{class=>dom1, udp_max_size=>1500}}}, {msg1, Msg}, #{base_nkport=>true}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end,
 
+	receive {Ref1, conn_stop} -> ok after 1000 -> error(?LINE) end,
+
+
 	% This is going to use tcp
 	{ok, Conn1Pid} = nkpacket:send(Base1#nkconn{transp=udp, opts=M1#{class=>dom1, udp_to_tcp=>true, tcp_packet=>4,
-																	 udp_max_size=>1500}},
+																	 udp_max_size=>1500, base_nkport=>true}},
 								{msg1, Msg}),
+	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Udp
 	receive {Ref1, {encode, {msg1, Msg}}} -> ok after 1000 -> error(?LINE) end, % Tcp

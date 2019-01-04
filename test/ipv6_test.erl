@@ -82,7 +82,7 @@ basic() ->
         protocol = test_protocol
 	}} = nkpacket:get_nkport(Listen2),
 
-	{ok, _} = nkpacket:send(Url, msg1, M2#{class=>dom2}),
+	{ok, _} = nkpacket:send(Url, msg1, M2#{class=>dom2, base_nkport=>true}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {parse, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -154,7 +154,7 @@ is_local() ->
 	false = nkpacket:is_local(Uri3, #{class=>dom2}),
 
 	case 
-		[Ip || Ip <- nkpacket_config_cache:local_ips(), size(Ip)==8]
+		[Ip || Ip <- nkpacket_config:local_ips(), size(Ip)==8]
 		-- [{0,0,0,0,0,0,0,1}]
 	of
 		[] -> 

@@ -71,7 +71,7 @@ basic() ->
 	
 	Url1 = "test://localhost:"++integer_to_list(LPort1)++
 			";transport=ws;connect_timeout=2000;idle_timeout=1000",
-	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{class=>dom2}),
+	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{class=>dom2, base_nkport=>false}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -126,7 +126,7 @@ basic() ->
 	% Since we use a different URL, it opens a new connection
 	Url2 = "test://127.0.0.1:"++integer_to_list(LPort1)++
 	        "/a/b;transport=ws;connect_timeout=2000;idle_timeout=500",
-	{ok, Conn2} = nkpacket:send(Url2, msg2, M2#{class=>dom2, connect_timeout=>3000}),
+	{ok, Conn2} = nkpacket:send(Url2, msg2, M2#{class=>dom2, connect_timeout=>3000, base_nkport=>false}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -176,7 +176,7 @@ wss() ->
 	] = test_util:listeners(dom1),
 	
 	Url1 = "<test://localhost:"++integer_to_list(LPort1)++";transport=wss>",
-	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{class=>dom2}),
+	{ok, Conn1} = nkpacket:send(Url1, msg1, M2#{class=>dom2, base_nkport=>false}),
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, {encode, msg1}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -363,17 +363,17 @@ multi() ->
     [] = test_util:listeners(dom5),
 
     % No one is listening here
-    {error, no_transports} =
+	{error, closed} =
     	nkpacket:send(#nkconn{protocol=test_protocol, transp=ws, ip={127,0,0,1}, port=P1, opts=#{class=>dom5}}, msg1),
-    {error, no_transports} =
+	{error, closed} =
     	nkpacket:send(#nkconn{protocol=test_protocol, transp=ws, ip={127,0,0,1}, port=P1, opts=#{class=>dom5, path=>"/"}}, msg1),
-    {error, no_transports} =
+	{error, closed} =
     	nkpacket:send(#nkconn{protocol=test_protocol, transp=ws, ip={127,0,0,1}, port=P1, opts=#{class=>dom5, path=>"/dom1"}}, msg1),
 
     % Now we connect to dom2
     % We use host because of the url
-	{ok, Conn2} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom2;transport=ws>", 
-								msg2, M1#{class=>dom1}),
+	{ok, Conn2} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom2;transport=ws>",
+								msg2, M1#{class=>dom1, base_nkport=>true}),
 	receive {Ref1, conn_init} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref1, {encode, msg2}} -> ok after 1000 -> error(?LINE) end,
 	receive {Ref2, conn_init} -> ok after 1000 -> error(?LINE) end,
@@ -405,18 +405,18 @@ multi() ->
 	receive {Ref2, conn_stop} -> ok after 2000 -> error(?LINE) end,
 
 	% We connect to dom3, but the host must be 'localhost'
-	{error, no_transports} =
-		nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>", msg3, 
+	{error, closed} =
+		nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>", msg3,
 					  #{class=>dom5}),
-	{error, no_transports} =
+	{error, closed} =
 		nkpacket:send("<test://localhost:"++P1S++"/dom3;transport=ws>", msg3,
 					  #{class=>dom5}),
 	% It also needs a supported WS protocol
-	{error, no_transports} =
+	{error, closed} =
 		nkpacket:send("<test://localhost:"++P1S++"/dom3;transport=ws>", msg3,
 					  #{ws_proto=>proto2, class=>dom5}),
 
-	{ok, Conn3} = 
+	{ok, Conn3} =
 		nkpacket:send("<test://localhost:"++P1S++"/dom3;transport=ws>", msg3,
 					  #{ws_proto=>proto1, class=>dom5}),
 
@@ -424,9 +424,9 @@ multi() ->
 	receive {Ref3, {parse, {binary, msg3}}} -> ok after 1000 -> error(?LINE) end,
 
 	% Send a new message, must use the same transport (same path, host and proto)
-	{error, no_transports} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>",
+	{error, closed} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>",
 									msg4, #{class=>dom5}),
-	{error, no_transports} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1", msg4, #{class=>dom5}),
+	{error, closed} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1", msg4, #{class=>dom5}),
 
 	{ok, Conn3} = nkpacket:send("<test://127.0.0.1:"++P1S++"/dom3;transport=ws>;ws_proto=proto1;host=localhost", msg4, #{class=>dom5}),
 	receive {Ref3, {parse, {binary, msg4}}} -> ok after 1000 -> error(?LINE) end,

@@ -264,7 +264,7 @@ connect([#nkconn{} = Conn|Rest]) ->
     {ok, pid()} | {error, term()}.
          
 do_connect(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts}) ->
-    BasePort1 = maps:get(base_nkport, Opts, true),
+    BasePort1 = maps:get(base_nkport, Opts, false),
     BasePort2 = case BasePort1 of
         #nkport{} ->
             BasePort1;
@@ -281,6 +281,7 @@ do_connect(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts
     #nkport{listen_ip=ListenIp, opts=BaseMeta} = BasePort2,
     case ListenIp of
         undefined when BasePort1 ->
+
             {error, no_listening_transport};
         _ ->
             ?DEBUG("base nkport: ~p", [lager:pr(BasePort2, ?MODULE)]),

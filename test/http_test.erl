@@ -144,7 +144,7 @@ https() ->
 static() ->
 	% nkpacket:stop_all(static),
 	% timer:sleep(100),
-	Port = 8080, %test_util:get_port(tcp),
+	Port = 8123, %test_util:get_port(tcp),
 
  	Url1 = "http://all:"++integer_to_list(Port)++"/",
 	{ok, _, S1} = nkpacket:start_listener(Url1, #{class=>dom5, protocol=>test_protocol}),
@@ -158,7 +158,7 @@ static() ->
 
 	Path = filename:join(code:priv_dir(nkpacket), "www"),
 	{ok, 301, Hds1} = get(Gun, "/", []),
-	<<"http://127.0.0.1:8080/index.html">> = nklib_util:get_value(<<"location">>, Hds1),
+	<<"http://127.0.0.1:8123/index.html">> = nklib_util:get_value(<<"location">>, Hds1),
 	{ok, 200, H1, <<"<!DOC", _/binary>>} = get(Gun, "/index.html", []),
 	% Cowboy now only returns connection when necessary
 	[
