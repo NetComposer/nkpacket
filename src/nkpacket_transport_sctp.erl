@@ -176,7 +176,7 @@ handle_call({nkpacket_connect, ConnPort}, From, State) ->
     } = State,
     Timeout = case maps:get(connect_timeout, Meta, undefined) of
         undefined ->
-            nkpacket_config_cache:connect_timeout();
+            nkpacket_config:connect_timeout();
         Timeout0 ->
             Timeout0
     end,
@@ -344,15 +344,15 @@ terminate(Reason, #state{nkport=NkPort, socket=Socket}=State) ->
 
 listen_opts(#nkport{listen_ip=Ip, opts=Meta}) ->
     Timeout = case maps:get(idle_timeout, Meta, undefined) of
-        undefined -> nkpacket_config_cache:sctp_timeout();
+        undefined -> nkpacket_config:sctp_timeout();
         Timeout0 -> Timeout0
     end,
     OutStreams = case maps:get(sctp_out_streams, Meta, undefined) of
-        undefined -> nkpacket_config_cache:sctp_out_streams();
+        undefined -> nkpacket_config:sctp_out_streams();
         OS -> OS
     end,
     InStreams = case maps:get(sctp_in_streams, Meta, undefined) of
-        undefined -> nkpacket_config_cache:sctp_in_streams();
+        undefined -> nkpacket_config:sctp_in_streams();
         IS -> IS
     end,
     [

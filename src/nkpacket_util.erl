@@ -26,7 +26,6 @@
 -export([get_plugin_net_syntax/1, get_plugin_net_opts/1]).
 -export([register_listener/1]).
 -export([listen_print_all/0, conn_print_all/0]).
--export([make_cache/0]).
 -export([get_local_ips/0, find_main_ip/0, find_main_ip/2]).
 -export([get_local_uri/2, get_remote_uri/2, get_uri/4]).
 -export([init_protocol/3, call_protocol/4]).
@@ -140,14 +139,6 @@ parse_uri_opts(UriOpts, Opts) ->
     end.
 
 
-%% @private Check that stock nkpacket_config_cache has all keys!
-make_cache() ->
-    Defaults = maps:get('__defaults', nkpacket_syntax:app_syntax()),
-    Keys = [local_ips | maps:keys(Defaults)],
-    nklib_config:make_cache(Keys, nkpacket, none, nkpacket_config_cache, none).
-
-
-
 %% @doc Get all local network ips.
 -spec get_local_ips() -> 
     [inet:ip_address()].
@@ -246,13 +237,14 @@ init_protocol(Protocol, Fun, Arg) ->
         false -> 
             {ok, undefined};
         true -> 
-            try 
-                Protocol:Fun(Arg)
-            catch
-                Class:Reason:Stacktrace ->
+            Fun = fun() -> Protocol:Fun(Arg) end,
+            case nklib_util:do_try(Fun) of
+                {exception, {Class, {Reason, Stacktrace}}} ->
                     lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
                                 [Class, Reason, Protocol, Fun, Arg, Stacktrace]),
-                    erlang:Class([{reason, Reason}, {stacktrace, Stacktrace}])
+                    erlang:Class([{reason, Reason}, {stacktrace, Stacktrace}]);
+                Other ->
+                    Other
             end
     end.
 
@@ -277,7 +269,7 @@ call_protocol(Fun, Args, State, Pos) ->
         false ->
             undefined;
         true ->
-            try 
+            Fun = fun() ->
                 case apply(Protocol, Fun, Args++[ProtoState]) of
                     ok ->
                         {ok, State};
@@ -286,11 +278,14 @@ call_protocol(Fun, Args, State, Pos) ->
                     {Class, Value, ProtoState1} when is_atom(Class) -> 
                         {Class, Value, setelement(Pos+1, State, ProtoState1)}
                 end
-            catch
-                EClass:Reason:Stacktrace ->
+            end,
+            case nklib_util:do_try(Fun) of
+                {exception, {EClass, {Reason, Stacktrace}}} ->
                     lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
                                 [EClass, Reason, Protocol, Fun, Args, Stacktrace]),
-                    erlang:EClass([{reason, Reason}, {stacktrace, Stacktrace}])
+                    erlang:EClass([{reason, Reason}, {stacktrace, Stacktrace}]);
+                Other ->
+                    Other
             end
     end.
 

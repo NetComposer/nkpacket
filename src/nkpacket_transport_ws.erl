@@ -145,7 +145,7 @@ init([NkPort]) ->
             #{idle_timeout:=Timeout0} ->
                 Timeout0;
             _ ->
-                nkpacket_config_cache:ws_timeout()
+                nkpacket_config:ws_timeout()
         end,
         NkPort1 = NkPort#nkport{pid = self()},
         Meta1 = maps:with([get_headers], Meta),
@@ -457,7 +457,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=ws}) 
     SocketOpts = outbound_opts(),
     ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
         undefined ->
-            nkpacket_config_cache:connect_timeout();
+            nkpacket_config:connect_timeout();
         Timeout0 ->
             Timeout0
     end,
@@ -473,7 +473,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=wss})
     SocketOpts = outbound_opts() ++ nkpacket_tls:make_outbound_opts(Opts),
     ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
         undefined ->
-            nkpacket_config_cache:connect_timeout();
+            nkpacket_config:connect_timeout();
         Timeout0 ->
             Timeout0
     end,

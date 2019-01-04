@@ -214,9 +214,9 @@ init([NkPort, #cowboy_filter{}=Filter]) ->
                 #{idle_timeout:=Timeout0} -> 
                     Timeout0;
                 _ when Transp==ws; Transp==wss -> 
-                    nkpacket_config_cache:ws_timeout();
+                    nkpacket_config:ws_timeout();
                 _ when Transp==http; Transp==https -> 
-                    nkpacket_config_cache:http_timeout()
+                    nkpacket_config:http_timeout()
             end,
             %% @see cowboy_http:opts()
             %% Use global idle_timeout for Cowboy's idle_timeout

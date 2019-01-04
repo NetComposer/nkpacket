@@ -353,7 +353,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=http}
     SocketOpts = outbound_opts(),
     ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
         undefined ->
-            nkpacket_config_cache:connect_timeout();
+            nkpacket_config:connect_timeout();
         Timeout0 ->
             Timeout0
     end,
@@ -369,7 +369,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=https
     SocketOpts = outbound_opts() ++ nkpacket_tls:make_outbound_opts(Opts),
     ConnTimeout = case maps:get(connect_timeout, Opts, undefined) of
         undefined ->
-            nkpacket_config_cache:connect_timeout();
+            nkpacket_config:connect_timeout();
         Timeout0 ->
             Timeout0
     end,

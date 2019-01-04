@@ -55,7 +55,7 @@ start(_Type, _Args) ->
     case nklib_config:load_env(nkpacket, Syntax) of
         {ok, _} ->
             get_auto_ips(),
-            nkpacket_util:make_cache(),
+            nkpacket_config:set_config(),
             {ok, Pid} = nkpacket_sup:start_link(),
             {ok, Vsn} = application:get_key(nkpacket, vsn),
             lager:info("NkPACKET v~s has started.", [Vsn]),
