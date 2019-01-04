@@ -44,12 +44,11 @@ basic_test_() ->
 
 
 config() ->
-	1024 = nkpacket_config_cache:max_connections(),
-	30000 = nkpacket_config_cache:udp_timeout(),
+	1024 = nkpacket_config:max_connections(),
+	30000 = nkpacket_config:udp_timeout(),
 	nkpacket_app:put(max_connections, 100),
-	1024 = nkpacket_config_cache:max_connections(),
-	nkpacket_util:make_cache(),
-	100 = nkpacket_config_cache:max_connections(),
+	nkpacket_config:set_config(),
+	100 = nkpacket_config:max_connections(),
 
 	nklib_config:del(nkpacket, {protocol, scheme}),
 	nklib_config:del_domain(nkpacket, srv1, {protocol, scheme}),

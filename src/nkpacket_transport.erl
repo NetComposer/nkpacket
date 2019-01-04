@@ -102,9 +102,8 @@ get_connected(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=#
 %%    lager:error("NKLOG FOUND CONNS ~p: ~p", [{nkpacket_connection, Class, {Protocol, Transp, Ip, Port}}, List]),
     List;
 
-get_connected(#nkconn{}=C) ->
-    lager:error("NKLOG GET CONNECTED FOR NO CLASS ~p", [C]),
-    error(c).
+get_connected(#nkconn{}) ->
+    [].
 
 
 
@@ -132,22 +131,22 @@ send([#nkconn{opts=#{force_new:=true}}=Conn|MoreConns], Msg) ->
 
 send([#nkconn{}=Conn|MoreConns], Msg) ->
     Pids = get_connected(Conn),
-    ?DEBUG("sending to connected nkconn ~p (~p)", [Pids, lager:pr(Conn, ?MODULE)]),
+    ?DEBUG("sending to nkconn ~p: (connected pids: ~p)", [lager:pr(Conn, ?MODULE), Pids]),
     %% Try connected pids, if nothing works try to connect to this conn before jumping
     %% to next one
     do_send(Pids, Conn, Msg, [{connect, Conn}|MoreConns]);
 
 send([{current, #nkconn{transp=udp}=Conn}|MoreConns], Msg) ->
-    ?DEBUG("sending to nkconn (udp) {current, ~p}", [lager:pr(Conn, ?MODULE)]),
+    ?DEBUG("sending to {current, ~p} (udp)", [lager:pr(Conn, ?MODULE)]),
     send([Conn|MoreConns], Msg);
 
 send([{current, #nkconn{}=Conn}|MoreConns], Msg) ->
     Pids = get_connected(Conn),
-    ?DEBUG("sending to nkconn: ~p {current, ~p}", [Pids, lager:pr(Conn, ?MODULE)]),
+    ?DEBUG("sending to {current, ~p} (connected pids: ~p)", [lager:pr(Conn, ?MODULE), Pids]),
     do_send(Pids, Conn, Msg, MoreConns);
 
 send([{connect, #nkconn{}=Conn}|MoreConns], Msg) ->
-    ?DEBUG("sending to nkconn {connect, ~p}", [lager:pr(Conn, ?MODULE)]),
+    ?DEBUG("sending to {connect, ~p}", [lager:pr(Conn, ?MODULE)]),
     case connect([Conn]) of
         {ok, #nkport{}=NkPort} ->
             do_send([NkPort], Conn, Msg, MoreConns);

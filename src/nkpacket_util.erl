@@ -237,8 +237,8 @@ init_protocol(Protocol, Fun, Arg) ->
         false -> 
             {ok, undefined};
         true -> 
-            Fun = fun() -> Protocol:Fun(Arg) end,
-            case nklib_util:do_try(Fun) of
+            TryFun = fun() -> Protocol:Fun(Arg) end,
+            case nklib_util:do_try(TryFun) of
                 {exception, {Class, {Reason, Stacktrace}}} ->
                     lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
                                 [Class, Reason, Protocol, Fun, Arg, Stacktrace]),
@@ -269,7 +269,7 @@ call_protocol(Fun, Args, State, Pos) ->
         false ->
             undefined;
         true ->
-            Fun = fun() ->
+            TryFun = fun() ->
                 case apply(Protocol, Fun, Args++[ProtoState]) of
                     ok ->
                         {ok, State};
@@ -279,7 +279,7 @@ call_protocol(Fun, Args, State, Pos) ->
                         {Class, Value, setelement(Pos+1, State, ProtoState1)}
                 end
             end,
-            case nklib_util:do_try(Fun) of
+            case nklib_util:do_try(TryFun) of
                 {exception, {EClass, {Reason, Stacktrace}}} ->
                     lager:error("Exception ~p (~p) calling ~p:~p(~p). Stack: ~p", 
                                 [EClass, Reason, Protocol, Fun, Args, Stacktrace]),
