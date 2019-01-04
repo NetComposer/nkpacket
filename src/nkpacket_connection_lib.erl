@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 
-%% @private Generic tranport connection process library functions
+%% @private Generic transport connection process library functions
 -module(nkpacket_connection_lib).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
@@ -60,7 +60,7 @@ raw_send(#nkport{transp=udp, opts=Opts} = NkPort, Data) ->
     MaxSize = maps:get(udp_max_size, Opts, ?UDP_MAX_SIZE),
     case byte_size(Data) > MaxSize of
         true ->
-            {error, udp_too_large};    
+            {error, udp_too_large};
         false ->
             #nkport{socket=Socket, remote_ip=Ip, remote_port=Port} = NkPort,
             case gen_udp:send(Socket, Ip, Port, Data) of

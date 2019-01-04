@@ -42,7 +42,7 @@
 -export_type([id/0, class/0, transport/0, protocol/0, nkport/0, nkconn/0]).
 -export_type([listen_opts/0, connect_opts/0, send_opts/0, resolve_opts/0]).
 -export_type([connect_spec/0, send_spec/0]).
--export_type([incoming/0, outcoming/0, pre_send_fun/0]).
+-export_type([incoming/0, outcoming/0]).
 
 -include_lib("nklib/include/nklib.hrl").
 -include("nkpacket.hrl").
@@ -185,8 +185,7 @@
         % Specific options
         force_new => boolean(),             % Forces a new connection
         udp_to_tcp => boolean(),            % Change to TCP for large packets
-        udp_max_size => pos_integer(),      % Used only for this sent request
-        pre_send_fun => pre_send_fun()
+        udp_max_size => pos_integer()       % Used only for this sent request
     }.
 
 -type user_state() :: term().
@@ -225,11 +224,6 @@
 -type outcoming() ::
     iolist() | binary() |
     cow_ws:frame().                 % Only WS
-
-
-%% See send
--type pre_send_fun() ::
-    fun((term(), nkport()) -> term()).
 
 
 %% @see https://ninenines.eu/docs/en/cowboy/2.1/manual/cowboy_http/
@@ -330,13 +324,13 @@ get_listener(Conn, Opts) ->
     case nkpacket_resolve:resolve(Conn, Opts) of
         {ok, [#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=#{id:=Id}=Opts2}]} ->
             NkPort = #nkport{
-                id         = maps:get(id, Opts2),
-                class      = maps:get(class, Opts2, none),
-                protocol   = Protocol,
-                transp     = Transp,
-                listen_ip  = Ip,
-                listen_port= Port,
-                opts       = maps:without([id, class, user_state], Opts2),
+                id = maps:get(id, Opts2),
+                class = maps:get(class, Opts2, none),
+                protocol = Protocol,
+                transp = Transp,
+                listen_ip = Ip,
+                listen_port = Port,
+                opts = maps:without([id, class, user_state], Opts2),
                 user_state = maps:get(user_state, Opts2, undefined)
             },
             case nkpacket_transport:get_listener(NkPort) of
@@ -375,13 +369,20 @@ send(SendSpec, Msg) ->
 %% @doc Sends a message to a connection
 %% If a class is included, it will try to reuse any existing connection of the same class
 %% (except if force_new option is set)
-%% If option pre_send_fun is used, an updated message will be returned along the pid
+%% If Msg is a function, it will be called as Msg(NkPort) and the resulting message
+%% will be returned
 -spec send(send_spec() | [send_spec()], term(), send_opts()) ->
     {ok, pid()} | {ok, pid(), term()} | {error, term()}.
 
 send(SendSpec, Msg, Opts) ->
     case nkpacket_resolve:resolve(SendSpec, Opts#{resolve_type=>send}) of
         {ok, Conns} ->
+            case Opts of
+                #{debug:=true} ->
+                    put(nkpacket_debug, true);
+                _ ->
+                    ok
+            end,
             nkpacket_transport:send(Conns, Msg);
         {error, Error} ->
             {error, Error}

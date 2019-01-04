@@ -105,12 +105,12 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        class      = Class,
-        transp     = sctp,
+        class = Class,
+        transp = sctp,
         listen_ip  = Ip,
-        listen_port= Port,
-        protocol   = Protocol,
-        opts       = Meta
+        listen_port = Port,
+        protocol = Protocol,
+        opts = Meta
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
@@ -250,7 +250,12 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
             #state{pending_froms=Froms} = State,
             case lists:keytake({Ip, Port}, 1, Froms) of
                 {value, {_, From, Meta}, Froms1} -> 
-                    Reply = do_connect(Ip, Port, AssocId, Meta, State),
+                    Reply = case do_connect(Ip, Port, AssocId, Meta, State) of
+                        {ok, Pid} ->
+                            {ok, NkPort#nkport{pid=Pid}};
+                        {error, Error} ->
+                            {error, Error}
+                    end,
                     gen_server:reply(From, Reply),
                     State#state{pending_froms=Froms1};
                 false ->
@@ -273,7 +278,7 @@ handle_info({sctp, Socket, Ip, Port, {Anc, SAC}}, State) ->
         Data when is_binary(Data) ->
             [#sctp_sndrcvinfo{assoc_id=AssocId}] = Anc,
             case do_connect(Ip, Port, AssocId, State) of
-                {ok, #nkport{pid=Pid}} when is_pid(Pid) ->
+                {ok, Pid} when is_pid(Pid) ->
                     nkpacket_connection:incoming(Pid, Data);
                 {error, Error} ->
                     ?LLOG(info, "error ~p on SCTP connection up", [Error])
@@ -370,20 +375,22 @@ do_connect(Ip, Port, AssocId, Meta, State) ->
     Conn = #nkconn{protocol=Proto, transp=sctp, ip=Ip, port=Port, opts=#{class=>Class}},
     case nkpacket_transport:get_connected(Conn) of
         [Pid|_] -> 
-            {ok, NkPort#nkport{pid=Pid}};
+            {ok, Pid};
         [] -> 
-            Meta1 = case Meta of
-                undefined -> ListenMeta;
-                _ -> maps:merge(ListenMeta, Meta)
+            Meta2 = case Meta of
+                undefined ->
+                    ListenMeta;
+                _ ->
+                    maps:merge(ListenMeta, Meta)
             end,
-            NkPort1 = NkPort#nkport{
-                remote_ip  = Ip,
-                remote_port= Port,
-                socket     = {Socket, AssocId},
-                opts       = Meta1
+            NkPort2 = NkPort#nkport{
+                remote_ip = Ip,
+                remote_port = Port,
+                socket = {Socket, AssocId},
+                opts = Meta2
             },
             % Connection will monitor us using nkport's pid
-            nkpacket_connection:start(NkPort1)
+            nkpacket_connection:start(NkPort2)
     end.
         
 

@@ -23,7 +23,8 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([app_syntax/0]).
--export([syntax/0, safe_syntax/0, tls_syntax/0, packet_syntax/0, resolve_syntax/1]).
+-export([syntax/0, safe_syntax/0, tls_syntax/0, tls_syntax/1, extract_tls/1,
+         packet_syntax/0, resolve_syntax/1]).
 -export([spec_http_proto/3, spec_headers/1]).
 
 -include("nkpacket.hrl").
@@ -100,7 +101,6 @@ syntax() ->
         headers => fun ?MODULE:spec_headers/1,
         http_proto => fun ?MODULE:spec_http_proto/3,
         force_new => boolean,
-        pre_send_fun => {function, 2},
         resolve_type => {atom, [listen, connect, send]},
         base_nkport => [boolean, {record, nkport}],
         user_state => any,
@@ -117,6 +117,7 @@ safe_syntax() ->
         no_dns_cache,
         udp_max_size,
         tcp_packet,
+        tcp_listeners,
         host,
         path,
         user,
@@ -132,7 +133,11 @@ safe_syntax() ->
 
 
 tls_syntax() ->
-    #{
+    tls_syntax(#{}).
+
+
+tls_syntax(Base) ->
+    Base#{
         tls_verify => {atom, [host, true, false]},
         tls_certfile => string,
         tls_keyfile => string,
@@ -144,7 +149,19 @@ tls_syntax() ->
 
 
 add_tls_syntax(Syntax) ->
-    maps:merge(Syntax, tls_syntax()).
+    tls_syntax(Syntax).
+
+
+extract_tls(Map) when is_map(Map) ->
+    Keys = lists:filter(
+        fun(Key) ->
+            case nklib_util:to_list(Key) of
+                "tls_" ++ _ -> true;
+                _ -> false
+            end
+        end,
+        maps:keys(Map)),
+    maps:with(Keys, Map).
 
 
 packet_syntax() ->

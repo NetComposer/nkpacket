@@ -88,6 +88,9 @@ get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=udp}=NkPort) 
 
 
 %% @private Starts a new connection to a remote server
+%%
+
+
 -spec connect(nkpacket:nkport()) ->
     {ok, pid()} | {error, term()}.
          
@@ -160,13 +163,13 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        id         = Id,
-        class      = Class,
-        protocol   = Protocol,
-        transp     = udp,
-        listen_ip  = ListenIp,
-        listen_port= ListenPort,
-        opts       = Opts
+        id = Id,
+        class = Class,
+        protocol = Protocol,
+        transp = udp,
+        listen_ip = ListenIp,
+        listen_port = ListenPort,
+        opts = Opts
     } = NkPort,
     process_flag(priority, high),
     process_flag(trap_exit, true),   %% Allow calls to terminate/2
@@ -247,11 +250,17 @@ init([NkPort]) ->
 
 handle_call({nkpacket_connect, ConnPort}, _From, State) ->
     #nkport{
-        remote_ip  = Ip,
-        remote_port= Port,
-        opts       = Meta
+        remote_ip = Ip,
+        remote_port = Port,
+        opts = Opts
     } = ConnPort,
-    {reply, do_connect(Ip, Port, Meta, State), State};
+    Reply = case do_connect(Ip, Port, Opts, State) of
+        {ok, Pid} ->
+            {ok, ConnPort#nkport{pid=Pid}};
+        {error, Error} ->
+            {error, Error}
+    end,
+    {reply, Reply, State};
 
 handle_call({nkpacket_send_stun, Ip, Port}, From, State) ->
     {noreply, do_send_stun(Ip, Port, {call, From}, State)};
@@ -494,7 +503,7 @@ read_packets(Ip, Port, Packet, #state{no_connections=true, nkport=NkPort}=State,
 
 read_packets(Ip, Port, Packet, #state{socket=Socket}=State, N) ->
     case do_connect(Ip, Port, State) of
-        {ok, #nkport{pid=Pid}} when is_pid(Pid) ->
+        {ok, Pid} when is_pid(Pid) ->
             nkpacket_connection:incoming(Pid, Packet),
             case N>0 andalso gen_udp:recv(Socket, 0, 0) of
                 {ok, {Ip1, Port1, Packet1}} -> 
@@ -513,23 +522,23 @@ do_connect(Ip, Port, State) ->
 
 
 %% @private
-do_connect(Ip, Port, Meta, #state{nkport=NkPort}) ->
-    #nkport{class=Class, protocol=Proto, opts=ListenMeta} = NkPort,
+do_connect(Ip, Port, Opts, #state{nkport=NkPort}) ->
+    #nkport{class=Class, protocol=Proto, opts=ListenOpts} = NkPort,
     Conn = #nkconn{protocol=Proto, transp=udp, ip=Ip, port=Port, opts=#{class=>Class}},
     case nkpacket_transport:get_connected(Conn) of
         [Pid|_] -> 
-            {ok, NkPort#nkport{pid=Pid}};
+            {ok, Pid};
         [] ->
-            Meta2 = case Meta of
+            Opts2 = case Opts of
                 undefined ->
-                    ListenMeta;
+                    ListenOpts;
                 _ ->
-                    maps:merge(ListenMeta, Meta)
+                    maps:merge(ListenOpts, Opts)
             end,
             NkPort2 = NkPort#nkport{
                 remote_ip = Ip,
                 remote_port = Port,
-                opts = Meta2
+                opts = Opts2
             },
             % Connection will monitor us using nkport's pid
             nkpacket_connection:start(NkPort2)

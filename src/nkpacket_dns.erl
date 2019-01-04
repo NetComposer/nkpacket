@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 
 -export([resolve/1, resolve/2]).
--export([ips/1, ips/2, srvs/1, srvs/2, naptr/3]).
+-export([ips/1, ips/2, srvs/1, srvs/2, naptr/3, transp/1]).
 -export([clear/1, clear/0]).
 -export([start_link/0, init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2,
          handle_info/2]).
@@ -427,8 +427,10 @@ transp(Other) when is_atom(Other) -> atom_to_binary(Other, latin1);
 transp(Other) ->
     Transp = string:to_lower(nklib_util:to_list(Other)),
     case catch list_to_existing_atom(Transp) of
-        {'EXIT', _} -> nklib_util:to_binary(Other);
-        Atom -> transp(Atom)
+        {'EXIT', _} ->
+            nklib_util:to_binary(Other);
+        Atom ->
+            transp(Atom)
     end.
 
 %% @private

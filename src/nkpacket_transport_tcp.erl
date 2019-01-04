@@ -116,12 +116,12 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        class      = Class,
-        protocol   = Protocol,
-        transp     = Transp,
-        listen_ip  = ListenIp,
-        listen_port= ListenPort,
-        opts       = Meta
+        class = Class,
+        protocol = Protocol,
+        transp = Transp,
+        listen_ip = ListenIp,
+        listen_port = ListenPort,
+        opts = Meta
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     Debug = maps:get(debug, Meta, false),
@@ -141,9 +141,11 @@ init([NkPort]) ->
             },
             RanchId = {Transp, ListenIp, LocalPort},
             RanchPort = NkPort1#nkport{opts=maps:with(?CONN_LISTEN_OPTS, Meta)},
+            Listeners = maps:get(tcp_listeners, Meta, 100),
+            ?DEBUG("active listeners: ~p", [Listeners]),
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
-                maps:get(tcp_listeners, Meta, 100),
+                Listeners,
                 RanchMod,
                 [
                     {socket, Socket}, 

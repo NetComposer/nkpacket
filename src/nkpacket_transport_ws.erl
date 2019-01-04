@@ -130,12 +130,12 @@ start_link(NkPort) ->
 
 init([NkPort]) ->
     #nkport{
-        class      = Class,
-        transp     = Transp,
+        class = Class,
+        transp = Transp,
         listen_ip  = ListenIp,
-        listen_port= ListenPort,
-        opts       = Meta,
-        protocol   = Protocol
+        listen_port = ListenPort,
+        opts = Meta,
+        protocol = Protocol
     } = NkPort,
     process_flag(trap_exit, true),   %% Allow calls to terminate
     Debug = maps:get(debug, Meta, false),

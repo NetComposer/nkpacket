@@ -301,13 +301,11 @@ check_stun_server([Ip|Rest], Port, Socket, LocalPort, Acc) ->
 %% @private
 stun_servers() ->
     [
-        "stun:stun.counterpath.com",
-        "stun:stun.ekiga.net",
+        %"stun:stun.ekiga.net",
         "stun:stun.ideasip.com",
         % "stun:stun.iptel.org",    % Not working
         "stun:stun.schlund.de",
         "stun:stun.voiparound.com", % same ips as voipbuster.com and voipstunt.com
-        "stun:stun.voxgratia.org",
         "stun:stun.freeswitch.org",
         "stun:stun.voip.eutelia.it"
     ].

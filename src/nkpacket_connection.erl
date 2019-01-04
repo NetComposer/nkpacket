@@ -25,7 +25,7 @@
 
 -export([send/2, send_async/2, stop/1, stop/2, start/1]).
 -export([reset_timeout/2, get_timeout/1, update_monitor/2]).
--export([get_all/0, get_all_class/1, get_all_class/0, stop_all/0, stop_all/1]).
+-export([get_all/0, get_all_class/1, get_all_classes/0, stop_all/0, stop_all/1]).
 -export([incoming/2, connect/1, conn_init/1]).
 -export([ranch_start_link/2, ranch_init/2]).
 -export([start_link/1, init/1, terminate/2, code_change/3, handle_call/3,   
@@ -71,8 +71,11 @@ start(#nkport{}=NkPort) ->
 
 
 %% @doc Starts a new outbound connection
+%%
+
+
 -spec connect(nkpacket:nkport()) ->
-    {ok, pid()} | {error, term()}.
+    {ok, #nkport{}} | {error, term()}.
         
 connect(#nkport{transp=udp, pid=Pid}=NkPort) ->
     case is_pid(Pid) of
@@ -110,7 +113,10 @@ connect(#nkport{transp=Transp}=NkPort) when Transp==http; Transp==https ->
 
 
 %% @doc Sends a new message to a started connection
-% If nkport's options has pre_send_fun, {ok, NewMsg} will be returned
+%% If we provide a #nkport{}, we will send the message directly to the socket
+%% If it is pid(), a message is sent to the connection
+%% If Msg is a function/1, it will be called as Msg(NkPort) and the resulting message
+%% will be returned
 -spec send(nkpacket:nkport()|pid(), term()) ->
     ok | {ok, term()} | {error, term()}.
 
@@ -119,7 +125,6 @@ send(#nkport{protocol=Protocol, pid=Pid}=NkPort, Msg) when node(Pid)==node() ->
         true ->
             % Perform an out-of-band send
             {Updated, Msg2} = update_msg(Msg, NkPort),
-            lager:error("NKLOG UPDATED ~p", [Updated]),
             case Protocol:conn_encode(Msg2, NkPort) of
                 {ok, OutMsg} ->
                     % If we calling inside the connection process, the 
@@ -152,8 +157,6 @@ send(Pid, _Msg) when Pid==self() ->
     {error, same_process};
 
 send(Pid, Msg) when is_pid(Pid) ->
-    lager:error("NKLOG TO PID"),
-
     case catch gen_server:call(Pid, {nkpacket_send, Msg}, 180000) of
         {'EXIT', _} ->
             {error, no_process};
@@ -166,13 +169,12 @@ send(Pid, Msg) when is_pid(Pid) ->
 -spec update_msg(term(), #nkport{}) ->
     term().
 
-update_msg(Msg, #nkport{opts=Opts} = NkPort) ->
-    case Opts of
-        #{pre_send_fun:=Fun} ->
-            {true, Fun(Msg, NkPort)};
-        _ ->
-            {false, Msg}
-    end.
+update_msg(Msg, NkPort) when is_function(Msg, 1) ->
+    {true, Msg(NkPort)};
+
+update_msg(Msg, _NkPort) ->
+    {false, Msg}.
+
 
 
 %% @doc Sends a new message to a started connection
@@ -216,11 +218,11 @@ get_all_class(Class) ->
     [{Id, Pid} || {Id, S, Pid} <- get_all(), S==Class].
 
 
-%% @doc Gets all ckasses having started connections
--spec get_all_class() -> 
+%% @doc Gets all classes having started connections
+-spec get_all_classes() ->
     map().
 
-get_all_class() ->
+get_all_classes() ->
     lists:foldl(
         fun({_Id, Class, Pid}, Acc) ->
             maps:put(Class, [Pid|maps:get(Class, Acc, [])], Acc) 
@@ -330,15 +332,15 @@ ranch_start_link(NkPort, Ref) ->
 
 init([NkPort]) ->
     #nkport{
-        id         = Id,
-        class      = Class,
-        protocol   = Protocol,
-        transp     = Transp,
-        remote_ip  = Ip,
-        remote_port= Port,
-        pid        = ListenPid,
-        socket     = Socket,
-        opts       = Opts
+        id = Id,
+        class = Class,
+        protocol = Protocol,
+        transp = Transp,
+        remote_ip = Ip,
+        remote_port = Port,
+        pid = ListenPid,
+        socket = Socket,
+        opts = Opts
     } = NkPort,
     process_flag(trap_exit, true),          % Allow call to terminate/2
     nklib_proc:put(nkpacket_connections, {Id, Class}),
@@ -389,7 +391,7 @@ init([NkPort]) ->
     NkPort2 = NkPort#nkport{pid=self()},
     % We need to store some meta in case someone calls get_nkport
     StoredNkPort = NkPort2#nkport{
-        opts=maps:with([host, path, ws_proto, debug], Opts)},
+        opts=maps:with([host, path, ws_proto, udp_max_size, debug], Opts)},
     State = #state{
         transp = Transp,
         nkport = StoredNkPort,
@@ -710,13 +712,15 @@ do_parse(Data, #state{bridge=#nkport{}=To}=State) ->
         bridge_type = Type, 
         nkport = From
     } = State,
-    case Type of
+    {FromIp, FromPort, ToIp, ToPort} = case Type of
         up ->
-            #nkport{local_ip=FromIp, local_port=FromPort} = From,
-            #nkport{remote_ip=ToIp, remote_port=ToPort} = To;
+            #nkport{local_ip=FromIp0, local_port=FromPort0} = From,
+            #nkport{remote_ip=ToIp0, remote_port=ToPort0} = To,
+            {FromIp0, FromPort0, ToIp0, ToPort0};
         down ->
-            #nkport{remote_ip=FromIp, remote_port=FromPort} = From,
-            #nkport{local_ip=ToIp, local_port=ToPort} = To
+            #nkport{remote_ip=FromIp0, remote_port=FromPort0} = From,
+            #nkport{local_ip=ToIp0, local_port=ToPort0} = To,
+            {FromIp0, FromPort0, ToIp0, ToPort0}
     end,
     case call_protocol(conn_bridge, [Data, Type, From], State) of
         undefined ->
@@ -805,13 +809,15 @@ do_send(Msg, #state{nkport=NkPort}=State) ->
 start_bridge(Bridge, Type, State) ->
     #nkport{pid=BridgePid} = Bridge,
     #state{bridge_monitor=OldMon, bridge=OldBridge, nkport=NkPort} = State,
-    case Type of 
+    {FromIp, FromPort, ToIp, ToPort} = case Type of
         up ->
-            #nkport{local_ip=FromIp, local_port=FromPort} = NkPort,
-            #nkport{remote_ip=ToIp, remote_port=ToPort} = Bridge;
+            #nkport{local_ip=FromIp0, local_port=FromPort0} = NkPort,
+            #nkport{remote_ip=ToIp0, remote_port=ToPort0} = Bridge,
+            {FromIp0, FromPort0, ToIp0, ToPort0};
         down ->
-            #nkport{remote_ip=FromIp, remote_port=FromPort} = NkPort,
-            #nkport{local_ip=ToIp, local_port=ToPort} = Bridge
+            #nkport{remote_ip=FromIp0, remote_port=FromPort0} = NkPort,
+            #nkport{local_ip=ToIp0, local_port=ToPort0} = Bridge,
+            {FromIp0, FromPort0, ToIp0, ToPort0}
     end,
     case OldBridge of
         undefined ->
