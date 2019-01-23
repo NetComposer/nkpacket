@@ -116,7 +116,15 @@
         path => string() | binary(),            % Listen on this path and subpaths
         get_headers => boolean() | [binary()],  % Get all headers or some
         external_url => binary(),               % See above
-        cowboy_opts => cowboy_http_opts(),
+        http_inactivity_timeout => non_neg_integer(),    % msecs
+        http_max_empty_lines => non_neg_integer(),
+        http_max_header_name_length => non_neg_integer(),
+        http_max_header_value_length => non_neg_integer(),
+        http_max_headers => non_neg_integer(),
+        http_max_keepalive => non_neg_integer(),
+        http_max_method_length => non_neg_integer(),
+        http_max_request_line_length => non_neg_integer(),
+        http_request_timeout => timeout(),
 
         % WS/WSS
         ws_proto => string() | binary()         % Listen only on this protocol
@@ -224,30 +232,6 @@
 -type outcoming() ::
     iolist() | binary() |
     cow_ws:frame().                 % Only WS
-
-
-%% @see https://ninenines.eu/docs/en/cowboy/2.1/manual/cowboy_http/
-%% @see cowboy_http:opts()
--type cowboy_http_opts() :: #{
-    idle_timeout => non_neg_integer(),          % msecs
-    inactivity_timeout => non_neg_integer(),    % msecs
-    max_empty_lines => non_neg_integer(),
-    max_header_name_length => non_neg_integer(),
-    max_header_value_length => non_neg_integer(),
-    max_headers => non_neg_integer(),
-    max_keepalive => non_neg_integer(),
-    max_method_length => non_neg_integer(),
-    max_request_line_length => non_neg_integer(),
-    request_timeout => timeout()
-}.
-
-
-%%%% @see https://ninenines.eu/docs/en/cowboy/2.1/manual/cowboy_http/
-%%-type cowboy_http2_opts() :: #{
-%%    inactivity_timeout => non_neg_integer(),    % msecs
-%%    preface_timeout => non_neg_integer(),    % msecs
-%%}.
-
 
 
 %% ===================================================================

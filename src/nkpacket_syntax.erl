@@ -96,7 +96,15 @@ syntax() ->
         path => path,
         get_headers => [boolean, {list, binary}],
         external_url => binary,
-        cowboy_opts => map,
+        http_inactivity_timeout => pos_integer,    % msecs
+        http_max_empty_lines => pos_integer,
+        http_max_header_name_length => pos_integer,
+        http_max_header_value_length => pos_integer,
+        http_max_headers => pos_integer,
+        http_max_keepalive => pos_integer,
+        http_max_method_length => pos_integer,
+        http_max_request_line_length => pos_integer,
+        http_request_timeout => pos_integer,
         ws_proto => lower,
         headers => fun ?MODULE:spec_headers/1,
         http_proto => fun ?MODULE:spec_http_proto/3,
@@ -126,7 +134,16 @@ safe_syntax() ->
         external_url,
         ws_proto,
         headers,                % Not sure
-        debug
+        debug,
+        http_inactivity_timeout,
+        http_max_empty_lines,
+        http_max_header_name_length,
+        http_max_header_value_length,
+        http_max_headers,
+        http_max_keepalive,
+        http_max_method_length,
+        http_max_request_line_length,
+        http_request_timeout
     ] ++ maps:keys(tls_syntax()),
     Syntax = syntax(),
     maps:with(Opts, Syntax).

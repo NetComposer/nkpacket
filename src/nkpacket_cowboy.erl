@@ -218,15 +218,7 @@ init([NkPort, #cowboy_filter{}=Filter]) ->
                 _ when Transp==http; Transp==https -> 
                     nkpacket_config:http_timeout()
             end,
-            %% @see cowboy_http:opts()
-            %% Use global idle_timeout for Cowboy's idle_timeout
-            Allowed = [
-                inactivity_timeout, max_empty_lines,
-                max_header_name_length, max_header_value_length, max_headers,
-                max_keepalive, max_method_length,max_request_line_length,
-                request_timeout
-            ],
-            CowboyOpts1 = maps:with(Allowed,  maps:get(cowboy_opts, Meta, #{})),
+            CowboyOpts1 = get_cowboy_opts(Meta),
             CowboyOpts2 = CowboyOpts1#{
                 env => #{nkid => RanchId, nkdebug=>Debug},
                 middlewares => [?MODULE],
@@ -235,7 +227,7 @@ init([NkPort, #cowboy_filter{}=Filter]) ->
                 % Warning no compress!
             },
             Max = maps:get(tcp_max_connections, Meta, 1024),
-            ?DEBUG("staring Ranch ~p (max:~p) (opts:~p)", [RanchId, Max, CowboyOpts2]),
+            ?DEBUG("starting Ranch ~p (max:~p) (opts:~p)", [RanchId, Max, CowboyOpts2]),
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
                 maps:get(tcp_listeners, Meta, 100),
@@ -458,6 +450,37 @@ execute([Filter|Rest], Req, Env) ->
 %% ===================================================================
 %% Internal
 %% ===================================================================
+
+%% @private
+%% @see https://ninenines.eu/docs/en/cowboy/2.1/manual/cowboy_http/
+get_cowboy_opts(Map) ->
+    List = [
+        {http_inactivity_timeout, inactivity_timeout},
+        {http_max_empty_lines, max_empty_lines},
+        {http_max_header_name_length, max_header_name_length},
+        {http_max_header_value_length, max_header_value_length},
+        {http_max_headers, max_headers},
+        {http_max_keepalive, max_keepalive},
+        {http_max_method_length, max_method_length},
+        {http_max_request_line_length, max_request_line_length},
+        {http_request_timeout, request_timeout}
+    ],
+    get_cowboy_opts(List, Map, #{}).
+
+
+%% @private
+get_cowboy_opts([], _Map, Acc) ->
+    Acc;
+
+get_cowboy_opts([{ExtKey, IntKey}|Rest], Map, Acc) ->
+    Acc2 = case maps:find(ExtKey, Map) of
+        {ok, Value} ->
+            Acc#{IntKey => Value};
+        error ->
+            Acc
+    end,
+    get_cowboy_opts(Rest, Map, Acc2).
+
 
 
 %% @private Gets socket options for listening connections
