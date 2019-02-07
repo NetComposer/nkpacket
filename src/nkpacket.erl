@@ -36,7 +36,7 @@
 -export([get_id_pids/1, send/2, send/3]).
 -export([get_listening/2, get_listening/3, is_local/1, is_local/2, is_local_ip/1]).
 -export([get_nkport/1, get_local/1, get_remote/1, get_remote_bin/1, get_local_bin/1,
-         get_external_url/1, get_debug/1]).
+         get_external_url/1, get_debug/1, get_opts/1]).
 -export([get_class/1, get_id/1, get_user_state/1]).
 
 -export_type([id/0, class/0, transport/0, protocol/0, nkport/0, nkconn/0]).
@@ -531,6 +531,16 @@ get_id(#nkport{id=Id, class=Class}) ->
     {ok, Class, Id};
 get_id(Id) ->
     apply_nkport(Id, fun get_id/1).
+
+
+%% @doc
+-spec get_opts(id()|pid()|nkport()) ->
+    {ok, user_state()} | {error, term()}.
+
+get_opts(#nkport{user_state=UserState}) ->
+    {ok, UserState};
+get_opts(Id) ->
+    apply_nkport(Id, fun get_opts/1).
 
 
 %% @doc

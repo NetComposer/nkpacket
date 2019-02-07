@@ -388,7 +388,10 @@ init([NkPort]) ->
         true -> nkpacket_connection_ws:init(#{});
         _ -> undefined
     end,
-    NkPort2 = NkPort#nkport{pid=self()},
+    NkPort2 = NkPort#nkport{
+        pid = self(),
+        opts = Opts#{idle_timeout => Timeout}
+    },
     % We need to store some meta in case someone calls get_nkport
     StoredNkPort = NkPort2#nkport{
         opts=maps:with([host, path, ws_proto, udp_max_size, debug], Opts)},
