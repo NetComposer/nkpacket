@@ -535,10 +535,10 @@ get_id(Id) ->
 
 %% @doc
 -spec get_opts(id()|pid()|nkport()) ->
-    {ok, user_state()} | {error, term()}.
+    {ok, Opts :: nkpacket:listen_opts() | nkpacket:send_opts()} | {error, term()}.
 
-get_opts(#nkport{user_state=UserState}) ->
-    {ok, UserState};
+get_opts(#nkport{opts=Opts}) ->
+    {ok, Opts};
 get_opts(Id) ->
     apply_nkport(Id, fun get_opts/1).
 
