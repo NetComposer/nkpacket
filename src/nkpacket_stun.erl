@@ -273,8 +273,7 @@ check_stun_server([Ip|Rest], Port, Socket, LocalPort, Acc) ->
         0 -> 3478;
         _ -> Port
     end,
-    ok = gen_udp:send(Socket, Ip, Port2, Request),
-    Acc2 = case gen_udp:recv(Socket, 0, 5000) of
+    Acc2 = case send_and_recv(Socket, Ip, Port2, Request) of
         {ok, {_, _, Raw}} ->
             case decode(Raw) of
                 {response, binding, Id, Data} ->
@@ -296,7 +295,16 @@ check_stun_server([Ip|Rest], Port, Socket, LocalPort, Acc) ->
     end,
     check_stun_server(Rest, Port, Socket, LocalPort, Acc2).
 
-
+%% @private
+send_and_recv(Socket, Ip, Port, Request) ->
+    try
+        ok = gen_udp:send(Socket, Ip, Port, Request),
+        gen_udp:recv(Socket, 0, 5000)
+    catch
+        E:R ->
+            lager:warning("gen-udp:send errored with ~p, reason ~p", [E, R]),
+            {E, R}
+    end.
 
 %% @private
 stun_servers() ->
@@ -366,6 +374,18 @@ client_test() ->
             ?debugMsg("STUN: Timeout\n")
     end,
     gen_udp:close(Socket).
+
+gen_udp_returns_error_test() ->
+    meck:new(gen_udp, [unstick, passthrough]),
+    meck:expect(gen_udp, send, fun(_,_,_,_) -> meck:exception(error, eperm) end),
+
+    Ip = {1,2,3,4},
+    {ok, Socket} = gen_udp:open(0, [binary, {active, false}]),
+    {ok, {_LocalIp, Port}} = inet:sockname(Socket),
+    {_Id, Request} = binding_request(),
+
+    ?assertMatch({error,eperm}, send_and_recv(Socket, Ip, Port, Request)),
+    meck:unload(gen_udp).
 
 -endif.
 
