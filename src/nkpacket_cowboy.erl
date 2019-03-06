@@ -230,12 +230,11 @@ init([NkPort, #cowboy_filter{}=Filter]) ->
             ?DEBUG("starting Ranch ~p (max:~p) (opts:~p)", [RanchId, Max, CowboyOpts2]),
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
-                maps:get(tcp_listeners, Meta, 100),
                 RanchMod,
-                [
-                    {socket, Socket}, 
-                    {max_connections, Max}
-                ],
+                #{
+                    socket => Socket,
+                    max_connections => Max
+                },
                 CowboyMod,
                 CowboyOpts2),
 
