@@ -163,6 +163,7 @@ static() ->
 	% Cowboy now only returns connection when necessary
 	[
 		% {<<"connection">>, <<"keep-alive">>},
+		{<<"accept-ranges">>,<<"bytes">>},
 		{<<"content-length">>, <<"211">>},
 		{<<"content-type">>,<<"text/html">>},
 		{<<"date">>, _},
@@ -187,6 +188,7 @@ static() ->
 	{ok, 200, H3, <<"file1.txt">>} = get(Gun, "/dir1/../dir1/file1.txt", []),
 	[
 		%{<<"connection">>, <<"keep-alive">>},
+		{<<"accept-ranges">>,<<"bytes">>},
 		{<<"content-length">>, <<"9">>},
 		{<<"content-type">>, <<"application/octet-stream">>},
 		{<<"date">>, _},

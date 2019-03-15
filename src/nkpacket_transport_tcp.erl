@@ -145,12 +145,11 @@ init([NkPort]) ->
             ?DEBUG("active listeners: ~p", [Listeners]),
             {ok, RanchPid} = ranch_listener_sup:start_link(
                 RanchId,
-                Listeners,
                 RanchMod,
-                [
-                    {socket, Socket}, 
-                    {max_connections,  maps:get(tcp_max_connections, Meta, 1024)}
-                ],
+                #{
+                    socket => Socket,
+                    max_connections =>  maps:get(tcp_max_connections, Meta, 1024)
+                },
                 ?MODULE,
                 [RanchPort]),
             % We take the 'real' port (in case it is '0')
