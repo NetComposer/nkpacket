@@ -128,7 +128,7 @@ do_request(ConnPid, Method, Path, Hds, Body, Opts) when is_atom(Method) ->
     },
     Timeout = maps:get(timeout, Opts, 5000),
     case nkpacket:send(ConnPid, {nkpacket_http, Req}) of
-        {ok, ConnPid} ->
+        {ok, _ConnPid2} ->
             receive
                 {nkpacket_httpc_protocol, Ref, {head, Status, Headers}} ->
                     do_request_body(Ref, Opts, Timeout, Status, Headers, []);
