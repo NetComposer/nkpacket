@@ -273,27 +273,35 @@ terminate(Reason, State) ->
 -spec start_link(term(), term(), atom(), term()) ->
     {ok, pid()}.
 
-start_link(Ref, Socket, TranspModule, [#nkport{opts=Meta} = NkPort]) ->
-    {ok, {LocalIp, LocalPort}} = TranspModule:sockname(Socket),
-    {ok, {RemoteIp, RemotePort}} = TranspModule:peername(Socket),
-    NkPort1 = NkPort#nkport{
-        local_ip = LocalIp,
-        local_port = LocalPort,
-        remote_ip = RemoteIp,
-        remote_port = RemotePort,
-        socket = Socket
-    },
-    case TranspModule of
-        ranch_ssl ->
-            ok;
-        ranch_tcp ->
-            Opts = lists:flatten([
-                case Meta of #{tcp_packet:=Packet} -> {packet, Packet}; _ -> [] end,
-                {keepalive, true}, {active, once}
-            ]),
-            TranspModule:setopts(Socket, Opts)
-    end,
-    nkpacket_connection:ranch_start_link(NkPort1, Ref).
+start_link(Ref, Socket, TranspModule, [#nkport{opts=Meta}=NkPort]) ->
+    try
+        {ok, {LocalIp, LocalPort}} = TranspModule:sockname(Socket),
+        {ok, {RemoteIp, RemotePort}} = TranspModule:peername(Socket),
+        NkPort1 = NkPort#nkport{
+            local_ip = LocalIp,
+            local_port = LocalPort,
+            remote_ip = RemoteIp,
+            remote_port = RemotePort,
+            socket = Socket
+        },
+        case TranspModule of
+            ranch_ssl ->
+                ok;
+            ranch_tcp ->
+                Opts = lists:flatten([
+                    case Meta of #{tcp_packet:=Packet} -> {packet, Packet}; _ -> [] end,
+                    {keepalive, true}, {active, once}
+                ]),
+                TranspModule:setopts(Socket, Opts)
+        end,
+        nkpacket_connection:ranch_start_link(NkPort1, Ref)
+    catch
+        C:Error ->
+            lager:warning("start_link: could not nkpacket_connection:ranch_start_link() socket ~p, transport ~p nkport ~p: ~p:~p",
+                   [Socket, TranspModule, NkPort, C, Error]),
+            {error, Error}
+    end.
+
 
 
 %% ===================================================================
