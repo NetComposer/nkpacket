@@ -110,6 +110,8 @@
         tcp_packet => 1 | 2 | 4 | raw,          %
         tcp_max_connections => integer(),       % Default 1024
         tcp_listeners => integer(),             % Default 100
+        send_timeout => integer(),
+        send_timeout_close => boolean(),
 
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
@@ -163,6 +165,8 @@
 
         % TCP/TLS/WS/WSS options
         tcp_packet => 1 | 2 | 4 | raw,    
+        send_timeout => integer(),
+        send_timeout_close => boolean(),
 
         % WS/WSS
         host => string() | binary(),        % Host header to use

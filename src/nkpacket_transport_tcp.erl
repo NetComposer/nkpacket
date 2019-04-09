@@ -154,7 +154,10 @@ init([NkPort]) ->
                 [RanchPort]),
             % We take the 'real' port (in case it is '0')
             nkpacket_util:register_listener(NkPort),
-            ConnMetaOpts = [tcp_packet | ?CONN_LISTEN_OPTS],
+            ConnMetaOpts = [
+                tcp_packet, send_timeout, send_timeout_close
+                | ?CONN_LISTEN_OPTS
+            ],
             % ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
             ConnMeta = maps:with(ConnMetaOpts, Meta),
             ConnPort = NkPort1#nkport{opts=ConnMeta},
@@ -287,11 +290,15 @@ start_link(Ref, Socket, TranspModule, [#nkport{opts=Meta} = NkPort]) ->
         ranch_ssl ->
             ok;
         ranch_tcp ->
-            Opts = lists:flatten([
-                case Meta of #{tcp_packet:=Packet} -> {packet, Packet}; _ -> [] end,
-                {keepalive, true}, {active, once}
-            ]),
-            TranspModule:setopts(Socket, Opts)
+            Opts1 = maps:to_list(maps:with([send_timeout, send_timeout_close], Meta)),
+            Opts2 = [{keepalive, true}, {active, once} | Opts1],
+            Opts3 = case Meta of
+                #{tcp_packet:=Packet} ->
+                    [{packet, Packet}|Opts2];
+                _ ->
+                    Opts2
+            end,
+            TranspModule:setopts(Socket, Opts3)
     end,
     nkpacket_connection:ranch_start_link(NkPort1, Ref).
 
@@ -348,12 +355,14 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=tls}=
     list().
 
 outbound_opts(#nkport{opts=Opts}) ->
+    Opts1 = maps:to_list(maps:with([send_timeout, send_timeout_close], Opts)),
     [
         binary,
         {active, false},
         {nodelay, true},
         {keepalive, true},
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end}
+        | Opts1
     ].
 
 
@@ -362,14 +371,21 @@ outbound_opts(#nkport{opts=Opts}) ->
     list().
 
 listen_opts(#nkport{transp=tcp, listen_ip=Ip, opts=Opts}) ->
+    Opts1 = maps:to_list(maps:with([send_timeout, send_timeout_close], Opts)),
     [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
-        {ip, Ip}, {active, false}, binary,
-        {nodelay, true}, {keepalive, true},
-        {reuseaddr, true}, {backlog, 1024}
+        binary,
+        {ip, Ip},
+        {active, false},
+        {nodelay, true},
+        {keepalive, true},
+        {reuseaddr, true},
+        {backlog, 1024}
+        | Opts1
     ];
 
 listen_opts(#nkport{transp=tls, listen_ip=Ip, opts=Opts}) ->
+    Opts1 = maps:to_list(maps:with([send_timeout, send_timeout_close], Opts)),
     [
         % From Cowboy 2.0:
         %{next_protocols_advertised, [<<"h2">>, <<"http/1.1">>]},
@@ -378,6 +394,7 @@ listen_opts(#nkport{transp=tls, listen_ip=Ip, opts=Opts}) ->
         {ip, Ip}, {active, once}, binary,
         {nodelay, true}, {keepalive, true},
         {reuseaddr, true}, {backlog, 1024}
+        | Opts1
     ]
     ++nkpacket_tls:make_inbound_opts(Opts).
 
