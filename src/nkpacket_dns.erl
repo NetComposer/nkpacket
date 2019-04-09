@@ -445,15 +445,16 @@ get_transp(Scheme, Transp, #{protocol:=Protocol}) when Protocol/=undefined ->
     case erlang:function_exported(Protocol, transports, 1) of
         true ->
             % We have a set of valid transports
-            Valid = Protocol:transports(Scheme),
-            case Transp of
-                undefined ->
+            case catch Protocol:transports(Scheme) of
+                {'EXIT', _} ->
+                    throw({invalid_scheme, Scheme});
+                Valid when Transp==undefined ->
                     % If no transports (and no standard scheme) use the first valid one
                     case Valid of
                         [Transp1|_] -> Transp1;
                         [] -> undefined
                     end;
-                _ ->
+                Valid ->
                     case lists:member(Transp, Valid) of
                         true -> 
                             Transp;
