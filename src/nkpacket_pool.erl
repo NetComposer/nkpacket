@@ -109,7 +109,12 @@ start_link(Id, Config) ->
     {ok, pid(), Meta::map()} | {error, term()}.
 
 get_conn_pid(P) ->
-    gen_server:call(find(P), get_conn_pid, 30000).
+    case find(P) of
+        Pid when is_pid(Pid) ->
+            gen_server:call(Pid, get_conn_pid, 30000);
+        undefined ->
+            {error, pool_unknown}
+    end.
 
 
 %% @private
@@ -122,17 +127,32 @@ get_conn_pid(P) ->
     {ok, pid(), Meta::map()} | {error, term()}.
 
 get_exclusive_pid(P) ->
-    gen_server:call(find(P), {get_exclusive_pid, self()}, 30000).
+    case find(P) of
+        Pid when is_pid(Pid) ->
+            gen_server:call(Pid, {get_exclusive_pid, self()}, 30000);
+        undefined ->
+            {error, pool_unknown}
+    end.
 
 
 %% @private
 release_exclusive_pid(P, ConnPid) ->
-    gen_server:cast(find(P), {release_exclusive_pid, ConnPid}).
+    case find(P) of
+        Pid when is_pid(Pid) ->
+            gen_server:cast(Pid, {release_exclusive_pid, ConnPid});
+        undefined ->
+            {error, pool_unknown}
+    end.
 
 
 %% @private
 get_status(P) ->
-    gen_server:call(find(P), get_status).
+    case find(P) of
+        Pid when is_pid(Pid) ->
+            gen_server:call(Pid, get_status);
+        undefined ->
+            {error, pool_unknown}
+    end.
 
 
 %% @private
