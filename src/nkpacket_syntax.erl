@@ -95,7 +95,7 @@ syntax() ->
         user => binary,
         password => binary,
         host => host,
-        path => path,
+        path => binary,     % Changed from 'path' to allow ending '/'
         get_headers => [boolean, {list, binary}],
         external_url => binary,
         http_inactivity_timeout => pos_integer,    % msecs
@@ -156,6 +156,11 @@ safe_syntax() ->
 tls_syntax() ->
     tls_syntax(#{}).
 
+
+%% Config for letsencrypt:
+%% tls_keyfile => "/etc/letsencrypt/archive/.../privkey.pem",
+%% tls_cacertfile => "/etc/letsencrypt/archive/.../chain.pem",
+%% tls_certfile => "/etc/letsencrypt/archive/.../cert.pem"
 
 tls_syntax(Base) ->
     Base#{
