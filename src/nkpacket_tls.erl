@@ -97,7 +97,7 @@ default_outbound() ->
     #{
         secure_renegotiate => true,
         reuse_sessions => true,
-        honor_cipher_order => true,
+        %honor_cipher_order => true,        % server only?
         ciphers => ciphers(),
         versions => ['tlsv1.2', 'tlsv1.1', tlsv1, sslv3]
     }.
