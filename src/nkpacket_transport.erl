@@ -305,7 +305,7 @@ do_connect(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts
                     ?DEBUG("connected to ~p", [lager:pr(ConnNkPort, ?MODULE)]),
                     {ok, ConnNkPort};
                 {error, Error} ->
-                    ?LLOG(info, "error connecting: ~p", [Error]),
+                    ?LLOG(info, "error connecting to ~p: ~p", [lager:pr(ConnPort, ?MODULE), Error]),
                     {error, Error}
             end
     end.
