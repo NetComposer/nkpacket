@@ -36,7 +36,7 @@
 
 -export([get_conn_pid/1, get_exclusive_pid/1, release_exclusive_pid/2]).
 -export([start_link/2, get_status/1]).
--export([get_all/0, find/1]).
+-export([get_all/0, get_all_status/0, find/1]).
 -export([conn_resolve_fun/3, conn_start_fun/1, conn_stop_fun/1]).
 -export([init/1, terminate/2, code_change/3, handle_call/3,
          handle_cast/2, handle_info/2]).
@@ -161,6 +161,11 @@ get_all() ->
 
 
 %% @private
+get_all_status() ->
+    [get_status(Pid) || {_, Pid} <- get_all()].
+
+
+%% @private
 find(Pid) when is_pid(Pid) ->
     Pid;
 
@@ -255,8 +260,14 @@ handle_call({get_exclusive_pid, Pid}, From, State) ->
     State2 = find_conn_pid(?NUM_TRIES, From, {true, Pid}, State),
     {noreply, State2};
 
-handle_call(get_status, _From, #state{conn_status=ConnStatus}=State) ->
-    {reply, {ok, ConnStatus}, State};
+handle_call(get_status, _From, #state{id=SrvId, conn_spec=Spec, conn_status=Status}=State) ->
+    Pids = maps:from_list(
+        [
+            {Id, length(Pid)} ||
+            {Id, #conn_status{conn_pids=Pid}} <- maps:to_list(Status)
+        ]),
+
+    {reply, {ok, #{srv_id=>SrvId, spec=>Spec, status=>Status, conns=>Pids}}, State};
 
 handle_call(Msg, _From, State) ->
     lager:error("Module ~p received unexpected call ~p", [?MODULE, Msg]),
@@ -481,6 +492,7 @@ find_conn_pid(_Tries, From, _Exclusive, #state{conn_weight=[]}=State) ->
 
 find_conn_pid(Tries, From, Exclusive, State) ->
     #state{
+        id = SrvId,
         max_weight = Max,
         conn_spec = ConnSpec,
         conn_weight = Weights,
@@ -511,7 +523,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
                             gen_server:reply(From, {ok, Pid, Meta#{conn_id=>ConnId}}),
                             State2;
                         {error, no_free_connections} ->
-                            lager:error("NKLOG NO FREE CONNECTIONs1: ~p, ~p", [ActivePids, MaxExclusive]),
+                            lager:error("NKLOG NO FREE CONNECTIONs1: ~p ~p, ~p", [SrvId, ActivePids, MaxExclusive]),
                             case ActivePids < MaxExclusive of
                                 true ->
                                     connect(Spec, Tries, From, Exclusive, State);
