@@ -611,10 +611,10 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
         conn_stop_fun = StopFun
     } = State,
     case maps:find(ConnId, ConnSpec) of
-        {ok, #conn_spec{pool=Pool, meta=Meta}} ->
+        {ok, #conn_spec{pool=Pool, meta=Meta}=Spec} ->
             Status1 = maps:get(ConnId, ConnStatus),
             #conn_status{conn_pids=Pids} = Status1,
-            case length(Pids) < Pool of
+            case connect_is_not_max(Spec, Status1, Exclusive) of
                 true ->
                     % We still had some slot available
                     % Most backends will react to our exit and stop
@@ -663,6 +663,18 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
             retry(Tries, From, Exclusive),
             State
     end.
+
+connect_is_not_max(Spec, Status, false) ->
+    #conn_spec{pool=Pool} = Spec,
+    #conn_status{conn_pids=Pids} = Status,
+    length(Pids) < Pool;
+
+connect_is_not_max(Spec, Status, {true, _}) ->
+    #conn_spec{pool=Pool, max_exclusive=Max} = Spec,
+    #conn_status{conn_pids=Pids} = Status,
+    lager:error("NKLOG MAX ~p ~p ~p ~p", [length(Pids), Pool+Max, Pool, Max]),
+    length(Pids) < (Pool+Max).
+
 
 
 %% @private
