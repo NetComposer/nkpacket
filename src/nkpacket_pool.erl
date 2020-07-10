@@ -511,6 +511,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
                             gen_server:reply(From, {ok, Pid, Meta#{conn_id=>ConnId}}),
                             State2;
                         {error, no_free_connections} ->
+                            lager:error("NKLOG NO FREE CONNECTIONs1: ~p, ~p", [ActivePids, MaxExclusive]),
                             case ActivePids < MaxExclusive of
                                 true ->
                                     connect(Spec, Tries, From, Exclusive, State);
