@@ -587,8 +587,8 @@ connect(#conn_spec{id=ConnId, nkconn=Conn}, Tries, From, Exclusive, State) ->
 spawn_connect(ConnId, Conn, Tries, From, Exclusive, #state{conn_start_fun=Fun}) ->
     Self = self(),
     spawn_link(
-        lager:error("NKLOG SPAWN NEW CONNECTION"),
         fun() ->
+            lager:error("NKLOG SPAWN NEW CONNECTION"),
             Msg = case Fun(Conn) of
                 {ok, Pid} ->
                     lager:error("NKLOG SPAWN NEW CONNECTION OK"),
