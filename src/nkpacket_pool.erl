@@ -238,6 +238,7 @@ init([Id, Config]) ->
     true = nklib_proc:reg({?MODULE, Id}),
     nklib_proc:put(?MODULE, Id),
     self() ! launch_resolve,
+    lager:warning("Connection pooler started for ~p: ~p", [Id, Config]),
     {ok, State1}.
 
 
@@ -429,6 +430,7 @@ do_resolve([], _Config, _Pid, _Fun, Specs, Weights) ->
 do_resolve([Target|Rest], Config, Pid, Fun, Specs, Weights) ->
     Pool = maps:get(pool, Target, 1),
     Max = maps:get(max_exclusive, Target, Pool),
+    lager:error("NKLOG MAX EXCLUSIVE IS ~p", [Max]),
     {ConnList, Meta} = case Fun(Target, Config, Pid) of
         {ok, ConnList0, Meta0} ->
             {ConnList0, Meta0};
