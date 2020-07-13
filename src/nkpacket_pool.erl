@@ -600,10 +600,8 @@ spawn_connect(ConnId, Conn, Tries, From, Exclusive, #state{conn_start_fun=Fun}) 
     Self = self(),
     spawn_link(
         fun() ->
-            lager:error("NKLOG SPAWN NEW CONNECTION"),
             Msg = case Fun(Conn) of
                 {ok, Pid} ->
-                    lager:error("NKLOG SPAWN NEW CONNECTION OK"),
                     {new_connection_ok, ConnId, Pid, Tries, From, Exclusive};
                 {error, Error} ->
                     lager:error("NKLOG SPAWN NEW CONNECTION ERROR"),
@@ -616,6 +614,7 @@ spawn_connect(ConnId, Conn, Tries, From, Exclusive, #state{conn_start_fun=Fun}) 
 %% @private
 do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
     #state{
+        id = SrvId,
         conn_spec = ConnSpec,
         conn_status = ConnStatus,
         conn_pids = ConnPids,
@@ -626,7 +625,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
         {ok, #conn_spec{pool=Pool, meta=Meta}=Spec} ->
             Status1 = maps:get(ConnId, ConnStatus),
             #conn_status{conn_pids=Pids} = Status1,
-            case connect_is_not_max(Spec, Status1, Exclusive) of
+            case connect_is_not_max(SrvId, Spec, Status1, Exclusive) of
                 true ->
                     % We still had some slot available
                     % Most backends will react to our exit and stop
@@ -676,15 +675,15 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
             State
     end.
 
-connect_is_not_max(Spec, Status, false) ->
+connect_is_not_max(_SrvId, Spec, Status, false) ->
     #conn_spec{pool=Pool} = Spec,
     #conn_status{conn_pids=Pids} = Status,
     length(Pids) < Pool;
 
-connect_is_not_max(Spec, Status, {true, _}) ->
+connect_is_not_max(SrvId, Spec, Status, {true, _}) ->
     #conn_spec{pool=Pool, max_exclusive=Max} = Spec,
     #conn_status{conn_pids=Pids} = Status,
-    lager:error("NKLOG MAX ~p ~p ~p ~p", [length(Pids), Pool+Max, Pool, Max]),
+    lager:error("NKLOG ~p MAX ~p/~p ~p ~p", [SrvId, length(Pids), Pool+Max, Pool, Max]),
     length(Pids) < (Pool+Max).
 
 
