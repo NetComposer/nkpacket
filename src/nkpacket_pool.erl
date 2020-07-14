@@ -529,7 +529,7 @@ find_conn_pid(Tries, From, Exclusive, State) ->
                                     connect(Spec, Tries, From, Exclusive, State);
                                 false ->
                                     ?DEBUG("max connections reached", [], State),
-                                    gen_server:reply(From, {error, max_connections_reached1}),
+                                    gen_server:reply(From, {error, max_connections_reached}),
                                     State
                             end
                     end
@@ -665,7 +665,7 @@ do_connect_ok(ConnId, Pid, Tries, From, Exclusive, State) ->
                     State;
                 false ->
                     ?DEBUG("max connections reached", [], State),
-                    gen_server:reply(From, {error, max_connections_reached2}),
+                    gen_server:reply(From, {error, max_connections_reached}),
                     StopFun(Pid),
                     State
             end;
