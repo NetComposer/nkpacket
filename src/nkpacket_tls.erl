@@ -99,7 +99,7 @@ default_outbound() ->
         reuse_sessions => true,
         %honor_cipher_order => true,        % server only?
         ciphers => ciphers(),
-        versions => ['tlsv1.2', 'tlsv1.1', tlsv1, sslv3]
+        versions => ['tlsv1.2', 'tlsv1.1', tlsv1] % removed sslv3
     }.
 
 default_inbound() ->
