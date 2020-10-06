@@ -70,7 +70,7 @@ get_listener(#nkport{id=Id, listen_ip=Ip, listen_port=Port, transp=Transp}=NkPor
 %% @private Starts a new connection to a remote server
 -spec connect(nkpacket:nkport()) ->
     {ok, nkpacket:nkport()} | {error, term()}.
-         
+
 connect(NkPort) ->
     #nkport{opts=Meta} = NkPort,
     Debug = maps:get(debug, Meta, false),
@@ -85,7 +85,7 @@ connect(NkPort) ->
             },
             InetMod:setopts(Socket, [{active, once}]),
             {ok, NkPort2};
-        {error, Error} -> 
+        {error, Error} ->
             {error, Error}
     end.
 
@@ -110,7 +110,7 @@ start_link(NkPort) ->
 }).
 
 
-%% @private 
+%% @private
 -spec init(term()) ->
     {ok, #state{}} | {stop, term()}.
 
@@ -133,7 +133,7 @@ init([NkPort]) ->
             {ok, {LocalIp, LocalPort}} = InetMod:sockname(Socket),
             NkPort1 = NkPort#nkport{
                 local_ip = LocalIp,
-                local_port = LocalPort, 
+                local_port = LocalPort,
                 listen_ip = ListenIp,
                 listen_port = LocalPort,
                 pid = self(),
@@ -155,7 +155,8 @@ init([NkPort]) ->
             % We take the 'real' port (in case it is '0')
             nkpacket_util:register_listener(NkPort),
             ConnMetaOpts = [
-                tcp_packet, send_timeout, send_timeout_close
+                tcp_packet, send_timeout, send_timeout_close,
+                tls_certfile, tls_keyfile, tls_cacertfile
                 | ?CONN_LISTEN_OPTS
             ],
             % ConnMetaOpts = [tcp_packet, tls_opts | ?CONN_LISTEN_OPTS],
@@ -181,7 +182,7 @@ init([NkPort]) ->
             },
             {ok, State};
         {error, Error} ->
-            ?LLOG(error, "could not start ~p transport on ~p:~p (~p)", 
+            ?LLOG(error, "could not start ~p transport on ~p:~p (~p)",
                    [Transp, ListenIp, ListenPort, Error]),
             {stop, Error}
     end.
@@ -250,7 +251,7 @@ code_change(_OldVsn, State, _Extra) ->
 -spec terminate(term(), #state{}) ->
     ok.
 
-terminate(Reason, State) ->  
+terminate(Reason, State) ->
     #state{
         ranch_id = RanchId,
         ranch_pid = RanchPid,
@@ -407,7 +408,3 @@ call_protocol(Fun, Args, State) ->
 %% @private
 get_modules(tcp) -> {inet, gen_tcp, ranch_tcp};
 get_modules(tls) -> {ssl, ssl, ranch_ssl}.
-
-
-
-
