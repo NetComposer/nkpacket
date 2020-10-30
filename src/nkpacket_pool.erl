@@ -385,7 +385,7 @@ handle_info({'DOWN', Mon, process, Pid, Reason}=Msg, State) ->
                     ?LLOG(notice, "exclusive user ~p down, stopping ~p",
                           [Pid, ConnId], State),
                     %% Connection may be in inconsistent state, stop it
-                    StopFun(Pid),
+                    StopFun(ConnPid),
                     State2 = State#state{conn_user_mons=Mons2},
                     {noreply, State2};
                 error ->
