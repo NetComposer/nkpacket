@@ -286,7 +286,7 @@ do_connect(#nkconn{protocol=Protocol, transp=Transp, ip=Ip, port=Port, opts=Opts
             ?DEBUG("base nkport: ~p", [lager:pr(BasePort2, ?MODULE)]),
             % Our listening host and meta must not be used for the new connection
             BaseMeta2 = maps:without([host, path], BaseMeta),
-            Opts2 = maps:merge(BaseMeta2, Opts),
+            Opts2 = maps:merge(Opts, BaseMeta2),
             ConnPort = BasePort2#nkport{
                 id = maps:get(id, Opts),
                 class = maps:get(class, Opts, none),

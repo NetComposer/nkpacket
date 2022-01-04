@@ -5,6 +5,8 @@
     {registered, []},
     {mod, {nkpacket_app, []}},
     {applications, [
+        kernel,
+        stdlib,
         crypto,
         ssl,
         nklib,

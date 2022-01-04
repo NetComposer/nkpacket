@@ -112,6 +112,7 @@
         tcp_listeners => integer(),             % Default 100
         send_timeout => integer(),
         send_timeout_close => boolean(),
+        tos => integer(),
 
         % WS/WSS/HTTP/HTTPS options
         host => string() | binary(),            % Listen only on this host
@@ -167,6 +168,7 @@
         tcp_packet => 1 | 2 | 4 | raw,    
         send_timeout => integer(),
         send_timeout_close => boolean(),
+        tos => integer(),
 
         % WS/WSS
         host => string() | binary(),        % Host header to use

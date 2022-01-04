@@ -113,6 +113,7 @@ connect_timeout|`integer()`|30000|(msecs)
 sctp_out_streams|`integer()`|10|Default SCTP out streams
 sctp_in_streams|`integer()`|10|Default SCTP in streams
 tcp_listeners|`integer()`|10|Default number of TCP listeners
+tos|`integer()`|0|Default value for Type of Service
 main_ip|`inet:ip4_address()`|auto|Main IPv4 of the host
 main_ip6|`inet:ip6_address()`|auto|Main IPv6 of the host
 ext_ip|`inet:ip4_address()`|auto|Public Ipv4 of the host
