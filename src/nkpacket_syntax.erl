@@ -46,7 +46,7 @@ app_syntax() ->
         connect_timeout => nat_integer,
         sctp_out_streams => nat_integer,
         sctp_in_streams => nat_integer,
-        tos => nat_integer,
+        tos => pos_integer,
         main_ip => [ip4, {atom, [auto]}],
         main_ip6 => [ip6, {atom, [auto]}],
         ext_ip => [ip4, {atom, [auto]}],
@@ -116,7 +116,7 @@ syntax() ->
         resolve_type => {atom, [listen, connect, send]},
         base_nkport => [boolean, {record, nkport}],
         user_state => any,
-        tos => nat_integer,
+        tos => pos_integer,
         debug => boolean
     },
     add_tls_syntax(Base).
