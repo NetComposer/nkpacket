@@ -46,6 +46,7 @@ app_syntax() ->
         connect_timeout => nat_integer,
         sctp_out_streams => nat_integer,
         sctp_in_streams => nat_integer,
+        tos => pos_integer,
         main_ip => [ip4, {atom, [auto]}],
         main_ip6 => [ip6, {atom, [auto]}],
         ext_ip => [ip4, {atom, [auto]}],
@@ -61,6 +62,7 @@ app_syntax() ->
             connect_timeout => 30000,               %
             sctp_out_streams => 10,
             sctp_in_streams => 10,
+            tos => 0,
             main_ip => auto,
             main_ip6 => auto,
             ext_ip => auto,
@@ -114,6 +116,7 @@ syntax() ->
         resolve_type => {atom, [listen, connect, send]},
         base_nkport => [boolean, {record, nkport}],
         user_state => any,
+        tos => pos_integer,
         debug => boolean
     },
     add_tls_syntax(Base).
@@ -138,6 +141,7 @@ safe_syntax() ->
         external_url,
         ws_proto,
         headers,                % Not sure
+        tos,
         debug,
         http_inactivity_timeout,
         http_max_empty_lines,

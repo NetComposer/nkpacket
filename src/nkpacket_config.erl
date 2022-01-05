@@ -24,7 +24,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([set_config/0]).
 -export([max_connections/0, dns_cache_ttl/0, udp_timeout/0, tcp_timeout/0, sctp_timeout/0,
-         ws_timeout/0, http_timeout/0, connect_timeout/0, sctp_in_streams/0,
+         ws_timeout/0, http_timeout/0, connect_timeout/0, sctp_in_streams/0, tos/0,
          sctp_out_streams/0, main_ip/0, main_ip6/0, ext_ip/0, ext_ip6/0, local_ips/0]).
 
 
@@ -39,6 +39,7 @@
     connect_timeout :: integer(),
     sctp_in_streams :: integer(),
     sctp_out_streams :: integer(),
+    tos :: integer(),
     main_ip :: inet:ip4_address(),
     main_ip6 :: inet:ip6_address(),
     ext_ip :: inet:ip4_address(),
@@ -59,6 +60,7 @@ set_config() ->
         connect_timeout = nkpacket_app:get(connect_timeout),
         sctp_in_streams = nkpacket_app:get(sctp_in_streams),
         sctp_out_streams = nkpacket_app:get(sctp_out_streams),
+        tos = nkpacket_app:get(tos),
         main_ip = nkpacket_app:get(main_ip),
         main_ip6 = nkpacket_app:get(main_ip6),
         ext_ip = nkpacket_app:get(ext_ip),
@@ -79,6 +81,7 @@ http_timeout() -> do_get_config(#nkpacket_config.http_timeout).
 connect_timeout() -> do_get_config(#nkpacket_config.connect_timeout).
 sctp_in_streams() -> do_get_config(#nkpacket_config.sctp_in_streams).
 sctp_out_streams() -> do_get_config(#nkpacket_config.sctp_out_streams).
+tos() -> do_get_config(#nkpacket_config.tos).
 main_ip() -> do_get_config(#nkpacket_config.main_ip).
 main_ip6() -> do_get_config(#nkpacket_config.main_ip6).
 ext_ip() -> do_get_config(#nkpacket_config.ext_ip).

@@ -356,7 +356,7 @@ connect_outbound(#nkport{remote_ip=Ip, remote_port=Port, opts=Opts, transp=tls}=
     list().
 
 outbound_opts(#nkport{opts=Opts}) ->
-    Opts1 = maps:to_list(maps:with([send_timeout, send_timeout_close], Opts)),
+    Opts1 = maps:to_list(maps:with([send_timeout, send_timeout_close, tos], Opts)),
     [
         binary,
         {active, false},
@@ -372,7 +372,7 @@ outbound_opts(#nkport{opts=Opts}) ->
     list().
 
 listen_opts(#nkport{transp=tcp, listen_ip=Ip, opts=Opts}) ->
-    Opts1 = maps:to_list(maps:with([send_timeout, send_timeout_close], Opts)),
+    Opts1 = maps:to_list(maps:with([send_timeout, send_timeout_close, tos], Opts)),
     [
         {packet, case Opts of #{tcp_packet:=Packet} -> Packet; _ -> raw end},
         binary,
